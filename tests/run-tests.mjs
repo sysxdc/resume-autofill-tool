@@ -72,6 +72,99 @@ test('matchFieldKey: unknown returns null', () => {
   assert.equal(Match.matchFieldKey('xyzzy_unknown_widget'), null);
 });
 
+test('autocomplete address-level2 → city not address', () => {
+  assert.equal(
+    Match.matchFieldKey('city', { autocomplete: 'address-level2' }),
+    'city'
+  );
+  assert.equal(
+    Match.matchFieldKey('#city city', { autocomplete: 'address-level2' }),
+    'city'
+  );
+  // embedded token in hints (no separate options)
+  assert.equal(Match.matchFieldKey('id_city address-level2'), 'city');
+});
+
+test('autocomplete street-address / postal-code / address-level1 / country', () => {
+  assert.equal(
+    Match.matchFieldKey('addr1', { autocomplete: 'street-address' }),
+    'address'
+  );
+  assert.equal(
+    Match.matchFieldKey('zip', { autocomplete: 'postal-code' }),
+    'zip'
+  );
+  assert.equal(
+    Match.matchFieldKey('region', { autocomplete: 'address-level1' }),
+    'province'
+  );
+  assert.equal(
+    Match.matchFieldKey('nation', { autocomplete: 'country-name' }),
+    'country'
+  );
+  assert.equal(
+    Match.matchFieldKey('x', { autocomplete: 'country' }),
+    'country'
+  );
+});
+
+test('hispanic_ethnicity → null (not city)', () => {
+  assert.equal(Match.matchFieldKey('hispanic_ethnicity'), null);
+  assert.equal(
+    Match.matchFieldKey('hispanic_ethnicity Are you Hispanic/Latino?'),
+    null
+  );
+});
+
+test('current employer in legal / employment agreement → not company', () => {
+  const legal =
+    'Are you subject to any employment agreements and/or post-employment restrictions with your current employer';
+  assert.equal(Match.matchFieldKey(legal), null);
+  // Real employer question should still match
+  assert.equal(
+    Match.matchFieldKey('Who is your current or previous employer?'),
+    'company'
+  );
+});
+
+test('how did you hear about → null (not summary)', () => {
+  assert.equal(Match.matchFieldKey('How did you hear about this job?'), null);
+  assert.equal(Match.matchFieldKey('how_did_you_hear_about_us'), null);
+});
+
+test('forgitlab / previously worked → not company', () => {
+  assert.equal(
+    Match.matchFieldKey('Have you previously worked at or consulted for GitLab?'),
+    null
+  );
+  assert.equal(Match.matchFieldKey('question_forgitlab consulted for GitLab'), null);
+  // bare org must not match inside forgitlab
+  assert.equal(Match.matchFieldKey('forgitlab'), null);
+  assert.equal(Match.matchFieldKey('organization'), 'company');
+  assert.equal(Match.matchFieldKey('current_company'), 'company');
+});
+
+test('capacity question → null (not city)', () => {
+  assert.equal(
+    Match.matchFieldKey(
+      'Are you currently or have you ever worked for Airbnb in any capacity?'
+    ),
+    null
+  );
+});
+
+test('short keyword org requires word boundary', () => {
+  assert.equal(Match.matchFieldKey('org'), 'company');
+  assert.equal(Match.matchFieldKey('my_org_name'), 'company');
+  assert.equal(Match.matchFieldKey('forgot'), null);
+});
+
+test('explicit city id beats bare address substring', () => {
+  // Without autocomplete, id=city should be city
+  assert.equal(Match.matchFieldKey('city'), 'city');
+  assert.equal(Match.matchFieldKey('candidate-location Location (City)'), 'city');
+});
+
 test('splitName Chinese simple', () => {
   assert.deepEqual(Match.splitName('张三'), { first: '三', last: '张' });
 });
@@ -137,6 +230,24 @@ test('matchSelectOption fuzzy includes', () => {
   assert.equal(Match.matchSelectOption(opts, 'Bachelor').value, '本科');
 });
 
+test('degree select 本科 matches profile.degree', () => {
+  const opts = [
+    { value: '', text: '请选择 / Select' },
+    { value: '高中', text: '高中 / High School' },
+    { value: '大专', text: '大专 / Associate' },
+    { value: '本科', text: '本科 / Bachelor' },
+    { value: '硕士', text: '硕士 / Master' },
+    { value: '博士', text: '博士 / PhD' }
+  ];
+  const m = Match.matchSelectOption(opts, Profile.SAMPLE_PROFILE.degree);
+  assert.ok(m);
+  assert.equal(m.value, '本科');
+  // English profile value → Chinese option
+  assert.equal(Match.matchSelectOption(opts, 'Bachelor').value, '本科');
+  assert.equal(Match.matchSelectOption(opts, '硕士').value, '硕士');
+  assert.equal(Match.matchSelectOption(opts, 'Master').value, '硕士');
+});
+
 test('matchSelectOption normalized fuzzy', () => {
   const opts = [
     { value: 'full_time', text: 'Full Time' },
@@ -151,6 +262,22 @@ test('matchSelectOption no match', () => {
   const opts = [{ value: 'a', text: 'Alpha' }];
   assert.equal(Match.matchSelectOption(opts, 'zzz'), null);
   assert.equal(Match.matchSelectOption([], 'a'), null);
+});
+
+test('Yes/No select rejects long free-text workAuth', () => {
+  const opts = [
+    { value: '', text: 'Select...' },
+    { value: '1', text: 'Yes' },
+    { value: '0', text: 'No' },
+    { value: '2', text: 'Prefer not to say' }
+  ];
+  assert.equal(
+    Match.matchSelectOption(opts, '中国大陆公民，可合法全职工作'),
+    null
+  );
+  assert.equal(Match.matchSelectOption(opts, Profile.SAMPLE_PROFILE.workAuth), null);
+  assert.equal(Match.matchSelectOption(opts, 'Yes').value, '1');
+  assert.equal(Match.matchSelectOption(opts, 'No').value, '0');
 });
 
 test('MAX_FILLS_PER_KEY is 1 or 2', () => {
@@ -191,10 +318,10 @@ test('normalizeProfile drops unknown keys and trims', () => {
 
 console.log('repo integrity');
 
-test('manifest is MV3 version 1.1.0 with icons', () => {
+test('manifest is MV3 version 1.1.1 with icons', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.1.0');
+  assert.equal(manifest.version, '1.1.1');
   assert.ok(manifest.icons['16']);
   assert.ok(manifest.action.default_icon['48']);
   assert.ok(manifest.content_scripts[0].js.includes('shared/match.js'));
@@ -245,6 +372,19 @@ test('simulate fill: cap per key and address vs city', () => {
   assert.ok(addr);
   assert.equal(addr.value, profile.address);
   assert.notEqual(addr.value, profile.city);
+});
+
+test('simulate Greenhouse FP fields stay unmatched', () => {
+  const fps = [
+    'hispanic_ethnicity Are you Hispanic/Latino?',
+    'How did you hear about this job?',
+    'Are you subject to any employment agreements and/or post-employment restrictions with your current employer',
+    'Have you previously worked at or consulted for GitLab?',
+    'Are you currently or have you ever worked for Airbnb in any capacity?'
+  ];
+  for (const h of fps) {
+    assert.equal(Match.matchFieldKey(h), null, 'should skip: ' + h.slice(0, 40));
+  }
 });
 
 console.log('');

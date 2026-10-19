@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.1.0**
+当前版本：**1.1.1**
 
 ## 功能概览
 
@@ -75,7 +75,7 @@ node tests/run-tests.mjs
 
 ```text
 resume-autofill-tool/
-├── manifest.json                 # MV3，version 1.1.0
+├── manifest.json                 # MV3，version 1.1.1
 ├── shared/
 │   ├── profile.js                # DEFAULT_PROFILE / 字段列表 / 示例资料
 │   └── match.js                  # 关键词与匹配辅助（浏览器 + Node）
@@ -107,6 +107,17 @@ resume-autofill-tool/
 - 浏览器内置页（`chrome://` 等）无法注入脚本。
 - 不会自动勾选 checkbox/radio，不会填写 password/file，不会提交表单。
 - SPA 动态渲染的表单若在注入后很久才出现，可刷新页面或再点一次填写。
+
+
+## Changelog
+
+### 1.1.1
+- **Matcher false-positive fixes** (live Greenhouse / demo): prefer HTML `autocomplete` tokens (`address-level2`→city, `street-address`→address, `postal-code`→zip, etc.); word-boundary matching for short ASCII keywords (`org`, `city`, `about`, `employer`); denylist for EEO / legal / “how did you hear” / previously-worked / capacity contexts.
+- **Select fill**: degree synonym matching (本科↔Bachelor); never paste long free-text (e.g. `workAuth`) into Yes/No-only selects unless the value clearly maps.
+- Expanded Node tests covering the above; see `docs/live-field-coverage.md`.
+
+### 1.1.0
+- Expanded profile fields, autofill keywords, demo page, and Node test suite.
 
 ## 许可与声明
 

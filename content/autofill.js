@@ -39,11 +39,13 @@
     return '';
   }
 
+  /**
+   * 收集匹配用 hints（不含 autocomplete：单独传入，避免 address-level2 被当成 address 关键词）
+   */
   function collectHints(el) {
     var parts = [
       el.name,
       el.id,
-      el.getAttribute('autocomplete'),
       el.getAttribute('placeholder'),
       el.getAttribute('aria-label'),
       el.getAttribute('data-testid'),
@@ -51,7 +53,13 @@
       typeof el.className === 'string' ? el.className : '',
       getLabelText(el)
     ];
-    return M.normalize(parts.filter(Boolean).join(' '));
+    return parts.filter(Boolean).join(' ');
+  }
+
+  function matchKeyForElement(el) {
+    return M.matchFieldKey(collectHints(el), {
+      autocomplete: el.getAttribute('autocomplete') || ''
+    });
   }
 
   function hintSnippet(el) {
@@ -87,6 +95,7 @@
       var opts = Array.from(el.options).map(function (o) {
         return { value: o.value, text: o.text };
       });
+      // 仅在模糊匹配到选项时写入；Yes/No 选在资料值无法映射时 matchSelectOption 返回 null
       var matched = M.matchSelectOption(opts, value);
       if (!matched) return false;
       el.value = matched.value;
@@ -129,8 +138,7 @@
     var results = [];
     var seen = {};
     iterFillableFields().forEach(function (el) {
-      var hints = collectHints(el);
-      var key = M.matchFieldKey(hints);
+      var key = matchKeyForElement(el);
       if (!key) return;
       var sig = key + '|' + (el.name || el.id || hintSnippet(el));
       if (seen[sig]) return;
@@ -149,8 +157,7 @@
     var keyCounts = {};
 
     iterFillableFields().forEach(function (el) {
-      var hints = collectHints(el);
-      var key = M.matchFieldKey(hints);
+      var key = matchKeyForElement(el);
       if (!key) return;
       var count = keyCounts[key] || 0;
       if (count >= MAX_FILLS_PER_KEY) return;
