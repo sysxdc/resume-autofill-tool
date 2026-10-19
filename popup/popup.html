@@ -19,20 +19,31 @@
       <div><dt>邮箱</dt><dd id="s-email">—</dd></div>
       <div><dt>电话</dt><dd id="s-phone">—</dd></div>
       <div><dt>城市</dt><dd id="s-city">—</dd></div>
+      <div><dt>公司</dt><dd id="s-company">—</dd></div>
       <div><dt>职位</dt><dd id="s-title">—</dd></div>
+      <div><dt>学校</dt><dd id="s-school">—</dd></div>
     </dl>
-    <p class="hint" id="empty-hint" hidden>尚未填写资料，请先打开「编辑简历资料」。</p>
+    <p class="hint" id="empty-hint" hidden>尚未填写资料，请先打开「编辑资料」。</p>
   </section>
 
   <section class="actions">
-    <button type="button" class="btn primary" id="btn-fill">一键填写当前页面</button>
-    <a class="btn secondary" id="link-options" href="#">编辑简历资料</a>
+    <button type="button" class="btn primary" id="btn-fill">一键填写</button>
+    <button type="button" class="btn secondary" id="btn-scan">扫描字段</button>
+    <a class="btn secondary" id="link-options" href="#">编辑资料</a>
+  </section>
+
+  <section class="card meta-card" id="meta-card">
+    <p class="meta-line"><span>上次填写</span><strong id="last-fill">—</strong></p>
+    <p class="meta-line"><span>扫描结果</span><strong id="last-scan">—</strong></p>
+    <ul class="scan-list" id="scan-list" hidden></ul>
   </section>
 
   <p class="status" id="status" role="status" aria-live="polite"></p>
   <footer class="footer">
-    <span>数据仅保存在本机浏览器</span>
+    <span>数据仅保存在本机</span>
+    <span class="ver" id="ext-version"></span>
   </footer>
+  <script src="../shared/profile.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

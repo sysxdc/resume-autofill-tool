@@ -1,37 +1,27 @@
 /**
- * 简历填写工具 — 后台 Service Worker（最小化）
- * 负责扩展安装时的初始化，以及 popup / content 之间的消息中转（如需）。
+ * 简历填写工具 — 后台 Service Worker
+ * 安装时初始化空 profile；提供版本 ping。
  */
+importScripts('../shared/profile.js');
 
-chrome.runtime.onInstalled.addListener((details) => {
+var P = self.ResumeAutofillProfile;
+
+chrome.runtime.onInstalled.addListener(function (details) {
   if (details.reason === 'install') {
-    chrome.storage.local.get('profile', (result) => {
+    chrome.storage.local.get('profile', function (result) {
       if (!result.profile) {
         chrome.storage.local.set({
-          profile: {
-            name: '',
-            email: '',
-            phone: '',
-            city: '',
-            linkedin: '',
-            school: '',
-            degree: '',
-            major: '',
-            company: '',
-            title: '',
-            years: '',
-            summary: '',
-            skills: ''
-          }
+          profile: P ? P.emptyProfile() : {}
         });
       }
     });
   }
 });
 
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type === 'ping') {
-    sendResponse({ ok: true, version: '1.0.0' });
+chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
+  if (message && message.type === 'ping') {
+    var manifest = chrome.runtime.getManifest();
+    sendResponse({ ok: true, version: manifest.version });
     return true;
   }
   return false;

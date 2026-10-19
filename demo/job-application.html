@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Demo Job Application — 简历填写工具演示</title>
+  <style>
+    :root {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: #0f172a;
+      background: #f1f5f9;
+    }
+    body { max-width: 720px; margin: 0 auto; padding: 28px 16px 64px; }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    .lead { color: #64748b; font-size: 13px; margin-bottom: 20px; }
+    .lead code { background: #e2e8f0; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+    fieldset {
+      border: 1px solid #e2e8f0; border-radius: 12px; background: #fff;
+      padding: 16px 18px; margin: 0 0 16px;
+    }
+    legend { font-size: 13px; font-weight: 600; padding: 0 6px; color: #334155; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .row.full { grid-template-columns: 1fr; }
+    label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #475569; font-weight: 500; }
+    input, select, textarea {
+      font: inherit; font-size: 14px; font-weight: 400; color: #0f172a;
+      border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px;
+    }
+    textarea { min-height: 96px; resize: vertical; }
+    .actions { display: flex; gap: 10px; margin-top: 8px; }
+    button {
+      border: none; border-radius: 8px; padding: 10px 18px; font: inherit;
+      font-weight: 600; cursor: pointer;
+    }
+    button[type="submit"] { background: #2563eb; color: #fff; }
+    button[type="reset"] { background: #fff; border: 1px solid #e2e8f0; color: #64748b; }
+    .note {
+      margin-top: 18px; padding: 12px 14px; background: #fffbeb; border: 1px solid #fde68a;
+      border-radius: 10px; font-size: 12px; color: #92400e; line-height: 1.55;
+    }
+    @media (max-width: 560px) { .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <h1>职位申请表（演示） / Job Application Demo</h1>
+  <p class="lead">
+    用于测试「简历填写工具」扩展。安装扩展并保存资料后，打开本页，点击扩展弹窗的「一键填写」或「扫描字段」。
+    可用 <code>file://</code> 直接打开，或本地静态服务：
+    <code>python3 -m http.server 8765</code> 后访问
+    <code>http://localhost:8765/demo/job-application.html</code>。
+  </p>
+
+  <form id="application" action="#" method="post" onsubmit="event.preventDefault(); alert('演示页不会真正提交。请核对已填字段。');">
+    <fieldset>
+      <legend>基本信息 / Basic Info</legend>
+      <div class="row">
+        <label>姓名 / Full Name
+          <input type="text" name="full_name" id="full_name" placeholder="Your full name" autocomplete="name" />
+        </label>
+        <label>邮箱 / Email
+          <input type="email" name="email" id="email" placeholder="you@example.com" autocomplete="email" />
+        </label>
+      </div>
+      <div class="row">
+        <label>姓 / Last Name
+          <input type="text" name="last_name" id="last_name" placeholder="Surname" autocomplete="family-name" />
+        </label>
+        <label>名 / First Name
+          <input type="text" name="first_name" id="first_name" placeholder="Given name" autocomplete="given-name" />
+        </label>
+      </div>
+      <div class="row">
+        <label>手机 / Phone
+          <input type="tel" name="phone" id="phone" placeholder="Mobile number" autocomplete="tel" />
+        </label>
+        <label>城市 / City
+          <input type="text" name="city" id="city" placeholder="City" autocomplete="address-level2" />
+        </label>
+      </div>
+      <div class="row full">
+        <label>详细地址 / Street Address
+          <input type="text" name="street_address" id="street_address" placeholder="Street address" autocomplete="street-address" />
+        </label>
+      </div>
+      <div class="row">
+        <label>省/州 / Province / State
+          <input type="text" name="province" id="province" placeholder="Province or State" autocomplete="address-level1" />
+        </label>
+        <label>邮编 / Postal Code
+          <input type="text" name="postal_code" id="postal_code" placeholder="ZIP / Postal" autocomplete="postal-code" />
+        </label>
+      </div>
+      <div class="row">
+        <label>国家 / Country
+          <input type="text" name="country" id="country" placeholder="Country" autocomplete="country-name" />
+        </label>
+        <label>期望薪资 / Expected Salary
+          <input type="text" name="expected_salary" id="expected_salary" placeholder="e.g. 25K-35K" />
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>链接 / Links</legend>
+      <div class="row full">
+        <label>LinkedIn
+          <input type="url" name="linkedin_url" id="linkedin_url" placeholder="https://www.linkedin.com/in/…" />
+        </label>
+      </div>
+      <div class="row">
+        <label>GitHub
+          <input type="url" name="github_url" id="github_url" placeholder="https://github.com/…" />
+        </label>
+        <label>个人网站 / Portfolio
+          <input type="url" name="portfolio" id="portfolio" placeholder="https://…" />
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>教育 / Education</legend>
+      <div class="row">
+        <label>毕业院校 / School / University
+          <input type="text" name="school" id="school" placeholder="University" />
+        </label>
+        <label>学历 / Degree
+          <select name="degree" id="degree" aria-label="学历 Degree">
+            <option value="">请选择 / Select</option>
+            <option value="高中">高中 / High School</option>
+            <option value="大专">大专 / Associate</option>
+            <option value="本科">本科 / Bachelor</option>
+            <option value="硕士">硕士 / Master</option>
+            <option value="博士">博士 / PhD</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <label>专业 / Major
+          <input type="text" name="major" id="major" placeholder="Field of study" />
+        </label>
+        <label>毕业年份 / Graduation Year
+          <input type="text" name="graduation_year" id="graduation_year" placeholder="e.g. 2020" />
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>工作经历 / Experience</legend>
+      <div class="row">
+        <label>公司 / Company
+          <input type="text" name="company" id="company" placeholder="Current employer" />
+        </label>
+        <label>职位 / Job Title
+          <input type="text" name="job_title" id="job_title" placeholder="Position" />
+        </label>
+      </div>
+      <div class="row">
+        <label>工作年限 / Years of Experience
+          <input type="text" name="years_of_experience" id="years_of_experience" placeholder="e.g. 4" />
+        </label>
+        <label>开始日期 / Start Date
+          <input type="text" name="start_date" id="start_date" placeholder="YYYY-MM" />
+        </label>
+      </div>
+      <div class="row">
+        <label>到岗时间 / Availability
+          <input type="text" name="availability" id="availability" placeholder="Notice period" />
+        </label>
+        <label>工作许可 / Work Authorization
+          <input type="text" name="work_authorization" id="work_authorization" placeholder="Visa / work auth" />
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>其他 / Other</legend>
+      <div class="row full">
+        <label>技能 / Skills
+          <textarea name="skills" id="skills" placeholder="Comma-separated skills"></textarea>
+        </label>
+      </div>
+      <div class="row full">
+        <label>自我介绍 / Summary / Cover Letter
+          <textarea name="summary" id="summary" placeholder="Brief self introduction"></textarea>
+        </label>
+      </div>
+      <div class="row">
+        <label>
+          <span style="display:flex;align-items:center;gap:8px;flex-direction:row;">
+            <input type="checkbox" name="agree" id="agree" />
+            我确认信息属实（扩展不应自动勾选）
+          </span>
+        </label>
+        <label>密码（扩展应跳过）
+          <input type="password" name="account_password" id="account_password" placeholder="should stay empty" />
+        </label>
+      </div>
+      <div class="row full">
+        <label>简历文件（扩展应跳过）
+          <input type="file" name="resume_file" id="resume_file" />
+        </label>
+      </div>
+    </fieldset>
+
+    <div class="actions">
+      <button type="submit">提交申请（演示）</button>
+      <button type="reset">重置</button>
+    </div>
+  </form>
+
+  <div class="note">
+    <strong>手动测试步骤：</strong>
+    1) Chrome 加载本仓库为未打包扩展；
+    2) 选项页「加载示例资料」并保存；
+    3) 打开本页 → 扩展弹窗「扫描字段」应列出多个 key；
+    4) 「一键填写」后核对：姓名拆分、地址≠城市、学历 select、密码/文件/勾选保持空白；
+    5) 不要依赖演示页的「提交」按钮——扩展本身也不会自动提交。
+  </div>
+</body>
+</html>

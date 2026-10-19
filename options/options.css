@@ -142,3 +142,15 @@ textarea {
     grid-template-columns: 1fr;
   }
 }
+
+.toolbar {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.toolbar .btn {
+  padding: 8px 12px;
+  font-size: 13px;
+}
