@@ -2,7 +2,8 @@
  * 共享字段匹配逻辑：关键词、同义、模糊评分、姓名拆分、profile 取值、select 匹配。
  * 浏览器挂到 ResumeAutofillMatch；Node 通过 module.exports 引入。
  *
- * v1.2.1: select 仅匹配 option；Yes/No 归一；地区枚举禁止城市硬填。\n * v1.2.0: 拓展字段同义、Levenshtein/token 模糊匹配；保留 v1.1.1 denylist / autocomplete 优先。
+ * v1.2.1: select 仅匹配 option；Yes/No 归一；地区枚举禁止城市硬填。
+ * v1.2.0: 拓展字段同义、Levenshtein/token 模糊匹配；保留 v1.1.1 denylist / autocomplete 优先。
  */
 (function (root, factory) {
   var api = factory();
