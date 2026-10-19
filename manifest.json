@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "简历填写工具",
-  "version": "1.1.1",
-  "description": "本地存储简历资料，一键自动填写求职/简历表单（类似 Simplify Copilot、Teal 风格）。数据仅保存在本机，提交前由您确认。",
+  "version": "1.2.0",
+  "description": "本地存储简历资料，模糊匹配 + 可选 AI 巡查/填写求职表单。数据默认仅本机；启用 AI 时才发送非空字段到你配置的接口。提交前由您确认。",
   "permissions": [
     "storage",
     "activeTab",

@@ -1,7 +1,7 @@
 /**
  * 简历填写工具 — 内容脚本
  * 依赖 shared/match.js（须在 manifest content_scripts 中先于本文件加载）。
- * 根据 name / id / autocomplete / placeholder / label 启发式匹配表单字段。
+ * FILL_FORM / SCAN_FIELDS / COLLECT_FIELDS / APPLY_MAPPINGS
  * 不自动提交；不填 password/file；不盲勾 checkbox。
  */
 (function () {
@@ -31,7 +31,6 @@
       var desc = document.getElementById(describedBy);
       if (desc) return desc.textContent || '';
     }
-    // 邻近文本：前一个兄弟或父级上一行标签
     var prev = el.previousElementSibling;
     if (prev && /^(LABEL|SPAN|DIV|P|STRONG)$/i.test(prev.tagName)) {
       return prev.textContent || '';
@@ -39,9 +38,6 @@
     return '';
   }
 
-  /**
-   * 收集匹配用 hints（不含 autocomplete：单独传入，避免 address-level2 被当成 address 关键词）
-   */
   function collectHints(el) {
     var parts = [
       el.name,
@@ -95,12 +91,11 @@
       var opts = Array.from(el.options).map(function (o) {
         return { value: o.value, text: o.text };
       });
-      // 仅在模糊匹配到选项时写入；Yes/No 选在资料值无法映射时 matchSelectOption 返回 null
       var matched = M.matchSelectOption(opts, value);
       if (!matched) return false;
       el.value = matched.value;
     } else if (el.type === 'checkbox' || el.type === 'radio') {
-      return false; // 不自动勾选
+      return false;
     } else {
       var proto =
         tag === 'textarea'
@@ -130,27 +125,65 @@
     );
   }
 
-  /**
-   * 扫描可识别字段，不填写。
-   * @returns {{key:string,hint:string}[]}
-   */
   function scanFields() {
     var results = [];
     var seen = {};
     iterFillableFields().forEach(function (el) {
-      var key = matchKeyForElement(el);
+      var scored = M.matchFieldKeyScored
+        ? M.matchFieldKeyScored(collectHints(el), {
+            autocomplete: el.getAttribute('autocomplete') || ''
+          })
+        : null;
+      var key = scored ? scored.key : matchKeyForElement(el);
       if (!key) return;
       var sig = key + '|' + (el.name || el.id || hintSnippet(el));
       if (seen[sig]) return;
       seen[sig] = true;
-      results.push({ key: key, hint: hintSnippet(el) });
+      results.push({
+        key: key,
+        hint: hintSnippet(el),
+        confidence: scored ? scored.confidence : 1,
+        method: scored ? scored.method : 'keyword'
+      });
     });
     return results;
   }
 
   /**
-   * @returns {{filled:number,filledKeys:string[]}}
+   * 收集可填字段描述，供 AI / 启发式映射。
    */
+  function collectFieldsDetailed() {
+    var els = iterFillableFields();
+    return els.map(function (el, index) {
+      var tag = el.tagName.toLowerCase();
+      var type = (el.type || '').toLowerCase();
+      var label = String(getLabelText(el) || '').replace(/\s+/g, ' ').trim();
+      if (label.length > 120) label = label.slice(0, 117) + '…';
+      var item = {
+        index: index,
+        tag: tag,
+        type: type,
+        name: el.name || '',
+        id: el.id || '',
+        label: label,
+        placeholder: el.getAttribute('placeholder') || '',
+        autocomplete: el.getAttribute('autocomplete') || '',
+        currentValue: ''
+      };
+      try {
+        if (tag === 'select') {
+          item.currentValue = el.value || '';
+          item.options = Array.from(el.options).slice(0, 40).map(function (o) {
+            return { value: o.value, text: String(o.text || '').trim() };
+          });
+        } else if (type !== 'checkbox' && type !== 'radio') {
+          item.currentValue = el.value || '';
+        }
+      } catch (_) { /* ignore */ }
+      return item;
+    });
+  }
+
   function fillFromProfile(profile) {
     var filled = 0;
     var filledKeys = [];
@@ -171,6 +204,31 @@
       }
     });
 
+    return { filled: filled, filledKeys: filledKeys };
+  }
+
+  /**
+   * 按映射结果填写（AI 巡查后的 AI 填写）。
+   * mappings: { index, action, suggestedValue }[]
+   */
+  function applyMappings(mappings) {
+    var els = iterFillableFields();
+    var filled = 0;
+    var filledKeys = [];
+    var list = mappings || [];
+    list.forEach(function (m) {
+      if (!m || (m.action !== 'fill' && m.action !== 'custom_answer')) return;
+      var value = String(m.suggestedValue || '').trim();
+      if (!value) return;
+      var el = els[m.index];
+      if (!el) return;
+      if (setNativeValue(el, value)) {
+        filled += 1;
+        var k = m.profileKey || ('custom:' + m.index);
+        if (filledKeys.indexOf(k) === -1) filledKeys.push(k);
+        highlight(el);
+      }
+    });
     return { filled: filled, filledKeys: filledKeys };
   }
 
@@ -204,6 +262,16 @@
     return { ok: true, fields: fields, count: fields.length };
   }
 
+  async function handleCollect() {
+    var fields = collectFieldsDetailed();
+    return { ok: true, fields: fields, count: fields.length };
+  }
+
+  async function handleApply(message) {
+    var result = applyMappings(message.mappings || []);
+    return { ok: true, filled: result.filled, filledKeys: result.filledKeys };
+  }
+
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     if (message && message.type === 'FILL_FORM') {
       handleFill().then(sendResponse);
@@ -211,6 +279,14 @@
     }
     if (message && message.type === 'SCAN_FIELDS') {
       handleScan().then(sendResponse);
+      return true;
+    }
+    if (message && message.type === 'COLLECT_FIELDS') {
+      handleCollect().then(sendResponse);
+      return true;
+    }
+    if (message && message.type === 'APPLY_MAPPINGS') {
+      handleApply(message).then(sendResponse);
       return true;
     }
     if (message && message.type === 'PING_CONTENT') {

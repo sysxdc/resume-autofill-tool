@@ -1,5 +1,5 @@
 /**
- * 零依赖 Node 测试：匹配关键词、姓名拆分、profileValue、select 模糊匹配。
+ * 零依赖 Node 测试：匹配、模糊同义、denylist、AI merge、profile。
  * 运行：node tests/run-tests.mjs
  */
 import assert from 'node:assert/strict';
@@ -14,6 +14,7 @@ const root = path.resolve(__dirname, '..');
 
 const Match = require(path.join(root, 'shared/match.js'));
 const Profile = require(path.join(root, 'shared/profile.js'));
+const AI = require(path.join(root, 'shared/ai.js'));
 
 let passed = 0;
 let failed = 0;
@@ -81,7 +82,6 @@ test('autocomplete address-level2 → city not address', () => {
     Match.matchFieldKey('#city city', { autocomplete: 'address-level2' }),
     'city'
   );
-  // embedded token in hints (no separate options)
   assert.equal(Match.matchFieldKey('id_city address-level2'), 'city');
 });
 
@@ -120,7 +120,6 @@ test('current employer in legal / employment agreement → not company', () => {
   const legal =
     'Are you subject to any employment agreements and/or post-employment restrictions with your current employer';
   assert.equal(Match.matchFieldKey(legal), null);
-  // Real employer question should still match
   assert.equal(
     Match.matchFieldKey('Who is your current or previous employer?'),
     'company'
@@ -138,7 +137,6 @@ test('forgitlab / previously worked → not company', () => {
     null
   );
   assert.equal(Match.matchFieldKey('question_forgitlab consulted for GitLab'), null);
-  // bare org must not match inside forgitlab
   assert.equal(Match.matchFieldKey('forgitlab'), null);
   assert.equal(Match.matchFieldKey('organization'), 'company');
   assert.equal(Match.matchFieldKey('current_company'), 'company');
@@ -160,7 +158,6 @@ test('short keyword org requires word boundary', () => {
 });
 
 test('explicit city id beats bare address substring', () => {
-  // Without autocomplete, id=city should be city
   assert.equal(Match.matchFieldKey('city'), 'city');
   assert.equal(Match.matchFieldKey('candidate-location Location (City)'), 'city');
 });
@@ -242,7 +239,6 @@ test('degree select 本科 matches profile.degree', () => {
   const m = Match.matchSelectOption(opts, Profile.SAMPLE_PROFILE.degree);
   assert.ok(m);
   assert.equal(m.value, '本科');
-  // English profile value → Chinese option
   assert.equal(Match.matchSelectOption(opts, 'Bachelor').value, '本科');
   assert.equal(Match.matchSelectOption(opts, '硕士').value, '硕士');
   assert.equal(Match.matchSelectOption(opts, 'Master').value, '硕士');
@@ -284,14 +280,111 @@ test('MAX_FILLS_PER_KEY is 1 or 2', () => {
   assert.ok(Match.MAX_FILLS_PER_KEY >= 1 && Match.MAX_FILLS_PER_KEY <= 2);
 });
 
+console.log('shared/match.js fuzzy & synonyms v1.2');
+
+test('synonym: 微信 → wechat', () => {
+  assert.equal(Match.matchFieldKey('微信号'), 'wechat');
+  assert.equal(Match.matchFieldKey('wechat_id'), 'wechat');
+});
+
+test('synonym: 期望城市 → expectedCity', () => {
+  assert.equal(Match.matchFieldKey('期望城市'), 'expectedCity');
+  assert.equal(Match.matchFieldKey('preferred_location'), 'expectedCity');
+});
+
+test('synonym: 到岗 / noticePeriod', () => {
+  assert.equal(Match.matchFieldKey('到岗时间'), 'availability');
+  assert.equal(Match.matchFieldKey('notice_period'), 'noticePeriod');
+  assert.equal(Match.matchFieldKey('离职通知期'), 'noticePeriod');
+});
+
+test('synonym: 项目经历 → projectDesc', () => {
+  assert.equal(Match.matchFieldKey('项目经历'), 'projectDesc');
+  assert.equal(Match.matchFieldKey('project_description'), 'projectDesc');
+  assert.equal(Match.matchFieldKey('项目名称'), 'projectName');
+});
+
+test('synonym: 现居城市 / 户籍 / 籍贯', () => {
+  assert.equal(Match.matchFieldKey('现居城市'), 'currentCity');
+  assert.equal(Match.matchFieldKey('户籍'), 'hukou');
+  assert.equal(Match.matchFieldKey('籍贯'), 'nativePlace');
+});
+
+test('synonym: GPA / 语言 / 证书', () => {
+  assert.equal(Match.matchFieldKey('GPA'), 'gpa');
+  assert.equal(Match.matchFieldKey('语言能力'), 'languages');
+  assert.equal(Match.matchFieldKey('资质证书'), 'certificates');
+});
+
+test('Chinese 性别 matches gender; English gender EEO skipped', () => {
+  assert.equal(Match.matchFieldKey('性别'), 'gender');
+  assert.equal(Match.matchFieldKey('Gender (EEO)'), null);
+  assert.equal(Match.matchFieldKey('gender'), null);
+});
+
+test('fuzzy: levenshtein similarity helper', () => {
+  assert.equal(Match.levenshtein('kitten', 'sitting'), 3);
+  assert.ok(Match.similarity('expectedcity', 'expectedcity') === 1);
+  assert.ok(Match.similarity('weixin', 'wechat') < 0.9);
+});
+
+test('fuzzy: scored match returns confidence', () => {
+  const s = Match.matchFieldKeyScored('期望城市 Expected City');
+  assert.ok(s);
+  assert.equal(s.key, 'expectedCity');
+  assert.ok(s.confidence >= Match.FUZZY_THRESHOLD);
+});
+
+test('fuzzy: near-miss typo still maps when close enough', () => {
+  // normalized includes expectedsalary-like token with small edit distance path via includes
+  assert.equal(Match.matchFieldKey('expected_salary_cny'), 'expectedSalary');
+});
+
+test('denylist still holds after fuzzy expansion', () => {
+  const fps = [
+    'hispanic_ethnicity Are you Hispanic/Latino?',
+    'How did you hear about this job?',
+    'Are you subject to any employment agreements and/or post-employment restrictions with your current employer',
+    'Have you previously worked at or consulted for GitLab?',
+    'Are you currently or have you ever worked for Airbnb in any capacity?',
+    'race ethnicity voluntary self identify',
+    'disability status'
+  ];
+  for (const h of fps) {
+    assert.equal(Match.matchFieldKey(h), null, 'should skip: ' + h.slice(0, 40));
+  }
+});
+
+test('heuristicMapFields maps and caps', () => {
+  const fields = [
+    { index: 0, label: '邮箱', name: 'email' },
+    { index: 1, label: 'Email confirm', name: 'email2' },
+    { index: 2, label: 'Work Email', name: 'email3' },
+    { index: 3, label: 'How did you hear about us?', name: 'hear' }
+  ];
+  const mapped = Match.heuristicMapFields(fields, Profile.SAMPLE_PROFILE);
+  assert.equal(mapped.length, 4);
+  assert.equal(mapped[0].action, 'fill');
+  assert.equal(mapped[0].profileKey, 'email');
+  const emailFills = mapped.filter((m) => m.profileKey === 'email' && m.action === 'fill');
+  assert.equal(emailFills.length, Match.MAX_FILLS_PER_KEY);
+  assert.equal(mapped[3].action, 'skip');
+});
+
 console.log('shared/profile.js');
 
 test('PROFILE_FIELDS includes expanded keys', () => {
   const need = [
-    'name', 'firstName', 'lastName', 'email', 'phone', 'city', 'address',
-    'province', 'zip', 'country', 'linkedin', 'github', 'website',
-    'school', 'degree', 'major', 'gradYear', 'company', 'title', 'years',
-    'startDate', 'skills', 'summary', 'expectedSalary', 'availability', 'workAuth'
+    'name', 'firstName', 'lastName', 'englishName', 'preferredName', 'gender', 'birthday',
+    'idType', 'idNumber', 'email', 'secondaryEmail', 'phone', 'wechat', 'qq', 'emergencyContact',
+    'city', 'currentCity', 'address', 'province', 'zip', 'country', 'hukou', 'nativePlace',
+    'willingToRelocate', 'linkedin', 'github', 'website',
+    'school', 'degree', 'major', 'gradYear', 'gpa', 'eduStart', 'eduEnd', 'dualDegree',
+    'company', 'title', 'years', 'startDate', 'industry', 'department', 'jobType',
+    'leaveReason', 'achievements', 'projectName', 'projectRole', 'projectDesc',
+    'expectedSalary', 'expectedCity', 'jobTarget', 'availability', 'noticePeriod',
+    'earliestStart', 'workAuth', 'languages', 'certificates',
+    'skills', 'summary', 'referralSource', 'additionalInfo'
   ];
   need.forEach((k) => assert.ok(Profile.PROFILE_FIELDS.includes(k), 'missing ' + k));
 });
@@ -304,28 +397,127 @@ test('emptyProfile has all keys empty', () => {
 test('SAMPLE_PROFILE has Chinese demo data', () => {
   assert.ok(Profile.SAMPLE_PROFILE.name);
   assert.ok(Profile.SAMPLE_PROFILE.email.includes('@'));
+  assert.ok(Profile.SAMPLE_PROFILE.wechat);
+  assert.ok(Profile.SAMPLE_PROFILE.projectDesc);
   assert.ok(Profile.profileHasData(Profile.SAMPLE_PROFILE));
   assert.equal(Profile.profileHasData(Profile.emptyProfile()), false);
 });
 
 test('normalizeProfile drops unknown keys and trims', () => {
-  const n = Profile.normalizeProfile({ name: '  A  ', hacker: 'nope', email: 'a@b.c' });
+  const n = Profile.normalizeProfile({ name: '  A  ', hacker: 'nope', email: 'a@b.c', wechat: ' wx ' });
   assert.equal(n.name, 'A');
   assert.equal(n.email, 'a@b.c');
+  assert.equal(n.wechat, 'wx');
   assert.equal(n.hacker, undefined);
   assert.equal(n.phone, '');
 });
 
+test('profileNonEmpty omits blanks', () => {
+  const ne = Profile.profileNonEmpty({ name: '张三', email: '', wechat: 'abc' });
+  assert.equal(ne.name, '张三');
+  assert.equal(ne.wechat, 'abc');
+  assert.equal(ne.email, undefined);
+});
+
+console.log('shared/ai.js');
+
+test('normalizeAiSettings defaults', () => {
+  const s = AI.normalizeAiSettings({});
+  assert.equal(s.enabled, false);
+  assert.equal(s.apiBaseUrl, 'https://api.openai.com/v1');
+  assert.equal(s.model, 'gpt-4o-mini');
+  assert.equal(s.apiKey, '');
+  assert.equal(AI.aiConfigured(s), false);
+});
+
+test('aiConfigured requires enabled+key', () => {
+  assert.equal(AI.aiConfigured({ enabled: true, apiKey: '', model: 'x' }), false);
+  assert.equal(AI.aiConfigured({
+    enabled: true,
+    apiKey: 'sk-test',
+    apiBaseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o-mini'
+  }), true);
+});
+
+test('parseAiMappingJson strips fences', () => {
+  const arr = AI.parseAiMappingJson('```json\n[{"index":0,"action":"skip"}]\n```');
+  assert.ok(Array.isArray(arr));
+  assert.equal(arr[0].index, 0);
+});
+
+test('mergeAiMappingWithProfile: fill from profile, no invent', () => {
+  const fields = [
+    { index: 0, label: 'Email', name: 'email' },
+    { index: 1, label: 'Why do you want to join?', name: 'why' },
+    { index: 2, label: 'Fake employer years', name: 'fake' }
+  ];
+  const aiItems = [
+    { index: 0, action: 'fill', profileKey: 'email', confidence: 0.95 },
+    {
+      index: 1,
+      action: 'custom_answer',
+      value: '基于四年前端经验，希望加入贵团队持续成长。',
+      confidence: 0.8
+    },
+    { index: 2, action: 'fill', profileKey: 'notARealKey', value: 'Acme Corp', confidence: 0.9 }
+  ];
+  const merged = AI.mergeAiMappingWithProfile(
+    aiItems,
+    fields,
+    Profile.SAMPLE_PROFILE,
+    Match,
+    Profile
+  );
+  assert.equal(merged[0].action, 'fill');
+  assert.equal(merged[0].suggestedValue, Profile.SAMPLE_PROFILE.email);
+  assert.equal(merged[1].action, 'custom_answer');
+  assert.ok(merged[1].suggestedValue.includes('前端'));
+  assert.equal(merged[2].action, 'skip');
+});
+
+test('mergeAiMappingWithProfile: denylist overrides AI fill', () => {
+  const fields = [
+    { index: 0, label: 'How did you hear about this job?', name: 'source' }
+  ];
+  const aiItems = [
+    { index: 0, action: 'fill', profileKey: 'referralSource', confidence: 0.99 }
+  ];
+  const merged = AI.mergeAiMappingWithProfile(
+    aiItems,
+    fields,
+    Profile.SAMPLE_PROFILE,
+    Match,
+    Profile
+  );
+  assert.equal(merged[0].action, 'skip');
+  assert.equal(merged[0].method, 'denylist');
+});
+
+test('mergeAiMappingWithProfile: empty profile value → skip fill', () => {
+  const fields = [{ index: 0, label: '微信号', name: 'wechat' }];
+  const aiItems = [{ index: 0, action: 'fill', profileKey: 'wechat', confidence: 0.9 }];
+  const merged = AI.mergeAiMappingWithProfile(
+    aiItems,
+    fields,
+    { email: 'a@b.c' },
+    Match,
+    Profile
+  );
+  assert.equal(merged[0].action, 'skip');
+});
+
 console.log('repo integrity');
 
-test('manifest is MV3 version 1.1.1 with icons', () => {
+test('manifest is MV3 version 1.2.0 with icons', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.1.1');
+  assert.equal(manifest.version, '1.2.0');
   assert.ok(manifest.icons['16']);
   assert.ok(manifest.action.default_icon['48']);
   assert.ok(manifest.content_scripts[0].js.includes('shared/match.js'));
   assert.ok(fs.existsSync(path.join(root, 'icons/icon16.png')));
+  assert.ok(fs.existsSync(path.join(root, 'shared/ai.js')));
   assert.ok(fs.existsSync(path.join(root, 'icons/icon48.png')));
   assert.ok(fs.existsSync(path.join(root, 'icons/icon128.png')));
 });
@@ -340,7 +532,22 @@ test('demo page exists with key form fields', () => {
   assert.ok(html.includes('type="file"'));
 });
 
-// Lightweight fill simulation without Chrome / jsdom
+test('options page has AI section and new fields', () => {
+  const html = fs.readFileSync(path.join(root, 'options/options.html'), 'utf8');
+  assert.ok(html.includes('AI 设置'));
+  assert.ok(html.includes('name="wechat"'));
+  assert.ok(html.includes('name="expectedCity"'));
+  assert.ok(html.includes('name="projectDesc"'));
+  assert.ok(html.includes('选填'));
+});
+
+test('popup has AI buttons', () => {
+  const html = fs.readFileSync(path.join(root, 'popup/popup.html'), 'utf8');
+  assert.ok(html.includes('AI 巡查'));
+  assert.ok(html.includes('AI 填写'));
+  assert.ok(html.includes('一键填写'));
+});
+
 test('simulate fill: cap per key and address vs city', () => {
   const profile = Profile.SAMPLE_PROFILE;
   const fakeFields = [
@@ -351,7 +558,7 @@ test('simulate fill: cap per key and address vs city', () => {
     { hints: 'city', keyExpect: 'city' },
     { hints: 'email', keyExpect: 'email' },
     { hints: 'email_confirm', keyExpect: 'email' },
-    { hints: 'email_work', keyExpect: 'email' }, // third email should be capped
+    { hints: 'email_work', keyExpect: 'email' },
     { hints: 'job_title', keyExpect: 'title' }
   ];
   const keyCounts = {};

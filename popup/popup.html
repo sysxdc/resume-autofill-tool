@@ -28,14 +28,21 @@
 
   <section class="actions">
     <button type="button" class="btn primary" id="btn-fill">一键填写</button>
+    <button type="button" class="btn secondary" id="btn-ai-patrol">AI 巡查</button>
+    <button type="button" class="btn secondary" id="btn-ai-fill">AI 填写</button>
     <button type="button" class="btn secondary" id="btn-scan">扫描字段</button>
     <a class="btn secondary" id="link-options" href="#">编辑资料</a>
   </section>
 
   <section class="card meta-card" id="meta-card">
+    <p class="meta-line"><span>AI 状态</span><strong id="ai-status">—</strong></p>
     <p class="meta-line"><span>上次填写</span><strong id="last-fill">—</strong></p>
     <p class="meta-line"><span>扫描结果</span><strong id="last-scan">—</strong></p>
     <ul class="scan-list" id="scan-list" hidden></ul>
+    <div id="patrol-wrap" hidden>
+      <p class="meta-line"><span>AI 巡查</span><strong id="patrol-summary">—</strong></p>
+      <ul class="scan-list patrol-list" id="patrol-list"></ul>
+    </div>
   </section>
 
   <p class="status" id="status" role="status" aria-live="polite"></p>

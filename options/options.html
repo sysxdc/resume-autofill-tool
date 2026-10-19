@@ -10,7 +10,7 @@
   <div class="wrap">
     <header class="header">
       <h1>编辑简历资料</h1>
-      <p class="subtitle">资料保存在本机 <code>chrome.storage.local</code>，不会上传到任何服务器。</p>
+      <p class="subtitle">资料保存在本机 <code>chrome.storage.local</code>，不会上传到任何服务器（启用 AI 时除外，见下方说明）。</p>
     </header>
 
     <div class="toolbar">
@@ -22,24 +22,50 @@
 
     <form id="profile-form" autocomplete="off">
       <fieldset>
-        <legend>基本</legend>
+        <legend>基本 / 身份</legend>
         <div class="grid">
           <label>姓名<input type="text" name="name" placeholder="例如：张三" /></label>
           <label>名（可选覆盖）<input type="text" name="firstName" placeholder="显式优先于从姓名拆分" /></label>
           <label>姓（可选覆盖）<input type="text" name="lastName" placeholder="显式优先于从姓名拆分" /></label>
-          <label>邮箱<input type="email" name="email" placeholder="you@example.com" /></label>
-          <label>电话<input type="tel" name="phone" placeholder="手机号" /></label>
+          <label>英文名<input type="text" name="englishName" placeholder="例如：San Zhang" /></label>
+          <label>常用名 / 昵称<input type="text" name="preferredName" placeholder="希望被称呼的名字" /></label>
+          <label>性别<input type="text" name="gender" placeholder="例如：男 / 女（国内表单常用）" /></label>
+          <label>出生日期<input type="text" name="birthday" placeholder="例如：1998-05-20" /></label>
+          <label>证件类型（选填）<input type="text" name="idType" placeholder="选填，如：身份证" /></label>
+          <label>证件号码（选填）<input type="text" name="idNumber" placeholder="选填，请谨慎填写敏感信息" /></label>
         </div>
       </fieldset>
 
       <fieldset>
-        <legend>联系与链接</legend>
+        <legend>联系方式</legend>
+        <div class="grid">
+          <label>邮箱<input type="email" name="email" placeholder="you@example.com" /></label>
+          <label>备用邮箱<input type="email" name="secondaryEmail" placeholder="备用邮箱" /></label>
+          <label>电话<input type="tel" name="phone" placeholder="手机号" /></label>
+          <label>微信<input type="text" name="wechat" placeholder="微信号" /></label>
+          <label>QQ<input type="text" name="qq" placeholder="QQ 号" /></label>
+          <label class="full">紧急联系人<input type="text" name="emergencyContact" placeholder="姓名 + 电话" /></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>地址与地点</legend>
         <div class="grid">
           <label>城市<input type="text" name="city" placeholder="例如：上海" /></label>
+          <label>现居城市<input type="text" name="currentCity" placeholder="当前居住城市" /></label>
           <label class="full">详细地址<input type="text" name="address" placeholder="街道门牌等" /></label>
           <label>省/州<input type="text" name="province" placeholder="例如：上海市" /></label>
           <label>邮编<input type="text" name="zip" placeholder="邮政编码" /></label>
           <label>国家<input type="text" name="country" placeholder="例如：中国" /></label>
+          <label>户籍<input type="text" name="hukou" placeholder="户口所在地" /></label>
+          <label>籍贯<input type="text" name="nativePlace" placeholder="籍贯" /></label>
+          <label class="full">是否愿意异地 / 调动<input type="text" name="willingToRelocate" placeholder="例如：可接受长三角出差" /></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>链接</legend>
+        <div class="grid">
           <label class="full">LinkedIn<input type="url" name="linkedin" placeholder="https://www.linkedin.com/in/…" /></label>
           <label class="full">GitHub<input type="url" name="github" placeholder="https://github.com/…" /></label>
           <label class="full">个人网站 / 作品集<input type="url" name="website" placeholder="https://…" /></label>
@@ -53,16 +79,38 @@
           <label>学历<input type="text" name="degree" placeholder="本科 / 硕士 / 博士…" /></label>
           <label>专业<input type="text" name="major" placeholder="所学专业" /></label>
           <label>毕业年份<input type="text" name="gradYear" placeholder="例如：2020" /></label>
+          <label>GPA<input type="text" name="gpa" placeholder="例如：3.6/4.0" /></label>
+          <label>入学时间<input type="text" name="eduStart" placeholder="例如：2016-09" /></label>
+          <label>毕业/结束时间<input type="text" name="eduEnd" placeholder="例如：2020-06" /></label>
+          <label>双学位 / 辅修<input type="text" name="dualDegree" placeholder="选填" /></label>
         </div>
       </fieldset>
 
       <fieldset>
-        <legend>工作</legend>
+        <legend>工作经历</legend>
         <div class="grid">
           <label>公司<input type="text" name="company" placeholder="当前或最近公司" /></label>
           <label>职位<input type="text" name="title" placeholder="职位名称" /></label>
           <label>工作年限<input type="text" name="years" placeholder="例如：3" /></label>
-          <label>开始日期（可选）<input type="text" name="startDate" placeholder="例如：2020-07" /></label>
+          <label>开始日期<input type="text" name="startDate" placeholder="例如：2020-07" /></label>
+          <label>行业<input type="text" name="industry" placeholder="例如：互联网 / 软件" /></label>
+          <label>部门<input type="text" name="department" placeholder="所在部门" /></label>
+          <label>工作性质<input type="text" name="jobType" placeholder="全职 / 兼职 / 实习" /></label>
+          <label>离职原因<input type="text" name="leaveReason" placeholder="选填" /></label>
+          <label class="full">工作业绩 / 成就
+            <textarea name="achievements" rows="3" placeholder="主要成就、量化结果"></textarea>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>项目经历</legend>
+        <div class="grid">
+          <label>项目名称<input type="text" name="projectName" placeholder="代表性项目" /></label>
+          <label>项目角色<input type="text" name="projectRole" placeholder="例如：前端负责人" /></label>
+          <label class="full">项目描述
+            <textarea name="projectDesc" rows="3" placeholder="项目背景、职责与成果"></textarea>
+          </label>
         </div>
       </fieldset>
 
@@ -70,8 +118,20 @@
         <legend>求职偏好</legend>
         <div class="grid">
           <label>期望薪资<input type="text" name="expectedSalary" placeholder="例如：25K-35K" /></label>
+          <label>期望城市<input type="text" name="expectedCity" placeholder="例如：上海 / 杭州" /></label>
+          <label>求职意向 / 目标职位<input type="text" name="jobTarget" placeholder="例如：高级前端" /></label>
           <label>到岗时间<input type="text" name="availability" placeholder="例如：两周内到岗" /></label>
+          <label>通知期<input type="text" name="noticePeriod" placeholder="例如：两周" /></label>
+          <label>最早到岗<input type="text" name="earliestStart" placeholder="例如：两周内" /></label>
           <label class="full">工作许可 / 签证<input type="text" name="workAuth" placeholder="例如：中国大陆公民，可合法全职工作" /></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>语言与证书</legend>
+        <div class="grid">
+          <label class="full">语言能力<input type="text" name="languages" placeholder="例如：普通话、英语（流利）" /></label>
+          <label class="full">证书 / 资质<input type="text" name="certificates" placeholder="例如：CET-6、专业资格证" /></label>
         </div>
       </fieldset>
 
@@ -84,6 +144,10 @@
           <label class="full">自我介绍
             <textarea name="summary" rows="5" placeholder="简短自我评价或求职信草稿"></textarea>
           </label>
+          <label>招聘/投递渠道<input type="text" name="referralSource" placeholder="例如：官网 / 内推（不会自动填「如何得知」EEO 题）" /></label>
+          <label class="full">补充信息
+            <textarea name="additionalInfo" rows="2" placeholder="其他想告知招聘方的信息"></textarea>
+          </label>
         </div>
       </fieldset>
 
@@ -93,8 +157,39 @@
         <span class="save-status" id="save-status" role="status" aria-live="polite"></span>
       </div>
     </form>
+
+    <form id="ai-form" autocomplete="off" class="ai-form">
+      <fieldset>
+        <legend>AI 设置</legend>
+        <p class="ai-note">
+          AI 巡查 / 填写为可选功能。默认使用本地模糊匹配，无需联网。
+          启用后，仅在你点击「AI 巡查」或「AI 填写」时，将<strong>非空简历字段</strong>与当前页表单标签发送至你配置的 API；
+          API Key 仅保存在本机，扩展日志不会打印密钥。
+        </p>
+        <div class="grid">
+          <label class="full check-row">
+            <input type="checkbox" name="enabled" id="ai-enabled" />
+            <span>启用 AI（OpenAI 兼容接口）</span>
+          </label>
+          <label class="full">API Base URL
+            <input type="url" name="apiBaseUrl" id="ai-base" placeholder="https://api.openai.com/v1" />
+          </label>
+          <label class="full">API Key
+            <input type="password" name="apiKey" id="ai-key" placeholder="sk-…（仅本地存储）" />
+          </label>
+          <label>模型名称
+            <input type="text" name="model" id="ai-model" placeholder="gpt-4o-mini" />
+          </label>
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn primary">保存 AI 设置</button>
+          <span class="save-status" id="ai-save-status" role="status" aria-live="polite"></span>
+        </div>
+      </fieldset>
+    </form>
   </div>
   <script src="../shared/profile.js"></script>
+  <script src="../shared/ai.js"></script>
   <script src="options.js"></script>
 </body>
 </html>
