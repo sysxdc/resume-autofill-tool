@@ -276,6 +276,72 @@ test('Yes/No select rejects long free-text workAuth', () => {
   assert.equal(Match.matchSelectOption(opts, 'No').value, '0');
 });
 
+test('Yes/No select rejects paragraph custom_answer', () => {
+  const opts = [
+    { value: '', text: 'Please select' },
+    { value: 'Yes', text: 'Yes' },
+    { value: 'No', text: 'No' }
+  ];
+  const paragraph =
+    'I have strong scripting and automation experience with Python and shell, ' +
+    'and I enjoy building reliable CI pipelines for large engineering orgs.';
+  assert.equal(Match.matchSelectOption(opts, paragraph), null);
+  assert.equal(Match.normalizeToYesNo(paragraph), null);
+  assert.equal(Match.matchSelectOption(opts, '是').value, 'Yes');
+  assert.equal(Match.matchSelectOption(opts, '否').value, 'No');
+  assert.equal(Match.matchSelectOption(opts, 'true').value, 'Yes');
+  assert.equal(Match.matchSelectOption(opts, 'false').value, 'No');
+});
+
+test('region select rejects city when options are US/Canada/Elsewhere', () => {
+  const opts = [
+    { value: '', text: 'Select...' },
+    { value: 'us', text: 'United States' },
+    { value: 'ca', text: 'Canada' },
+    { value: 'elsewhere', text: 'Located Elsewhere' }
+  ];
+  assert.ok(Match.isRegionCountryEnumSelect(opts));
+  assert.ok(Match.isBasedRegionQuestion('Where are you currently based?'));
+  assert.equal(Match.matchSelectOption(opts, '上海'), null);
+  assert.equal(Match.matchSelectOption(opts, 'Shanghai'), null);
+  assert.equal(Match.matchSelectOption(opts, Profile.SAMPLE_PROFILE.city), null);
+  assert.equal(Match.matchSelectOption(opts, 'Canada').value, 'ca');
+  assert.equal(Match.matchSelectOption(opts, 'United States').value, 'us');
+
+  const fields = [
+    {
+      index: 0,
+      label: 'Where are you currently based?',
+      name: 'region',
+      tag: 'select',
+      options: opts
+    }
+  ];
+  const mapped = Match.heuristicMapFields(fields, {
+    ...Profile.SAMPLE_PROFILE,
+    city: '上海',
+    currentCity: '上海'
+  });
+  assert.equal(mapped[0].action, 'skip', 'city must not fill region enum');
+});
+
+test('visa sponsorship sentence normalizes to No when options include No', () => {
+  const opts = [
+    { value: '', text: 'Select...' },
+    { value: 'Yes', text: 'Yes' },
+    { value: 'No', text: 'No' }
+  ];
+  const visaNo = 'No I am a citizen and do not need visa sponsorship';
+  assert.equal(Match.normalizeToYesNo(visaNo), 'No');
+  assert.equal(Match.matchSelectOption(opts, visaNo).value, 'No');
+  assert.equal(
+    Match.matchSelectOption(opts, 'No, I do not require sponsorship.').value,
+    'No'
+  );
+  assert.equal(Match.normalizeToYesNo('Yes, I will need visa sponsorship'), 'Yes');
+  assert.equal(Match.matchSelectOption(opts, 'Yes, I will need visa sponsorship').value, 'Yes');
+});
+
 test('MAX_FILLS_PER_KEY is 1 or 2', () => {
   assert.ok(Match.MAX_FILLS_PER_KEY >= 1 && Match.MAX_FILLS_PER_KEY <= 2);
 });
@@ -507,12 +573,98 @@ test('mergeAiMappingWithProfile: empty profile value → skip fill', () => {
   assert.equal(merged[0].action, 'skip');
 });
 
+test('mergeAiMappingWithProfile: yes/no select rejects paragraph custom_answer', () => {
+  const fields = [
+    {
+      index: 0,
+      label: 'Will you now or in the future require visa sponsorship?',
+      name: 'visa',
+      tag: 'select',
+      options: [
+        { value: '', text: 'Select...' },
+        { value: 'Yes', text: 'Yes' },
+        { value: 'No', text: 'No' }
+      ]
+    },
+    {
+      index: 1,
+      label: 'Do you have scripting experience?',
+      name: 'scripting',
+      tag: 'select',
+      options: [
+        { value: 'Yes', text: 'Yes' },
+        { value: 'No', text: 'No' }
+      ]
+    }
+  ];
+  const aiItems = [
+    {
+      index: 0,
+      action: 'custom_answer',
+      value: 'No I am a citizen and do not need visa sponsorship',
+      confidence: 0.9
+    },
+    {
+      index: 1,
+      action: 'custom_answer',
+      value:
+        'I have written extensive automation scripts in Python and Bash across multiple production systems over four years.',
+      confidence: 0.85
+    }
+  ];
+  const merged = AI.mergeAiMappingWithProfile(
+    aiItems,
+    fields,
+    Profile.SAMPLE_PROFILE,
+    Match,
+    Profile
+  );
+  assert.equal(merged[0].action, 'fill');
+  assert.equal(merged[0].suggestedValue, 'No');
+  assert.equal(merged[1].action, 'skip');
+});
+
+test('mergeAiMappingWithProfile: region select rejects city fill', () => {
+  const fields = [
+    {
+      index: 0,
+      label: 'Where are you currently based?',
+      name: 'based',
+      tag: 'select',
+      options: [
+        { value: 'us', text: 'United States' },
+        { value: 'ca', text: 'Canada' },
+        { value: 'elsewhere', text: 'Located Elsewhere' }
+      ]
+    }
+  ];
+  const aiItems = [
+    { index: 0, action: 'fill', profileKey: 'city', confidence: 0.95 }
+  ];
+  const merged = AI.mergeAiMappingWithProfile(
+    aiItems,
+    fields,
+    { ...Profile.SAMPLE_PROFILE, city: '上海', currentCity: '上海' },
+    Match,
+    Profile
+  );
+  assert.equal(merged[0].action, 'skip');
+  assert.equal(merged[0].suggestedValue, '');
+});
+
+test('buildSystemPrompt mentions select option matching', () => {
+  const p = AI.buildSystemPrompt();
+  assert.ok(p.includes('SELECT') || p.includes('select'));
+  assert.ok(/Yes\/No|Yes\/No/.test(p) || p.includes('Yes/No'));
+  assert.ok(p.includes('skip'));
+});
+
 console.log('repo integrity');
 
-test('manifest is MV3 version 1.2.0 with icons', () => {
+test('manifest is MV3 version 1.2.1 with icons', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.2.0');
+  assert.equal(manifest.version, '1.2.1');
   assert.ok(manifest.icons['16']);
   assert.ok(manifest.action.default_icon['48']);
   assert.ok(manifest.content_scripts[0].js.includes('shared/match.js'));

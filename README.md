@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.2.0**
+当前版本：**1.2.1**
 
 ## 功能概览
 
@@ -67,7 +67,7 @@ API 调用在 **background service worker** 中完成（避免页面 CORS），�
 - API Key 仅本地存储，代码路径避免 `console.log` 密钥。
 - **只有**你点击 AI 巡查/填写且已启用时，才会把 **非空** 简历字段 + 表单标签发往你配置的 Base URL。
 - 未启用 AI 时行为与 1.1.x 一样，不发起外网请求（扩展自身）。
-- Prompt 约束：不编造雇主经历；跳过 EEO/种族/残疾等；Yes/No 仅在资料能明确支持时回答。
+- Prompt 约束：不编造雇主经历；跳过 EEO/种族/残疾等；select 只能选 options 中的项；Yes/No 仅返回 Yes/No（长句归一或 skip）。
 
 ## 如何安装（加载未打包扩展）
 
@@ -102,7 +102,7 @@ node tests/run-tests.mjs
 
 ```text
 resume-autofill-tool/
-├── manifest.json                 # MV3，version 1.2.0
+├── manifest.json                 # MV3，version 1.2.1
 ├── shared/
 │   ├── profile.js                # 字段列表 / 示例 / normalize
 │   ├── match.js                  # 关键词、模糊评分、denylist
@@ -131,6 +131,12 @@ resume-autofill-tool/
 - 证件号等敏感字段为选填；公共电脑请勿保存。
 
 ## Changelog
+
+### 1.2.1
+- **Select 安全填写**：填写 `<select>` 前必须 `matchSelectOption`；无匹配则跳过，禁止把城市名/长段落贴进下拉框。
+- **Yes/No 归一**：`yes/是/true`→Yes、`no/否/false`→No；签证句「No I am citizen…」映射为 No；无法判断则 skip。
+- **地区枚举**：`Where are you currently based?`（US/Canada/Elsewhere）在城市不在 options 时 skip，启发式不再 city→region 硬填。
+- 加强 AI system prompt；新增 Node 测试覆盖上述场景。
 
 ### 1.2.0
 - **拓展简历字段**（身份、联系、地点、教育/工作附加、项目、求职偏好、语言证书等）。

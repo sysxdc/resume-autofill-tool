@@ -2,7 +2,7 @@
  * 共享字段匹配逻辑：关键词、同义、模糊评分、姓名拆分、profile 取值、select 匹配。
  * 浏览器挂到 ResumeAutofillMatch；Node 通过 module.exports 引入。
  *
- * v1.2.0: 拓展字段同义、Levenshtein/token 模糊匹配；保留 v1.1.1 denylist / autocomplete 优先。
+ * v1.2.1: select 仅匹配 option；Yes/No 归一；地区枚举禁止城市硬填。\n * v1.2.0: 拓展字段同义、Levenshtein/token 模糊匹配；保留 v1.1.1 denylist / autocomplete 优先。
  */
 (function (root, factory) {
   var api = factory();
@@ -326,6 +326,9 @@
   var YES_NO_RE = /^(yes|no|y|n|true|false|是|否|有|无|可以|不可以)$/i;
   var YES_NO_OPTION_RE = /^(yes|no|y|n|是|否|有|无|prefer not to say|prefer not to answer|decline to self[- ]?identify|不愿透露|不想说|不方便透露)$/i;
 
+  /** 地区/国家枚举常见选项（不含具体城市名时，禁止把 city 填进 based/region select） */
+  var REGION_ENUM_OPTION_RE = /^(united\s*states|usa|u\.s\.a?\.?|us|canada|ca|united\s*kingdom|uk|great\s*britain|australia|au|located\s*elsewhere|elsewhere|other|outside|rest\s*of\s*(the\s*)?world|欧洲|亚洲|北美|其他|其他地区|其他国家)$/i;
+
   function normalize(str) {
     return String(str || '')
       .toLowerCase()
@@ -639,7 +642,35 @@
       }
       value = profileValue(profile, key);
       action = value ? 'fill' : 'skip';
-      if (value) keyCounts[key] = count + 1;
+      var label = f.label || f.placeholder || f.name || f.id || '';
+      var opts = f.options || null;
+
+      // 地区枚举 select（US/Canada/Elsewhere）：禁止用城市名强行填写
+      if (action === 'fill' && opts && opts.length) {
+        if ((key === 'city' || key === 'currentCity' || key === 'province' || key === 'country') &&
+            (isRegionCountryEnumSelect(opts) || isBasedRegionQuestion(label))) {
+          if (!matchSelectOption(opts, value)) {
+            action = 'skip';
+            value = '';
+          }
+        } else {
+          // 任意带 options 的字段：填前必须能匹配 option
+          var resolved = resolveSelectFillValue(opts, value);
+          if (!resolved) {
+            action = 'skip';
+            value = '';
+          } else {
+            value = resolved;
+          }
+        }
+      } else if (action === 'fill' && isBasedRegionQuestion(label) &&
+                 (key === 'city' || key === 'currentCity')) {
+        // 无 options 时：based 问题不要用城市启发式硬填
+        action = 'skip';
+        value = '';
+      }
+
+      if (value && action === 'fill') keyCounts[key] = count + 1;
       out.push({
         index: typeof f.index === 'number' ? f.index : i,
         profileKey: key,
@@ -647,7 +678,7 @@
         confidence: conf,
         suggestedValue: value || '',
         method: scored.method,
-        label: f.label || f.placeholder || f.name || f.id || ''
+        label: label
       });
     }
     return out;
@@ -743,7 +774,10 @@
     var t = String(o.text || '').trim();
     var v = String(o.value || '').trim();
     if (!t && !v) return true;
-    if (/^(please\s*select|select|选择|请选择|—+|-+|\.+)$/i.test(t)) return true;
+    // Select... / Please select / — 等占位项
+    if (/^(please\s*select|select|选择|请选择)\b/i.test(t)) return true;
+    if (/^(—+|-+|\.+)\$/i.test(t)) return true;
+    if (!v && /^(please\s*select|select|选择|请选择)/i.test(t)) return true;
     return false;
   }
 
@@ -765,10 +799,83 @@
   }
 
   function valueClearlyYesNo(value) {
+    return normalizeToYesNo(value) != null;
+  }
+
+  /**
+   * 把自由文本归一成 Yes / No（匹配 option 文案），无法判断则 null。
+   * 支持：yes/是/true、no/否/false；句首 Yes/No；签证/赞助意图（No I am citizen…）。
+   * 长段落且无明确 Yes/No 意图 → null（绝不把段落贴进 select）。
+   */
+  function normalizeToYesNo(value) {
     var raw = String(value || '').trim();
-    if (!raw) return false;
-    if (YES_NO_RE.test(raw)) return true;
-    if (/^(yes[,.]?\s|no[,.]?\s)/i.test(raw) && raw.length <= 24) return true;
+    if (!raw) return null;
+
+    if (YES_NO_RE.test(raw)) {
+      if (/^(yes|y|true|是|有|可以)$/i.test(raw)) return 'Yes';
+      return 'No';
+    }
+
+    // 句首 Yes / No（含 "No I am citizen…" / "Yes, I need sponsorship"）
+    if (/^(yes|y)\b/i.test(raw)) return 'Yes';
+    if (/^(no|n)\b/i.test(raw)) return 'No';
+    if (/^(是|有|可以)[，,、\s]/.test(raw)) return 'Yes';
+    if (/^(否|无|不可以)[，,、\s]/.test(raw)) return 'No';
+
+    var lower = raw.toLowerCase();
+    // 签证/赞助意图
+    if (/\b(do\s*not|don't|dont|no)\b.{0,40}\b(need|require|request)\b.{0,40}\b(sponsor|sponsorship|visa)\b/i.test(raw) ||
+        /\b(no)\b.{0,20}\b(sponsor|sponsorship)\b/i.test(raw) ||
+        /\b(citizen|permanent\s*resident|do\s*not\s*need\s*(a\s*)?visa)\b/i.test(raw) &&
+          /\b(no|not|don't|do\s*not)\b/i.test(raw)) {
+      return 'No';
+    }
+    if (/\b(need|require|request)\b.{0,40}\b(sponsor|sponsorship|visa)\b/i.test(raw) &&
+        !/\b(do\s*not|don't|dont|no)\b/i.test(raw.slice(0, Math.min(48, raw.length)))) {
+      return 'Yes';
+    }
+    if (/不需要.{0,8}(签证|赞助)|无需.{0,8}(签证|赞助)|不需要担保/.test(raw)) return 'No';
+    if (/需要.{0,8}(签证|赞助|担保)/.test(raw) && !/不需要/.test(raw)) return 'Yes';
+
+    // 中等长度且整句像 yes/no 短语
+    if (raw.length <= 24 && /^(yes|no)\b/i.test(raw)) {
+      return /^(yes)\b/i.test(raw) ? 'Yes' : 'No';
+    }
+
+    // 长段落无明确意图 → 跳过
+    return null;
+  }
+
+  /**
+   * 选项是否像「国家/大区」枚举（US / Canada / Located Elsewhere），而非城市列表。
+   */
+  function isRegionCountryEnumSelect(options) {
+    if (!options || !options.length) return false;
+    var meaningful = 0;
+    var regionish = 0;
+    var i, o, t;
+    for (i = 0; i < options.length; i++) {
+      o = options[i];
+      if (optionLooksEmpty(o)) continue;
+      meaningful += 1;
+      t = String(o.text || o.value || '').trim();
+      if (REGION_ENUM_OPTION_RE.test(t) ||
+          /\b(united\s*states|canada|located\s*elsewhere|elsewhere|other\s*country|rest\s*of\s*world)\b/i.test(t)) {
+        regionish += 1;
+      }
+    }
+    return meaningful >= 2 && regionish >= 2 && regionish >= Math.ceil(meaningful * 0.6);
+  }
+
+  /**
+   * 标签是否像「当前所在地区 / based」类问题（易被误映射到 city）。
+   */
+  function isBasedRegionQuestion(label) {
+    var s = String(label || '');
+    if (/where\s+are\s+you\s+(currently\s+)?based/i.test(s)) return true;
+    if (/currently\s+based/i.test(s)) return true;
+    if (/which\s+(region|country|area)\s+(are\s+you|do\s+you)/i.test(s)) return true;
+    if (/所在(地区|区域|国家|大区)/.test(s) && !/城市/.test(s)) return true;
     return false;
   }
 
@@ -789,6 +896,8 @@
     for (c = 0; c < candidates.length; c++) {
       lower = String(candidates[c] || '').trim().toLowerCase();
       if (!lower) continue;
+      // 禁止用很长的自由文本去做 includes 子串匹配（避免段落误命中短 option）
+      if (lower.length > 48) continue;
       for (i = 0; i < options.length; i++) {
         o = options[i];
         ot = String(o.text || '').toLowerCase().trim();
@@ -801,7 +910,9 @@
       }
     }
     for (c = 0; c < candidates.length; c++) {
-      norm = normalize(candidates[c]);
+      var cand = String(candidates[c] || '').trim();
+      if (cand.length > 48) continue;
+      norm = normalize(cand);
       if (!norm) continue;
       for (i = 0; i < options.length; i++) {
         o = options[i];
@@ -812,23 +923,47 @@
     return null;
   }
 
+  /**
+   * 仅当 value 与某 option 的 text/value 明确匹配时返回该 option；否则 null。
+   * Yes/No 选项集会先 normalizeToYesNo，再匹配；无法归一则跳过（永不贴段落）。
+   */
   function matchSelectOption(options, value) {
     if (!options || !options.length) return null;
     var raw = String(value || '').trim();
     if (!raw) return null;
 
+    var candidates = [];
     if (isYesNoOnlySelect(options)) {
-      if (!valueClearlyYesNo(raw)) return null;
-    }
-
-    var candidates = [raw];
-    var degreeExtra = expandDegreeSynonyms(raw);
-    var i;
-    for (i = 0; i < degreeExtra.length; i++) {
-      if (candidates.indexOf(degreeExtra[i]) === -1) candidates.push(degreeExtra[i]);
+      var yn = normalizeToYesNo(raw);
+      if (!yn) return null;
+      candidates = [yn, yn.toLowerCase()];
+      if (yn === 'Yes') candidates.push('是', '有', '可以', 'true', 'Y', 'y', '1');
+      if (yn === 'No') candidates.push('否', '无', '不可以', 'false', 'N', 'n', '0');
+    } else {
+      candidates = [raw];
+      var degreeExtra = expandDegreeSynonyms(raw);
+      var i;
+      for (i = 0; i < degreeExtra.length; i++) {
+        if (candidates.indexOf(degreeExtra[i]) === -1) candidates.push(degreeExtra[i]);
+      }
     }
 
     return matchAgainstCandidates(options, candidates);
+  }
+
+  /**
+   * 在填写前校验：有 options 时必须 matchSelectOption 成功。
+   * 返回应用的值（通常是 option.text 或归一后的 Yes/No），失败返回 ''。
+   */
+  function resolveSelectFillValue(options, value) {
+    if (!options || !options.length) return String(value || '').trim();
+    var matched = matchSelectOption(options, value);
+    if (!matched) return '';
+    var t = String(matched.text || '').trim();
+    var v = String(matched.value || '').trim();
+    // 优先可读 text；空 text 则用 value
+    if (t && !optionLooksEmpty({ text: t, value: v })) return t;
+    return v || t;
   }
 
   return {
@@ -848,7 +983,12 @@
     splitName: splitName,
     profileValue: profileValue,
     matchSelectOption: matchSelectOption,
+    resolveSelectFillValue: resolveSelectFillValue,
     isYesNoOnlySelect: isYesNoOnlySelect,
+    normalizeToYesNo: normalizeToYesNo,
+    valueClearlyYesNo: valueClearlyYesNo,
+    isRegionCountryEnumSelect: isRegionCountryEnumSelect,
+    isBasedRegionQuestion: isBasedRegionQuestion,
     expandDegreeSynonyms: expandDegreeSynonyms,
     isSkipContext: function (hints) {
       var raw = String(hints || '');
