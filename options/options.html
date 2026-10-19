@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>编辑简历资料 — 简历填写工具</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <div class="wrap">
+    <header class="header">
+      <h1>编辑简历资料</h1>
+      <p class="subtitle">资料保存在本机 <code>chrome.storage.local</code>，不会上传到任何服务器。</p>
+    </header>
+
+    <form id="profile-form" autocomplete="off">
+      <fieldset>
+        <legend>基本信息</legend>
+        <div class="grid">
+          <label>姓名<input type="text" name="name" placeholder="例如：张三" /></label>
+          <label>邮箱<input type="email" name="email" placeholder="you@example.com" /></label>
+          <label>电话<input type="tel" name="phone" placeholder="手机号" /></label>
+          <label>城市<input type="text" name="city" placeholder="例如：上海" /></label>
+          <label class="full">LinkedIn<input type="url" name="linkedin" placeholder="https://www.linkedin.com/in/…" /></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>教育背景</legend>
+        <div class="grid">
+          <label>学校<input type="text" name="school" placeholder="毕业院校" /></label>
+          <label>学历<input type="text" name="degree" placeholder="本科 / 硕士 / 博士…" /></label>
+          <label class="full">专业<input type="text" name="major" placeholder="所学专业" /></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>工作经历</legend>
+        <div class="grid">
+          <label>公司<input type="text" name="company" placeholder="当前或最近公司" /></label>
+          <label>职位<input type="text" name="title" placeholder="职位名称" /></label>
+          <label>工作年限<input type="text" name="years" placeholder="例如：3" /></label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>其他</legend>
+        <div class="grid">
+          <label class="full">技能
+            <textarea name="skills" rows="2" placeholder="用逗号或换行分隔，例如：JavaScript, Python, 沟通协作"></textarea>
+          </label>
+          <label class="full">自我介绍
+            <textarea name="summary" rows="5" placeholder="简短自我评价或求职信草稿"></textarea>
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="form-actions">
+        <button type="submit" class="btn primary">保存资料</button>
+        <button type="button" class="btn ghost" id="btn-clear">清空</button>
+        <span class="save-status" id="save-status" role="status" aria-live="polite"></span>
+      </div>
+    </form>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

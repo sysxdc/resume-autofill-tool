@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "简历填写工具",
+  "version": "1.0.0",
+  "description": "本地存储简历资料，一键自动填写求职/简历表单（类似 Simplify Copilot、Teal 风格）。数据仅保存在本机，提交前由您确认。",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background/service-worker.js"
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "简历填写工具"
+  },
+  "options_page": "options/options.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/autofill.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
