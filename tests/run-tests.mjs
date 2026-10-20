@@ -346,6 +346,46 @@ test('MAX_FILLS_PER_KEY is 1 or 2', () => {
   assert.ok(Match.MAX_FILLS_PER_KEY >= 1 && Match.MAX_FILLS_PER_KEY <= 2);
 });
 
+test('visibleLabelText strips select options so degree matches', () => {
+  // Minimal DOM mock: <label>学历 / Degree <select><option>...</option></select></label>
+  function text(v) {
+    return { nodeType: 3, nodeValue: v };
+  }
+  function el(tag, kids) {
+    return { nodeType: 1, tagName: tag, childNodes: kids || [] };
+  }
+  const label = el('LABEL', [
+    text('学历 / Degree '),
+    el('SELECT', [
+      el('OPTION', [text('高中 / High School')]),
+      el('OPTION', [text('本科 / Bachelor')])
+    ])
+  ]);
+  const visible = Match.visibleLabelText(label);
+  assert.ok(!/High School/i.test(visible), 'must not include option text');
+  assert.ok(/学历/.test(visible) || /Degree/i.test(visible), 'must keep label text');
+  assert.equal(Match.matchFieldKey(visible), 'degree');
+
+  const polluted = '学历 / Degree 高中 / High School 本科 / Bachelor';
+  assert.equal(Match.matchFieldKey(polluted), 'school', 'polluted text wrongly matches school');
+  assert.notEqual(Match.matchFieldKey(polluted), 'degree');
+});
+
+test('visibleLabelText null-safe and skips form controls', () => {
+  assert.equal(Match.visibleLabelText(null), '');
+  assert.equal(Match.visibleLabelText(undefined), '');
+  const withInput = {
+    nodeType: 1,
+    tagName: 'LABEL',
+    childNodes: [
+      { nodeType: 3, nodeValue: '  姓名  ' },
+      { nodeType: 1, tagName: 'INPUT', childNodes: [] },
+      { nodeType: 3, nodeValue: ' 备注' }
+    ]
+  };
+  assert.equal(Match.visibleLabelText(withInput), '姓名 备注');
+});
+
 console.log('shared/match.js fuzzy & synonyms v1.2');
 
 test('synonym: 微信 → wechat', () => {
@@ -661,10 +701,10 @@ test('buildSystemPrompt mentions select option matching', () => {
 
 console.log('repo integrity');
 
-test('manifest is MV3 version 1.2.1 with icons', () => {
+test('manifest is MV3 version 1.2.2 with icons', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.2.1');
+  assert.equal(manifest.version, '1.2.2');
   assert.ok(manifest.icons['16']);
   assert.ok(manifest.action.default_icon['48']);
   assert.ok(manifest.content_scripts[0].js.includes('shared/match.js'));
@@ -744,6 +784,15 @@ test('simulate Greenhouse FP fields stay unmatched', () => {
   for (const h of fps) {
     assert.equal(Match.matchFieldKey(h), null, 'should skip: ' + h.slice(0, 40));
   }
+});
+
+console.log('v1.2.2 source guards');
+
+test('autofill.js uses visibleLabelText; no parentLabel.textContent', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(src.includes('visibleLabelText'), 'must call visibleLabelText');
+  assert.ok(!src.includes('parentLabel.textContent'), 'must not use parentLabel.textContent');
+  assert.ok(src.includes('fieldLooksFilled'), 'must implement skip-if-filled');
 });
 
 console.log('');

@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.2.1**
+当前版本：**1.2.2**
 
 ## 功能概览
 
@@ -102,7 +102,7 @@ node tests/run-tests.mjs
 
 ```text
 resume-autofill-tool/
-├── manifest.json                 # MV3，version 1.2.1
+├── manifest.json                 # MV3，version 1.2.2
 ├── shared/
 │   ├── profile.js                # 字段列表 / 示例 / normalize
 │   ├── match.js                  # 关键词、模糊评分、denylist
@@ -131,6 +131,11 @@ resume-autofill-tool/
 - 证件号等敏感字段为选填；公共电脑请勿保存。
 
 ## Changelog
+
+### 1.2.2
+- **visibleLabelText**：标签文本只取可见文案，跳过 select/option/input 等控件子树，修复「学历 / Degree」被 option 里 `High School` 的 `school` 误匹配为学校字段。
+- **skip-if-filled（只填空）**：`fillFromProfile` / `applyMappings` 在写入前若字段已有有效值则跳过，不覆盖已填内容。
+- 新增 Node 测试（visibleLabelText、source guard、manifest 1.2.2）；测试套件 67+ passed。
 
 ### 1.2.1
 - **Select 安全填写**：填写 `<select>` 前必须 `matchSelectOption`；无匹配则跳过，禁止把城市名/长段落贴进下拉框。

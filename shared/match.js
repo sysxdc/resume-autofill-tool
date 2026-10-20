@@ -1,7 +1,8 @@
 /**
- * 共享字段匹配逻辑：关键词、同义、模糊评分、姓名拆分、profile 取值、select 匹配。
+ * 共享字段匹配逻辑：关键词、同义、模糊评分、姓名拆分、profile 取值、select 匹配、label 可见文本。
  * 浏览器挂到 ResumeAutofillMatch；Node 通过 module.exports 引入。
  *
+ * v1.2.2: visibleLabelText — 跳过 select/option/input 等控件子树，避免 option 文案污染标签匹配。
  * v1.2.1: select 仅匹配 option；Yes/No 归一；地区枚举禁止城市硬填。
  * v1.2.0: 拓展字段同义、Levenshtein/token 模糊匹配；保留 v1.1.1 denylist / autocomplete 优先。
  */
@@ -967,6 +968,40 @@
     return v || t;
   }
 
+
+  /**
+   * 提取 label 可见文本：递归 childNodes，跳过表单控件子树（select/option/input/textarea/button/datalist），
+   * 避免 option 文案（如 "High School"）污染标签匹配。兼容真实 DOM 与最小 Node mock。
+   * @param {{nodeType?:number,nodeValue?:string,tagName?:string,childNodes?:*}|null|undefined} labelEl
+   * @returns {string}
+   */
+  function visibleLabelText(labelEl) {
+    if (!labelEl) return '';
+    var SKIP_TAGS = {
+      SELECT: 1, OPTION: 1, INPUT: 1, TEXTAREA: 1, BUTTON: 1, DATALIST: 1
+    };
+    function walk(node) {
+      if (!node) return '';
+      var t = node.nodeType;
+      if (t === 3) {
+        return node.nodeValue != null ? String(node.nodeValue) : '';
+      }
+      if (t === 1) {
+        var tag = node.tagName ? String(node.tagName).toUpperCase() : '';
+        if (SKIP_TAGS[tag]) return '';
+        var out = '';
+        var kids = node.childNodes || [];
+        var i;
+        for (i = 0; i < kids.length; i++) {
+          out += walk(kids[i]);
+        }
+        return out;
+      }
+      return '';
+    }
+    return walk(labelEl).replace(/\s+/g, ' ').trim();
+  }
+
   return {
     FIELD_KEYWORDS: FIELD_KEYWORDS,
     FIELD_ORDER: FIELD_ORDER,
@@ -991,6 +1026,7 @@
     isRegionCountryEnumSelect: isRegionCountryEnumSelect,
     isBasedRegionQuestion: isBasedRegionQuestion,
     expandDegreeSynonyms: expandDegreeSynonyms,
+    visibleLabelText: visibleLabelText,
     isSkipContext: function (hints) {
       var raw = String(hints || '');
       return isSkipContext(raw.toLowerCase(), normalize(raw));

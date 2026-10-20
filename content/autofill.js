@@ -3,6 +3,7 @@
  * 依赖 shared/match.js（须在 manifest content_scripts 中先于本文件加载）。
  * FILL_FORM / SCAN_FIELDS / COLLECT_FIELDS / APPLY_MAPPINGS
  * 不自动提交；不填 password/file；不盲勾 checkbox。
+ * v1.2.2: getLabelText 用 visibleLabelText；已填字段 skip-if-filled（不覆盖）。
  */
 (function () {
   'use strict';
@@ -19,11 +20,11 @@
     if (el.id) {
       try {
         var label = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
-        if (label) return label.textContent || '';
+        if (label) return M.visibleLabelText(label);
       } catch (_) { /* ignore */ }
     }
     var parentLabel = el.closest('label');
-    if (parentLabel) return parentLabel.textContent || '';
+    if (parentLabel) return M.visibleLabelText(parentLabel);
     var aria = el.getAttribute('aria-label');
     if (aria) return aria;
     var describedBy = el.getAttribute('aria-describedby');
@@ -36,6 +37,28 @@
       return prev.textContent || '';
     }
     return '';
+  }
+
+  /**
+   * 判断字段是否已有有效值；已填则跳过，避免覆盖用户/先前填写。
+   * select：无选中、或选中项 value 空且文案像占位（Select/请选择/--）→ 空。
+   * input/textarea（非 checkbox/radio）：trim 后非空 → 已填。
+   * checkbox/radio：不在此改动（仍不自动勾选）。
+   */
+  function fieldLooksFilled(el) {
+    if (!el) return false;
+    var tag = el.tagName.toLowerCase();
+    var type = (el.type || '').toLowerCase();
+    if (type === 'checkbox' || type === 'radio') return false;
+    if (tag === 'select') {
+      var opt = el.options && el.selectedIndex >= 0 ? el.options[el.selectedIndex] : null;
+      if (!opt) return false;
+      var v = String(opt.value || '').trim();
+      var t = String(opt.text || '').trim();
+      if (!v && (!t || /select|choose|请选择|选择|--/i.test(t))) return false;
+      return true;
+    }
+    return String(el.value || '').trim() !== '';
   }
 
   function collectHints(el) {
@@ -196,6 +219,7 @@
       if (count >= MAX_FILLS_PER_KEY) return;
       var value = M.profileValue(profile, key);
       if (!value) return;
+      if (fieldLooksFilled(el)) return;
       if (setNativeValue(el, value)) {
         filled += 1;
         keyCounts[key] = count + 1;
@@ -222,6 +246,7 @@
       if (!value) return;
       var el = els[m.index];
       if (!el) return;
+      if (fieldLooksFilled(el)) return;
       if (setNativeValue(el, value)) {
         filled += 1;
         var k = m.profileKey || ('custom:' + m.index);
