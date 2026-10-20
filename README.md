@@ -4,33 +4,36 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.2.4**
+当前版本：**1.3.0**
 
 ## 功能概览
 
-- **本地资料库**：选项页分区编辑全部字段（身份 / 联系 / 地址 / 教育 / 工作 / 项目 / 求职偏好 / 语言证书 / 其他）。
+- **本地资料库**：选项页按 playoffer 风格折叠分区编辑（个人信息 / 求职意向 / 教育 / 实习 / 工作 / 项目 / 校园 / 社会实践 / 技能 / 证书 / 外语 / 家庭 / 获奖 / 专利 / 论文 / 培训）。
 - **导入 / 导出 JSON**、**加载示例资料**、清空确认与保存反馈。
 - **兼容匹配（非完全匹配）**：关键词 + CN↔EN 同义 + Levenshtein / token 模糊评分；`autocomplete` 优先；保留 EEO / 法律问卷 denylist。
 - **一键填写** + **扫描字段** + **AI 巡查** + **AI 填写**。
 - **安全约束**：不自动提交、不填 password/file、不盲勾 checkbox；同一语义键最多填 1–2 次；Yes/No select 谨慎处理。
 - **隐私优先**：资料默认仅存于 `chrome.storage.local`；仅在启用 AI 并点击巡查/填写时，将非空字段发送到你配置的 API。
 
-## 资料字段（1.2.0 拓展）
+## 资料字段（1.3.0 playoffer 全量）
 
-| 分区 | 字段 |
+受 [playoffer](https://playoffer.cn) 类 ATS 简历字段启发，扁平 schema 约 **255** 键（相对 1.2.x ~60 键大幅扩展）。多段经历只存**主条目**；完整 CN→key 对照见 [`docs/playoffer-field-map.md`](docs/playoffer-field-map.md)。
+
+| 分区 | 主要字段（节选） |
 |------|------|
-| 基本 / 身份 | `name`, `firstName`, `lastName`, `englishName`, `preferredName`, `gender`, `birthday`, `idType` / `idNumber`（**选填**，请谨慎） |
-| 联系 | `email`, `secondaryEmail`, `phone`, `wechat`, `qq`, `emergencyContact` |
-| 地址与地点 | `city`, `currentCity`, `address`, `province`, `zip`, `country`, `hukou`, `nativePlace`, `willingToRelocate` |
-| 链接 | `linkedin`, `github`, `website`（不自动填作品集密码） |
-| 教育 | `school`, `degree`, `major`, `gradYear`, `gpa`, `eduStart`, `eduEnd`, `dualDegree` |
-| 工作 | `company`, `title`, `years`, `startDate`, `industry`, `department`, `jobType`, `leaveReason`, `achievements` |
-| 项目 | `projectName`, `projectRole`, `projectDesc` |
-| 求职偏好 | `expectedSalary`, `expectedCity`, `jobTarget`, `availability`, `noticePeriod`, `earliestStart`, `workAuth` |
-| 语言与证书 | `languages`, `certificates` |
-| 其他 | `skills`, `summary`, `referralSource`, `additionalInfo` |
+| 个人信息 | `resumeTitle`, `name`, `namePinyin`, `englishName`, `gender`, `birthday`, `age`, `nationality`, `ethnicity`, `politicalStatus`, `maritalStatus`, `idType`/`idNumber`（**选填**）, `phone`, `email`, `wechat`, `qq`, `emergencyContact*`，`currentAddress`, `hukou*`, `nativePlace`, `highestDegree`, `isFreshGraduate`, `workStatus`, `years`, `lastCompany`, `summary`, `personalStrengths`, `hobbies`, `careerPlan`… |
+| 求职意向 | `jobTarget`, `expectedIndustry`, `expectedCity`, `interviewCity`, `expectedSalary`, `expectedAnnualSalary`, `acceptAdjustment`, `referralSource`, `availability`… |
+| 教育（主） | `school`, `eduDegree`, `degree`, `major`, `eduStart`/`eduEnd`, `gpa`, `thesisTitle`, `isTongzhao`… |
+| 实习（主） | `internCompany`, `internTitle`, `internStart`/`internEnd`, `internDescription`… |
+| 工作（主） | `company`, `title`, `startDate`, `workEnd`, `workCity`, `monthlySalary`, `referee*`, `achievements`, `workDescription`… |
+| 项目（主） | `projectName`, `projectRole`, `projectDesc`, `projectResponsibilities`, `projectOutcome`… |
+| 校园 / 社会实践 | `campus*`, `social*` |
+| 技能 / 证书 / 外语 | `techSkills`/`skills`, `cert*`, `lang*`, `languages`, `certificates` |
+| 家庭（选填） | `family*`（含 `familyIdNumber`，默认空） |
+| 获奖 / 专利 / 论文 / 培训 | `award*`, `patent*`, `paper*`, `training*` |
 
-导入旧版 JSON 时，`normalizeProfile` 会保留已知键并忽略未知键，缺省字段为空字符串。
+示例资料为虚构「张三」；**切勿**把真实身份证/手机/邮箱提交进仓库。`normalizeProfile` 对旧 JSON 缺键填空、丢弃未知键。
+
 
 ## 模糊匹配说明
 
@@ -102,7 +105,7 @@ node tests/run-tests.mjs
 
 ```text
 resume-autofill-tool/
-├── manifest.json                 # MV3，version 1.2.4
+├── manifest.json                 # MV3，version 1.3.0
 ├── shared/
 │   ├── profile.js                # 字段列表 / 示例 / normalize
 │   ├── match.js                  # 关键词、模糊评分、denylist
@@ -115,6 +118,9 @@ resume-autofill-tool/
 ├── options/
 ├── icons/
 ├── demo/
+├── docs/
+│   ├── playoffer-field-map.md    # CN 标签 → 键
+│   └── live-field-coverage.md
 ├── tests/
 │   └── run-tests.mjs
 ├── README.md
@@ -132,6 +138,13 @@ resume-autofill-tool/
 - 证件号等敏感字段为选填；公共电脑请勿保存。
 
 ## Changelog
+
+### 1.3.0
+- **playoffer 全量字段**：profile / 选项页 / 匹配关键词对齐 ATS 简历模型（约 255 键）；多段经历存主条目。
+- **新分区**：实习、校园、社会实践、证书明细、外语明细、家庭（选填）、获奖、专利、论文、培训等。
+- **匹配增强**：`姓名拼音`、`政治面貌`、`是否应届生`、`实习公司`、`上一家公司`、`紧急联系人姓名`、`现居住地址`、`最高学历` 等；证明人→`referee*`；上司 denylist 保留。
+- **别名**：`currentAddress`↔`address`、`techSkills`↔`skills`、紧急联系人组合回退等。
+- 文档：`docs/playoffer-field-map.md`；manifest **1.3.0**。
 
 ### 1.2.4
 - **D9 毕业时间 / 月份拆分**：`毕业时间` 改映射 `eduEnd`（不再误为 `gradYear`）；`maybeExtractDatePartValue` 在年/月角色拆分失败时返回空串跳过，避免把年份 `2020` 塞进月份格。

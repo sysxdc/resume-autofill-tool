@@ -10,146 +10,371 @@
   <div class="wrap">
     <header class="header">
       <h1>编辑简历资料</h1>
-      <p class="subtitle">资料保存在本机 <code>chrome.storage.local</code>，不会上传到任何服务器（启用 AI 时除外，见下方说明）。</p>
+      <p class="subtitle">资料保存在本机 <code>chrome.storage.local</code>，不会上传到任何服务器（启用 AI 时除外，见下方说明）。字段布局对齐 playoffer 风格 ATS 简历模型（v1.3.0）；多段经历仅存<strong>主条目</strong>。</p>
     </header>
 
     <div class="toolbar">
       <button type="button" class="btn ghost" id="btn-import">导入 JSON</button>
       <button type="button" class="btn ghost" id="btn-export">导出 JSON</button>
       <button type="button" class="btn ghost" id="btn-sample">加载示例资料</button>
+      <button type="button" class="btn ghost" id="btn-expand-all">展开全部</button>
+      <button type="button" class="btn ghost" id="btn-collapse-all">折叠全部</button>
       <input type="file" id="import-file" accept="application/json,.json" hidden />
     </div>
 
     <form id="profile-form" autocomplete="off">
-      <fieldset>
-        <legend>基本 / 身份</legend>
+      <details class="section" open>
+        <summary>个人信息</summary>
         <div class="grid">
+          <label>简历名称<input type="text" name="resumeTitle" placeholder="例如：张三-前端工程师简历" /></label>
           <label>姓名<input type="text" name="name" placeholder="例如：张三" /></label>
           <label>名（可选覆盖）<input type="text" name="firstName" placeholder="显式优先于从姓名拆分" /></label>
           <label>姓（可选覆盖）<input type="text" name="lastName" placeholder="显式优先于从姓名拆分" /></label>
-          <label>英文名<input type="text" name="englishName" placeholder="例如：San Zhang" /></label>
+          <label>姓名拼音<input type="text" name="namePinyin" placeholder="例如：Zhang San" /></label>
+          <label>英文姓名<input type="text" name="englishName" placeholder="例如：San Zhang" /></label>
           <label>常用名 / 昵称<input type="text" name="preferredName" placeholder="希望被称呼的名字" /></label>
-          <label>性别<input type="text" name="gender" placeholder="例如：男 / 女（国内表单常用）" /></label>
-          <label>出生日期<input type="text" name="birthday" placeholder="例如：1998-05-20" /></label>
-          <label>证件类型（选填）<input type="text" name="idType" placeholder="选填，如：身份证" /></label>
-          <label>证件号码（选填）<input type="text" name="idNumber" placeholder="选填，请谨慎填写敏感信息" /></label>
-        </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>联系方式</legend>
-        <div class="grid">
+          <label>性别<input type="text" name="gender" placeholder="男 / 女" /></label>
+          <label>出生日期<input type="text" name="birthday" placeholder="1998-05-20" /></label>
+          <label>年龄<input type="text" name="age" placeholder="可由生日推算，也可手填" /></label>
+          <label>国籍<input type="text" name="nationality" placeholder="中国" /></label>
+          <label>民族<input type="text" name="ethnicity" placeholder="汉族" /></label>
+          <label>政治面貌<input type="text" name="politicalStatus" placeholder="群众 / 团员 / 党员" /></label>
+          <label>婚姻状况<input type="text" name="maritalStatus" placeholder="未婚 / 已婚" /></label>
+          <label>证件类型（选填）<input type="text" name="idType" placeholder="如：身份证" /></label>
+          <label>身份证号（选填）<input type="text" name="idNumber" placeholder="请谨慎填写敏感信息" /></label>
           <label>邮箱<input type="email" name="email" placeholder="you@example.com" /></label>
-          <label>备用邮箱<input type="email" name="secondaryEmail" placeholder="备用邮箱" /></label>
-          <label>电话<input type="tel" name="phone" placeholder="手机号" /></label>
-          <label>微信<input type="text" name="wechat" placeholder="微信号" /></label>
-          <label>QQ<input type="text" name="qq" placeholder="QQ 号" /></label>
-          <label class="full">紧急联系人<input type="text" name="emergencyContact" placeholder="姓名 + 电话" /></label>
+          <label>备用邮箱<input type="email" name="secondaryEmail" placeholder="" /></label>
+          <label>电话 / 手机<input type="tel" name="phone" placeholder="手机号" /></label>
+          <label>微信<input type="text" name="wechat" placeholder="" /></label>
+          <label>QQ<input type="text" name="qq" placeholder="" /></label>
+          <label class="full">紧急联系人（组合）<input type="text" name="emergencyContact" placeholder="姓名 + 电话（兼容旧版）" /></label>
+          <label>紧急联系人姓名<input type="text" name="emergencyContactName" placeholder="" /></label>
+          <label>紧急联系人关系<input type="text" name="emergencyContactRelation" placeholder="" /></label>
+          <label>紧急联系人电话<input type="tel" name="emergencyContactPhone" placeholder="" /></label>
+          <label>城市<input type="text" name="city" placeholder="上海" /></label>
+          <label>现居城市<input type="text" name="currentCity" placeholder="" /></label>
+          <label class="full">现居住地址<input type="text" name="currentAddress" placeholder="" /></label>
+          <label class="full">详细地址<input type="text" name="address" placeholder="与现居住地址可互为别名" /></label>
+          <label>省/州<input type="text" name="province" placeholder="" /></label>
+          <label>邮政编码<input type="text" name="zip" placeholder="" /></label>
+          <label>国家<input type="text" name="country" placeholder="中国" /></label>
+          <label>籍贯<input type="text" name="nativePlace" placeholder="" /></label>
+          <label>生源地<input type="text" name="studentOrigin" placeholder="" /></label>
+          <label>户口性质<input type="text" name="hukouType" placeholder="" /></label>
+          <label>户口所在地<input type="text" name="hukou" placeholder="" /></label>
+          <label>档案所在地<input type="text" name="archiveLocation" placeholder="" /></label>
+          <label class="full">是否愿意异地<input type="text" name="willingToRelocate" placeholder="" /></label>
+          <label class="full">LinkedIn<input type="url" name="linkedin" placeholder="" /></label>
+          <label class="full">GitHub<input type="url" name="github" placeholder="" /></label>
+          <label class="full">个人主页 / 作品链接<input type="url" name="website" placeholder="" /></label>
+          <label>身高<input type="text" name="height" placeholder="cm" /></label>
+          <label>体重<input type="text" name="weight" placeholder="kg" /></label>
+          <label>血型（选填）<input type="text" name="bloodType" placeholder="" /></label>
+          <label>健康状况（选填）<input type="text" name="healthStatus" placeholder="" /></label>
+          <label>是否有慢性病（选填）<input type="text" name="hasChronicIllness" placeholder="" /></label>
+          <label>有无犯罪记录（选填）<input type="text" name="hasCriminalRecord" placeholder="" /></label>
+          <label>是否服兵役（选填）<input type="text" name="hasMilitaryService" placeholder="" /></label>
+          <label>是否退伍军人（选填）<input type="text" name="isVeteran" placeholder="" /></label>
+          <label>入党时间（选填）<input type="text" name="partyJoinDate" placeholder="" /></label>
+          <label>入团/入党时间（选填）<input type="text" name="leagueOrPartyJoinDate" placeholder="" /></label>
+          <label>是否保研<input type="text" name="isRecommendedPostgrad" placeholder="" /></label>
+          <label>是否有留学经历<input type="text" name="hasStudyAbroad" placeholder="" /></label>
+          <label>是否贫困生（选填）<input type="text" name="isPovertyStudent" placeholder="" /></label>
+          <label>是否色弱（选填）<input type="text" name="isColorWeak" placeholder="" /></label>
+          <label>是否具有境外身份（选填）<input type="text" name="hasOverseasIdentity" placeholder="" /></label>
+          <label>英语等级<input type="text" name="englishLevel" placeholder="CET-6" /></label>
+          <label>高考时间<input type="text" name="gaokaoDate" placeholder="" /></label>
+          <label>高考分数<input type="text" name="gaokaoScore" placeholder="" /></label>
+          <label>高考科目<input type="text" name="gaokaoSubjects" placeholder="" /></label>
+          <label>专业技术职级<input type="text" name="professionalTitle" placeholder="" /></label>
+          <label>最高学历<input type="text" name="highestDegree" placeholder="本科 / 硕士…" /></label>
+          <label>是否应届生<input type="text" name="isFreshGraduate" placeholder="" /></label>
+          <label>工作状态<input type="text" name="workStatus" placeholder="在职 / 离职 / 应届" /></label>
+          <label>工作年限<input type="text" name="years" placeholder="" /></label>
+          <label>上一家公司<input type="text" name="lastCompany" placeholder="" /></label>
+          <label class="full">自我介绍 / 自我评价<textarea name="summary" rows="4" placeholder=""></textarea></label>
+          <label class="full">个人优势<textarea name="personalStrengths" rows="2" placeholder=""></textarea></label>
+          <label class="full">兴趣爱好<input type="text" name="hobbies" placeholder="" /></label>
+          <label class="full">职业规划<textarea name="careerPlan" rows="2" placeholder=""></textarea></label>
+          <label class="full">补充信息<textarea name="additionalInfo" rows="2" placeholder=""></textarea></label>
         </div>
-      </fieldset>
+      </details>
 
-      <fieldset>
-        <legend>地址与地点</legend>
+      <details class="section">
+        <summary>求职意向</summary>
         <div class="grid">
-          <label>城市<input type="text" name="city" placeholder="例如：上海" /></label>
-          <label>现居城市<input type="text" name="currentCity" placeholder="当前居住城市" /></label>
-          <label class="full">详细地址<input type="text" name="address" placeholder="街道门牌等" /></label>
-          <label>省/州<input type="text" name="province" placeholder="例如：上海市" /></label>
-          <label>邮编<input type="text" name="zip" placeholder="邮政编码" /></label>
-          <label>国家<input type="text" name="country" placeholder="例如：中国" /></label>
-          <label>户籍<input type="text" name="hukou" placeholder="户口所在地" /></label>
-          <label>籍贯<input type="text" name="nativePlace" placeholder="籍贯" /></label>
-          <label class="full">是否愿意异地 / 调动<input type="text" name="willingToRelocate" placeholder="例如：可接受长三角出差" /></label>
+          <label>目标岗位<input type="text" name="jobTarget" placeholder="" /></label>
+          <label>期望行业<input type="text" name="expectedIndustry" placeholder="" /></label>
+          <label>目前行业<input type="text" name="currentIndustry" placeholder="" /></label>
+          <label>预计入职时间<input type="text" name="expectedStartDate" placeholder="" /></label>
+          <label>期望城市<input type="text" name="expectedCity" placeholder="" /></label>
+          <label>面试城市<input type="text" name="interviewCity" placeholder="" /></label>
+          <label>期望月薪<input type="text" name="expectedSalary" placeholder="" /></label>
+          <label>期望年薪<input type="text" name="expectedAnnualSalary" placeholder="" /></label>
+          <label>目前薪资<input type="text" name="currentSalary" placeholder="" /></label>
+          <label>是否有亲属在本公司（选填）<input type="text" name="hasRelativeAtCompany" placeholder="" /></label>
+          <label>招聘信息来源<input type="text" name="referralSource" placeholder="" /></label>
+          <label>是否接受调剂<input type="text" name="acceptAdjustment" placeholder="" /></label>
+          <label>到岗时间<input type="text" name="availability" placeholder="" /></label>
+          <label>通知期<input type="text" name="noticePeriod" placeholder="" /></label>
+          <label>最早到岗<input type="text" name="earliestStart" placeholder="" /></label>
+          <label class="full">工作许可 / 签证<input type="text" name="workAuth" placeholder="" /></label>
         </div>
-      </fieldset>
+      </details>
 
-      <fieldset>
-        <legend>链接</legend>
+      <details class="section">
+        <summary>教育背景（主条目）</summary>
         <div class="grid">
-          <label class="full">LinkedIn<input type="url" name="linkedin" placeholder="https://www.linkedin.com/in/…" /></label>
-          <label class="full">GitHub<input type="url" name="github" placeholder="https://github.com/…" /></label>
-          <label class="full">个人网站 / 作品集<input type="url" name="website" placeholder="https://…" /></label>
+          <label>毕业院校 / 学校<input type="text" name="school" placeholder="" /></label>
+          <label>学历<input type="text" name="eduDegree" placeholder="本科 / 硕士…" /></label>
+          <label>学位<input type="text" name="degree" placeholder="学士 / 硕士…" /></label>
+          <label>是否专升本<input type="text" name="isUpgradeFromCollege" placeholder="" /></label>
+          <label>院系<input type="text" name="department" placeholder="" /></label>
+          <label>毕业专业 / 专业<input type="text" name="major" placeholder="" /></label>
+          <label>专业类别<input type="text" name="majorCategory" placeholder="" /></label>
+          <label>学校城市<input type="text" name="schoolCity" placeholder="" /></label>
+          <label>院校类型<input type="text" name="schoolType" placeholder="" /></label>
+          <label>学历状态<input type="text" name="eduStatus" placeholder="" /></label>
+          <label>学制<input type="text" name="eduYears" placeholder="" /></label>
+          <label>学习形式<input type="text" name="studyMode" placeholder="全日制" /></label>
+          <label>教育方式<input type="text" name="eduMode" placeholder="" /></label>
+          <label>入学时间<input type="text" name="eduStart" placeholder="2016-09" /></label>
+          <label>毕业时间<input type="text" name="eduEnd" placeholder="2020-06" /></label>
+          <label>毕业年份<input type="text" name="gradYear" placeholder="2020" /></label>
+          <label>学位授予时间<input type="text" name="degreeAwardDate" placeholder="" /></label>
+          <label>学位类型<input type="text" name="degreeType" placeholder="" /></label>
+          <label>学位类别<input type="text" name="degreeCategory" placeholder="" /></label>
+          <label>招生类别<input type="text" name="enrollmentType" placeholder="" /></label>
+          <label>是否统招<input type="text" name="isTongzhao" placeholder="" /></label>
+          <label>GPA<input type="text" name="gpa" placeholder="" /></label>
+          <label>挂科数<input type="text" name="failedCourses" placeholder="" /></label>
+          <label>班级排名<input type="text" name="classRank" placeholder="" /></label>
+          <label>专业排名<input type="text" name="majorRank" placeholder="" /></label>
+          <label>专业人数<input type="text" name="majorClassSize" placeholder="" /></label>
+          <label>学历证书编号（选填）<input type="text" name="eduCertNo" placeholder="" /></label>
+          <label>学位证书编号（选填）<input type="text" name="degreeCertNo" placeholder="" /></label>
+          <label>学号（选填）<input type="text" name="studentId" placeholder="" /></label>
+          <label>导师姓名<input type="text" name="advisorName" placeholder="" /></label>
+          <label>实验室名称<input type="text" name="labName" placeholder="" /></label>
+          <label>是否国家重点实验室<input type="text" name="isNationalKeyLab" placeholder="" /></label>
+          <label>是否联合培养<input type="text" name="isJointTraining" placeholder="" /></label>
+          <label>辅导员姓名<input type="text" name="counselorName" placeholder="" /></label>
+          <label>辅导员联系方式（选填）<input type="text" name="counselorContact" placeholder="" /></label>
+          <label>是否海外院校<input type="text" name="isOverseasSchool" placeholder="" /></label>
+          <label class="full">教育经历描述<textarea name="eduDescription" rows="3" placeholder=""></textarea></label>
+          <label class="full">专业描述<textarea name="majorDescription" rows="2" placeholder=""></textarea></label>
+          <label class="full">主修课程<textarea name="majorCourses" rows="2" placeholder=""></textarea></label>
+          <label>研究方向<input type="text" name="researchDirection" placeholder="" /></label>
+          <label class="full">毕业论文<input type="text" name="thesisTitle" placeholder="" /></label>
+          <label>双学位 / 辅修<input type="text" name="dualDegree" placeholder="" /></label>
         </div>
-      </fieldset>
+      </details>
 
-      <fieldset>
-        <legend>教育</legend>
+      <details class="section">
+        <summary>实习经历（主条目）</summary>
         <div class="grid">
-          <label>学校<input type="text" name="school" placeholder="毕业院校" /></label>
-          <label>学历<input type="text" name="degree" placeholder="本科 / 硕士 / 博士…" /></label>
-          <label>专业<input type="text" name="major" placeholder="所学专业" /></label>
-          <label>毕业年份<input type="text" name="gradYear" placeholder="例如：2020" /></label>
-          <label>GPA<input type="text" name="gpa" placeholder="例如：3.6/4.0" /></label>
-          <label>入学时间<input type="text" name="eduStart" placeholder="例如：2016-09" /></label>
-          <label>毕业/结束时间<input type="text" name="eduEnd" placeholder="例如：2020-06" /></label>
-          <label>双学位 / 辅修<input type="text" name="dualDegree" placeholder="选填" /></label>
+          <label>实习公司<input type="text" name="internCompany" placeholder="" /></label>
+          <label>实习公司规模<input type="text" name="internCompanySize" placeholder="" /></label>
+          <label>实习是否海外<input type="text" name="internOverseas" placeholder="" /></label>
+          <label>实习部门<input type="text" name="internDepartment" placeholder="" /></label>
+          <label>实习职位<input type="text" name="internTitle" placeholder="" /></label>
+          <label>实习开始<input type="text" name="internStart" placeholder="" /></label>
+          <label>实习结束<input type="text" name="internEnd" placeholder="" /></label>
+          <label>实习城市<input type="text" name="internCity" placeholder="" /></label>
+          <label>实习行业<input type="text" name="internIndustry" placeholder="" /></label>
+          <label>实习用工性质<input type="text" name="internEmploymentType" placeholder="" /></label>
+          <label>实习年薪<input type="text" name="internAnnualSalary" placeholder="" /></label>
+          <label>实习证明人姓名<input type="text" name="internRefereeName" placeholder="" /></label>
+          <label>实习证明人联系方式（选填）<input type="text" name="internRefereeContact" placeholder="" /></label>
+          <label>实习证明人职位<input type="text" name="internRefereeTitle" placeholder="" /></label>
+          <label class="full">实习描述<textarea name="internDescription" rows="3" placeholder=""></textarea></label>
+          <label>实习离职原因<input type="text" name="internLeaveReason" placeholder="" /></label>
         </div>
-      </fieldset>
+      </details>
 
-      <fieldset>
-        <legend>工作经历</legend>
+      <details class="section">
+        <summary>工作经历（主条目）</summary>
+        <p class="section-note">工作「部门」与教育「院系」共用键 <code>department</code>（扁平主条目）；请在教育分区填写院系，或按目标表单习惯填写。</p>
         <div class="grid">
-          <label>公司<input type="text" name="company" placeholder="当前或最近公司" /></label>
-          <label>职位<input type="text" name="title" placeholder="职位名称" /></label>
-          <label>工作年限<input type="text" name="years" placeholder="例如：3" /></label>
-          <label>开始日期<input type="text" name="startDate" placeholder="例如：2020-07" /></label>
-          <label>行业<input type="text" name="industry" placeholder="例如：互联网 / 软件" /></label>
-          <label>部门<input type="text" name="department" placeholder="所在部门" /></label>
-          <label>工作性质<input type="text" name="jobType" placeholder="全职 / 兼职 / 实习" /></label>
-          <label>离职原因<input type="text" name="leaveReason" placeholder="选填" /></label>
-          <label class="full">工作业绩 / 成就
-            <textarea name="achievements" rows="3" placeholder="主要成就、量化结果"></textarea>
-          </label>
+          <label>公司<input type="text" name="company" placeholder="" /></label>
+          <label>公司规模<input type="text" name="companySize" placeholder="" /></label>
+          <label>是否海外工作<input type="text" name="workOverseas" placeholder="" /></label>
+          <label>职位<input type="text" name="title" placeholder="" /></label>
+          <label>开始日期<input type="text" name="startDate" placeholder="" /></label>
+          <label>工作结束<input type="text" name="workEnd" placeholder="至今 或 2024-01" /></label>
+          <label>结束日期<input type="text" name="endDate" placeholder="与工作结束可互为别名" /></label>
+          <label>工作城市<input type="text" name="workCity" placeholder="" /></label>
+          <label>工作行业<input type="text" name="industry" placeholder="" /></label>
+          <label>工作性质<input type="text" name="jobType" placeholder="" /></label>
+          <label>用工性质<input type="text" name="employmentType" placeholder="" /></label>
+          <label>月薪<input type="text" name="monthlySalary" placeholder="" /></label>
+          <label>年薪<input type="text" name="annualSalary" placeholder="" /></label>
+          <label>证明人姓名<input type="text" name="refereeName" placeholder="" /></label>
+          <label>证明人联系方式（选填）<input type="text" name="refereeContact" placeholder="" /></label>
+          <label>证明人职位<input type="text" name="refereeTitle" placeholder="" /></label>
+          <label class="full">工作业绩 / 成就<textarea name="achievements" rows="3" placeholder=""></textarea></label>
+          <label class="full">工作描述<textarea name="workDescription" rows="3" placeholder=""></textarea></label>
+          <label>离职原因<input type="text" name="leaveReason" placeholder="" /></label>
         </div>
-      </fieldset>
+      </details>
 
-      <fieldset>
-        <legend>项目经历</legend>
+      <details class="section">
+        <summary>项目经历（主条目）</summary>
         <div class="grid">
-          <label>项目名称<input type="text" name="projectName" placeholder="代表性项目" /></label>
-          <label>项目角色<input type="text" name="projectRole" placeholder="例如：前端负责人" /></label>
-          <label class="full">项目描述
-            <textarea name="projectDesc" rows="3" placeholder="项目背景、职责与成果"></textarea>
-          </label>
+          <label>项目名称<input type="text" name="projectName" placeholder="" /></label>
+          <label>项目人数<input type="text" name="projectTeamSize" placeholder="" /></label>
+          <label>项目是否海外<input type="text" name="projectOverseas" placeholder="" /></label>
+          <label>项目职务 / 角色<input type="text" name="projectRole" placeholder="" /></label>
+          <label>项目实践形式<input type="text" name="projectPracticeMode" placeholder="" /></label>
+          <label>项目开始<input type="text" name="projectStart" placeholder="" /></label>
+          <label>项目结束<input type="text" name="projectEnd" placeholder="" /></label>
+          <label>项目城市<input type="text" name="projectCity" placeholder="" /></label>
+          <label class="full">项目链接<input type="url" name="projectLink" placeholder="" /></label>
+          <label>项目证明人姓名<input type="text" name="projectRefereeName" placeholder="" /></label>
+          <label>项目证明人联系方式（选填）<input type="text" name="projectRefereeContact" placeholder="" /></label>
+          <label>项目证明人职位<input type="text" name="projectRefereeTitle" placeholder="" /></label>
+          <label class="full">项目描述<textarea name="projectDesc" rows="3" placeholder=""></textarea></label>
+          <label class="full">项目职责<textarea name="projectResponsibilities" rows="2" placeholder=""></textarea></label>
+          <label class="full">项目成果<textarea name="projectOutcome" rows="2" placeholder=""></textarea></label>
         </div>
-      </fieldset>
+      </details>
 
-      <fieldset>
-        <legend>求职偏好</legend>
+      <details class="section">
+        <summary>校园经历</summary>
         <div class="grid">
-          <label>期望薪资<input type="text" name="expectedSalary" placeholder="例如：25K-35K" /></label>
-          <label>期望城市<input type="text" name="expectedCity" placeholder="例如：上海 / 杭州" /></label>
-          <label>求职意向 / 目标职位<input type="text" name="jobTarget" placeholder="例如：高级前端" /></label>
-          <label>到岗时间<input type="text" name="availability" placeholder="例如：两周内到岗" /></label>
-          <label>通知期<input type="text" name="noticePeriod" placeholder="例如：两周" /></label>
-          <label>最早到岗<input type="text" name="earliestStart" placeholder="例如：两周内" /></label>
-          <label class="full">工作许可 / 签证<input type="text" name="workAuth" placeholder="例如：中国大陆公民，可合法全职工作" /></label>
+          <label>组织名称<input type="text" name="campusOrg" placeholder="" /></label>
+          <label>组织级别<input type="text" name="campusLevel" placeholder="" /></label>
+          <label>职位<input type="text" name="campusRole" placeholder="" /></label>
+          <label>开始时间<input type="text" name="campusStart" placeholder="" /></label>
+          <label>结束时间<input type="text" name="campusEnd" placeholder="" /></label>
+          <label class="full">工作内容<textarea name="campusWorkContent" rows="2" placeholder=""></textarea></label>
+          <label class="full">本人职责<textarea name="campusDuty" rows="2" placeholder=""></textarea></label>
         </div>
-      </fieldset>
+      </details>
 
-      <fieldset>
-        <legend>语言与证书</legend>
+      <details class="section">
+        <summary>社会实践</summary>
         <div class="grid">
-          <label class="full">语言能力<input type="text" name="languages" placeholder="例如：普通话、英语（流利）" /></label>
-          <label class="full">证书 / 资质<input type="text" name="certificates" placeholder="例如：CET-6、专业资格证" /></label>
+          <label>实践单位<input type="text" name="socialOrg" placeholder="" /></label>
+          <label>实践岗位 / 身份<input type="text" name="socialRole" placeholder="" /></label>
+          <label>开始时间<input type="text" name="socialStart" placeholder="" /></label>
+          <label>结束时间<input type="text" name="socialEnd" placeholder="" /></label>
+          <label class="full">实践内容<textarea name="socialContent" rows="3" placeholder=""></textarea></label>
         </div>
-      </fieldset>
+      </details>
 
-      <fieldset>
-        <legend>其他</legend>
+      <details class="section">
+        <summary>技能专长</summary>
         <div class="grid">
-          <label class="full">技能
-            <textarea name="skills" rows="2" placeholder="用逗号或换行分隔，例如：JavaScript, Python, 沟通协作"></textarea>
-          </label>
-          <label class="full">自我介绍
-            <textarea name="summary" rows="5" placeholder="简短自我评价或求职信草稿"></textarea>
-          </label>
-          <label>招聘/投递渠道<input type="text" name="referralSource" placeholder="例如：官网 / 内推（不会自动填「如何得知」EEO 题）" /></label>
-          <label class="full">补充信息
-            <textarea name="additionalInfo" rows="2" placeholder="其他想告知招聘方的信息"></textarea>
-          </label>
+          <label class="full">技术技能<textarea name="techSkills" rows="2" placeholder=""></textarea></label>
+          <label class="full">技能（兼容）<textarea name="skills" rows="2" placeholder="与技术技能可互为别名"></textarea></label>
+          <label class="full">语言能力<input type="text" name="languages" placeholder="" /></label>
+          <label class="full">软件技能<input type="text" name="softwareSkills" placeholder="" /></label>
+          <label class="full">软技能<input type="text" name="softSkills" placeholder="" /></label>
+          <label class="full">证书摘要<input type="text" name="certificates" placeholder="多证摘要；明细见下方证书分区" /></label>
         </div>
-      </fieldset>
+      </details>
+
+      <details class="section">
+        <summary>证书（主条目）</summary>
+        <div class="grid">
+          <label>证书名称<input type="text" name="certName" placeholder="" /></label>
+          <label>证书类型<input type="text" name="certType" placeholder="" /></label>
+          <label>获取时间<input type="text" name="certDate" placeholder="" /></label>
+          <label>证书编号（选填）<input type="text" name="certNo" placeholder="" /></label>
+          <label>颁发机构<input type="text" name="certIssuer" placeholder="" /></label>
+          <label>成绩<input type="text" name="certScore" placeholder="" /></label>
+          <label>有效期<input type="text" name="certExpiry" placeholder="" /></label>
+          <label class="full">证书描述<textarea name="certDescription" rows="2" placeholder=""></textarea></label>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary>外语能力（主条目）</summary>
+        <div class="grid">
+          <label>语言种类<input type="text" name="langName" placeholder="" /></label>
+          <label>获得时间<input type="text" name="langDate" placeholder="" /></label>
+          <label>证书名称<input type="text" name="langCertName" placeholder="" /></label>
+          <label>成绩<input type="text" name="langScore" placeholder="" /></label>
+          <label>掌握程度<input type="text" name="langLevel" placeholder="" /></label>
+          <label>听说<input type="text" name="langListenSpeak" placeholder="" /></label>
+          <label>读写<input type="text" name="langReadWrite" placeholder="" /></label>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary>家庭情况（选填 / 敏感）</summary>
+        <p class="section-note">家庭成员信息默认选填，请勿在公共电脑保存敏感内容。</p>
+        <div class="grid">
+          <label>姓名（选填）<input type="text" name="familyName" placeholder="" /></label>
+          <label>关系（选填）<input type="text" name="familyRelation" placeholder="" /></label>
+          <label>性别（选填）<input type="text" name="familyGender" placeholder="" /></label>
+          <label>教育程度（选填）<input type="text" name="familyEducation" placeholder="" /></label>
+          <label>民族（选填）<input type="text" name="familyEthnicity" placeholder="" /></label>
+          <label>身份证号（选填）<input type="text" name="familyIdNumber" placeholder="" /></label>
+          <label>出生日期（选填）<input type="text" name="familyBirthday" placeholder="" /></label>
+          <label>联系电话（选填）<input type="text" name="familyPhone" placeholder="" /></label>
+          <label>工作单位（选填）<input type="text" name="familyEmployer" placeholder="" /></label>
+          <label>职位（选填）<input type="text" name="familyTitle" placeholder="" /></label>
+          <label>政治面貌（选填）<input type="text" name="familyPoliticalStatus" placeholder="" /></label>
+          <label class="full">联系地址（选填）<input type="text" name="familyAddress" placeholder="" /></label>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary>获奖</summary>
+        <div class="grid">
+          <label>奖项名称<input type="text" name="awardName" placeholder="" /></label>
+          <label>颁发机构<input type="text" name="awardIssuer" placeholder="" /></label>
+          <label>获奖时间<input type="text" name="awardDate" placeholder="" /></label>
+          <label>结束时间<input type="text" name="awardEnd" placeholder="" /></label>
+          <label>奖项级别<input type="text" name="awardLevel" placeholder="" /></label>
+          <label>奖励类型<input type="text" name="awardType" placeholder="" /></label>
+          <label>奖励等级<input type="text" name="awardGrade" placeholder="" /></label>
+          <label class="full">获奖描述<textarea name="awardDescription" rows="2" placeholder=""></textarea></label>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary>专利</summary>
+        <div class="grid">
+          <label>专利名称<input type="text" name="patentName" placeholder="" /></label>
+          <label>专利号<input type="text" name="patentNo" placeholder="" /></label>
+          <label>申请日期<input type="text" name="patentApplyDate" placeholder="" /></label>
+          <label>专利状态<input type="text" name="patentStatus" placeholder="" /></label>
+          <label>发明人<input type="text" name="patentInventor" placeholder="" /></label>
+          <label class="full">专利描述<textarea name="patentDescription" rows="2" placeholder=""></textarea></label>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary>论文</summary>
+        <div class="grid">
+          <label class="full">论文标题<input type="text" name="paperTitle" placeholder="" /></label>
+          <label>发表期刊<input type="text" name="paperJournal" placeholder="" /></label>
+          <label>作者<input type="text" name="paperAuthors" placeholder="" /></label>
+          <label>期刊卷期<input type="text" name="paperVolume" placeholder="" /></label>
+          <label>影响因子<input type="text" name="paperImpactFactor" placeholder="" /></label>
+          <label>刊物等级<input type="text" name="paperJournalLevel" placeholder="" /></label>
+          <label>作者顺序<input type="text" name="paperAuthorOrder" placeholder="" /></label>
+          <label>发表时间<input type="text" name="paperDate" placeholder="" /></label>
+          <label>DOI<input type="text" name="paperDoi" placeholder="" /></label>
+          <label class="full">论文链接<input type="url" name="paperLink" placeholder="" /></label>
+          <label class="full">论文摘要<textarea name="paperAbstract" rows="3" placeholder=""></textarea></label>
+        </div>
+      </details>
+
+      <details class="section">
+        <summary>培训</summary>
+        <div class="grid">
+          <label>培训名称<input type="text" name="trainingName" placeholder="" /></label>
+          <label>开始时间<input type="text" name="trainingStart" placeholder="" /></label>
+          <label>结束时间<input type="text" name="trainingEnd" placeholder="" /></label>
+          <label>培训机构<input type="text" name="trainingOrg" placeholder="" /></label>
+          <label class="full">培训收获<textarea name="trainingGain" rows="2" placeholder=""></textarea></label>
+          <label class="full">培训内容<textarea name="trainingContent" rows="2" placeholder=""></textarea></label>
+        </div>
+      </details>
 
       <div class="form-actions">
         <button type="submit" class="btn primary">保存资料</button>

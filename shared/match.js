@@ -2,6 +2,7 @@
  * 共享字段匹配逻辑：关键词、同义、模糊评分、姓名拆分、profile 取值、select 匹配、label 可见文本。
  * 浏览器挂到 ResumeAutofillMatch；Node 通过 module.exports 引入。
  *
+ * v1.3.0: playoffer 全量字段关键词 / FIELD_ORDER；紧急联系人拆分；地址/技能别名；证明人/家庭 denylist。
  * v1.2.4: D9 毕业时间→eduEnd + 拆分失败跳过；D10 相邻年/月 placeholder 与附近日期组标签。
  * v1.2.3: antd/form-item 标签发现；上司联系人 denylist；年/月日期拆分 extractDatePart。
  * v1.2.2: visibleLabelText — 跳过 select/option/input 等控件子树，避免 option 文案污染标签匹配。
@@ -65,17 +66,23 @@
       'lastname', 'last_name', 'last-name', 'surname', 'familyname', 'family_name', 'family-name',
       'lname', '姓', '姓氏', '姓（', '姓)'
     ],
-    name: [
-      'fullname', 'full_name', 'full-name', 'yourname', 'your_name', 'applicantname',
-      'candidate_name', 'legalname', '真实姓名', '申请人姓名', '姓名', '称呼'
+    namePinyin: [
+      'namepinyin', 'name_pinyin', 'pinyinname', '姓名拼音', '拼音姓名'
     ],
     englishName: [
       'englishname', 'english_name', 'english-name', 'nameinenGLISH', 'name_en', 'enname',
-      '英文名', '英文姓名', '拼音名'
+      '英文名', '英文姓名'
     ],
     preferredName: [
       'preferredname', 'preferred_name', 'preferred-name', 'nickname', 'nick_name',
       '常用名', '昵称', '希望称呼', '偏好姓名'
+    ],
+    resumeTitle: [
+      'resumetitle', 'resume_title', '简历名称', '简历标题', 'resume name'
+    ],
+    name: [
+      'fullname', 'full_name', 'full-name', 'yourname', 'your_name', 'applicantname',
+      'candidate_name', 'legalname', '真实姓名', '申请人姓名', '姓名', '称呼'
     ],
     gender: [
       '性别', '男女'
@@ -83,6 +90,21 @@
     birthday: [
       'birthday', 'birthdate', 'birth_date', 'dateofbirth', 'date_of_birth', 'dob',
       '出生日期', '生日', '出生年月'
+    ],
+    age: [
+      'age', '年龄', '周岁'
+    ],
+    nationality: [
+      'nationality', '国籍', 'citizen'
+    ],
+    ethnicity: [
+      '民族', 'ethnic'
+    ],
+    politicalStatus: [
+      'politicalstatus', 'political_status', '政治面貌', '党派'
+    ],
+    maritalStatus: [
+      'maritalstatus', 'marital_status', '婚姻状况', '婚否', '婚姻'
     ],
     idType: [
       'idtype', 'id_type', 'documenttype', 'doctype', '证件类型', '证件种类'
@@ -102,13 +124,23 @@
     phone: [
       'phone', 'mobile', 'tel', 'telephone', 'cellphone', 'cell', 'phonenumber',
       'phone_number', 'phone-number', 'contactnumber', '手机号', '手机号码',
-      '电话', '联系电话', '移动电话', '座机'
+      '电话', '联系电话', '移动电话', '手机', '座机'
     ],
     wechat: [
       'wechat', 'weixin', 'wei_xin', '微信号', '微信'
     ],
     qq: [
       'qq号', 'qq号码', '腾讯qq', 'qq'
+    ],
+    emergencyContactName: [
+      'emergencycontactname', 'emergency_contact_name', '紧急联系人姓名', '紧急联络人姓名'
+    ],
+    emergencyContactRelation: [
+      'emergencycontactrelation', 'emergency_contact_relation', '紧急联系人关系', '与紧急联系人关系'
+    ],
+    emergencyContactPhone: [
+      'emergencycontactphone', 'emergency_contact_phone', '紧急联系人电话', '紧急联系人手机',
+      '紧急联络人电话'
     ],
     emergencyContact: [
       'emergencycontact', 'emergency_contact', 'emergencyphone', '紧急联系人',
@@ -122,6 +154,9 @@
       'currentcity', 'current_city', 'current-city', 'livingcity', 'presentcity',
       '现居城市', '目前城市', '当前城市', '现所在城市'
     ],
+    currentAddress: [
+      'currentaddress', 'current_address', '现居住地址', '现住址', '目前住址'
+    ],
     address: [
       'streetaddress', 'street_address', 'address1', 'address_line', 'mailingaddress',
       '详细地址', '通讯地址', '居住地址', '住址', '街道地址', 'address', 'street', 'addr'
@@ -134,7 +169,10 @@
       '邮编', '邮政编码'
     ],
     country: [
-      'country', 'nation', '国籍', '国家', '所在国家'
+      'country', '国家', '所在国家'
+    ],
+    hukouType: [
+      'hukoutype', 'hukou_type', '户口性质', '户籍性质'
     ],
     hukou: [
       'hukou', 'householdregister', '户籍', '户口所在地', '户口'
@@ -142,9 +180,15 @@
     nativePlace: [
       'nativeplace', 'native_place', 'hometown', '籍贯', '出生地'
     ],
+    studentOrigin: [
+      'studentorigin', 'student_origin', '生源地', '生源'
+    ],
+    archiveLocation: [
+      'archivelocation', 'archive_location', '档案所在地', '档案存放地', '人事档案'
+    ],
     willingToRelocate: [
       'willingtorelocate', 'willing_to_relocate', 'relocate', 'relocation',
-      '是否接受调剂', '接受调动', '是否愿意异地', '可接受调迁', '异地工作', '愿意搬迁'
+      '接受调动', '是否愿意异地', '可接受调迁', '异地工作', '愿意搬迁'
     ],
     linkedin: [
       'linkedin', 'linked-in', 'linkedinurl', 'linkedin_url', 'linked_in', '领英'
@@ -154,40 +198,125 @@
     ],
     website: [
       'website', 'portfolio', 'personalwebsite', 'personal_website', 'homepage',
-      'blog', '个人网站', '作品集', '主页', '博客'
+      'blog', '个人网站', '作品集', '个人主页', '作品链接', '主页', '博客'
     ],
+    height: ['height', '身高'],
+    weight: ['weight', '体重'],
+    bloodType: ['bloodtype', 'blood_type', '血型'],
+    healthStatus: ['healthstatus', 'health_status', '健康状况', '身体状况'],
+    hasChronicIllness: ['chronicillness', 'chronic_illness', '是否有慢性病', '慢性病'],
+    hasCriminalRecord: ['criminalrecord', 'criminal_record', '有无犯罪记录', '犯罪记录'],
+    hasMilitaryService: ['militaryservice', 'military_service', '是否服兵役', '服兵役'],
+    isVeteran: ['是否退伍军人', '退伍军人', 'isveteran'],
+    partyJoinDate: ['partyjoindate', 'party_join_date', '入党时间', '入党日期'],
+    leagueOrPartyJoinDate: ['leagueorpartyjoindate', '入团入党时间', '入团/入党时间', '入团时间'],
+    isRecommendedPostgrad: ['isrecommendedpostgrad', '是否保研', '保研'],
+    hasStudyAbroad: ['hasstudyabroad', '是否有留学经历', '留学经历', '海外学习经历'],
+    isPovertyStudent: ['ispovertystudent', '是否贫困生', '贫困生'],
+    isColorWeak: ['iscolorweak', '是否色弱', '色弱', '色盲'],
+    hasOverseasIdentity: ['hasoverseasidentity', '是否具有境外身份', '境外身份'],
+    englishLevel: ['englishlevel', 'english_level', '英语等级', '英语水平'],
+    gaokaoDate: ['gaokaodate', 'gaokao_date', '高考时间', '高考日期'],
+    gaokaoScore: ['gaokaoscore', 'gaokao_score', '高考分数', '高考成绩'],
+    gaokaoSubjects: ['gaokaosubjects', 'gaokao_subjects', '高考科目', '高考科类'],
+    professionalTitle: ['professionaltitle', 'professional_title', '专业技术职级', '职称', '专业技术职务'],
+    highestDegree: ['highestdegree', 'highest_degree', '最高学历'],
+    isFreshGraduate: ['isfreshgraduate', 'freshgraduate', '是否应届生', '应届生', '应届'],
+    workStatus: ['workstatus', 'work_status', '工作状态', '在职状态', '求职状态'],
+    lastCompany: ['lastcompany', 'last_company', '上一家公司', '上家公司', '前一家公司', '最近一家公司'],
+    personalStrengths: ['personalstrengths', 'personal_strengths', '个人优势', '优势亮点'],
+    hobbies: ['hobbies', 'hobby', '兴趣爱好', '爱好'],
+    careerPlan: ['careerplan', 'career_plan', '职业规划', '职业目标'],
     school: [
       'school', 'university', 'college', 'institution', 'edu_school', 'campus',
       '毕业院校', '就读院校', '学校', '大学', '院校', '教育机构'
     ],
+    eduDegree: [
+      'eduDegree', 'edu_degree', '学历'
+    ],
     degree: [
       'degree', 'educationlevel', 'education_level', 'edu_level', 'qualification',
-      'highestdegree', '学历', '学位', '教育程度', '最高学历'
+      '学位', '教育程度'
+    ],
+    isUpgradeFromCollege: ['isupgradefromcollege', '是否专升本', '专升本'],
+    department: [
+      'department', 'dept', '所在部门', '部门', '科室', '院系', '所在院系'
     ],
     major: [
       'major', 'fieldofstudy', 'field_of_study', 'discipline', 'studyfield',
-      '所学专业', '专业', '主修', '研究方向'
+      '所学专业', '毕业专业', '专业', '主修'
     ],
-    gradYear: [
-      'graduationyear', 'gradyear', 'grad_year', 'yearofgraduation', 'endyear',
-      '毕业年份', '毕业年'
-    ],
-    gpa: [
-      'gpa', 'grade point', '平均绩点', '学分绩点', '成绩绩点'
-    ],
+    majorCategory: ['majorcategory', 'major_category', '专业类别', '学科门类'],
+    schoolCity: ['schoolcity', 'school_city', '学校城市', '院校所在城市'],
+    schoolType: ['schooltype', 'school_type', '院校类型', '学校类型'],
+    eduStatus: ['edustatus', 'edu_status', '学历状态', '就读状态'],
+    eduYears: ['eduyears', 'edu_years', '学制'],
+    studyMode: ['studymode', 'study_mode', '学习形式'],
+    eduMode: ['edumode', 'edu_mode', '教育方式'],
     eduStart: [
       'edustart', 'edu_start', 'enrollmentdate', 'enrollment', '入学时间', '入学日期', '就读开始'
     ],
     eduEnd: [
       'eduend', 'edu_end', 'graduationdate', '毕业日期', '毕业时间', '就读结束', '学业结束'
     ],
+    gradYear: [
+      'graduationyear', 'gradyear', 'grad_year', 'yearofgraduation', 'endyear',
+      '毕业年份', '毕业年'
+    ],
+    degreeAwardDate: ['degreeawarddate', 'degree_award_date', '学位授予时间', '获学位时间'],
+    degreeType: ['degreetype', 'degree_type', '学位类型'],
+    degreeCategory: ['degreecategory', 'degree_category', '学位类别'],
+    enrollmentType: ['enrollmenttype', 'enrollment_type', '招生类别'],
+    isTongzhao: ['istongzhao', '是否统招', '统招'],
+    gpa: [
+      'gpa', 'grade point', '平均绩点', '学分绩点', '成绩绩点'
+    ],
+    failedCourses: ['failedcourses', 'failed_courses', '挂科数', '不及格门数'],
+    classRank: ['classrank', 'class_rank', '班级排名', '年级排名'],
+    majorRank: ['majorrank', 'major_rank', '专业排名'],
+    majorClassSize: ['majorclasssize', 'major_class_size', '专业人数', '专业总人数'],
+    eduCertNo: ['educertno', 'edu_cert_no', '学历证书编号', '毕业证编号'],
+    degreeCertNo: ['degreecertno', 'degree_cert_no', '学位证书编号', '学位证编号'],
+    studentId: ['studentid', 'student_id', '学号'],
+    advisorName: ['advisorname', 'advisor_name', '导师姓名', '指导教师', '导师'],
+    labName: ['labname', 'lab_name', '实验室名称', '实验室'],
+    isNationalKeyLab: ['isnationalkeylab', '是否国家重点实验室', '国家重点实验室'],
+    isJointTraining: ['isjointtraining', '是否联合培养', '联合培养'],
+    counselorName: ['counselorname', 'counselor_name', '辅导员姓名', '辅导员'],
+    counselorContact: ['counselorcontact', 'counselor_contact', '辅导员联系方式', '辅导员电话'],
+    isOverseasSchool: ['isoverseasschool', '是否海外院校', '海外院校'],
+    eduDescription: ['edudescription', 'edu_description', '教育经历描述', '在校经历'],
+    majorDescription: ['majordescription', 'major_description', '专业描述', '专业介绍'],
+    majorCourses: ['majorcourses', 'major_courses', '主修课程', '专业课程'],
+    researchDirection: ['researchdirection', 'research_direction', '研究方向'],
+    thesisTitle: ['thesistitle', 'thesis_title', '毕业论文', '论文题目', '毕业设计题目'],
     dualDegree: [
       'dualdegree', 'dual_degree', 'doublemajor', 'double_major', '辅修', '双学位', '第二学位'
     ],
+    internCompany: [
+      'interncompany', 'intern_company', 'internshipcompany', '实习公司', '实习单位', '实习企业'
+    ],
+    internCompanySize: ['interncompanysize', 'intern_company_size', '实习公司规模'],
+    internOverseas: ['internoverseas', 'intern_overseas', '实习是否海外', '实习海外'],
+    internDepartment: ['interndepartment', 'intern_department', '实习部门'],
+    internTitle: ['interntitle', 'intern_title', '实习职位', '实习岗位', '实习职务'],
+    internStart: ['internstart', 'intern_start', '实习开始', '实习开始时间'],
+    internEnd: ['internend', 'intern_end', '实习结束', '实习结束时间'],
+    internCity: ['interncity', 'intern_city', '实习城市'],
+    internIndustry: ['internindustry', 'intern_industry', '实习行业'],
+    internEmploymentType: ['internemploymenttype', '实习用工性质', '实习工作性质'],
+    internAnnualSalary: ['internannualsalary', '实习年薪'],
+    internRefereeName: ['internrefereename', '实习证明人姓名', '实习证明人'],
+    internRefereeContact: ['internrefereecontact', '实习证明人联系方式', '实习证明人电话'],
+    internRefereeTitle: ['internrefereetitle', '实习证明人职位', '实习证明人职务'],
+    internDescription: ['interndescription', 'intern_description', '实习描述', '实习内容', '实习经历描述'],
+    internLeaveReason: ['internleavereason', '实习离职原因', '实习离开原因'],
     company: [
       'company', 'employer', 'organization', 'org', 'currentcompany', 'current_company',
       'companyname', '工作单位', '现任公司', '就职公司', '公司', '雇主', '单位名称'
     ],
+    companySize: ['companysize', 'company_size', '公司规模', '企业规模'],
+    workOverseas: ['workoverseas', 'work_overseas', '是否海外工作', '工作是否海外'],
     title: [
       'jobtitle', 'job_title', 'job-title', 'position', 'currenttitle', 'current_title',
       'role', '职位名称', '现任职位', '岗位', '职务', '职位', 'title'
@@ -198,18 +327,30 @@
     ],
     startDate: [
       'startdate', 'start_date', 'start-date', 'availablefrom', 'dateavailable',
-      '入职时间', '任职开始', '开始日期'
+      '入职时间', '任职开始', '开始日期', '工作开始'
     ],
+    workEnd: [
+      'workend', 'work_end', '工作结束', '任职结束', '工作结束时间'
+    ],
+    endDate: [
+      'enddate', 'end_date', '结束日期', '结束时间'
+    ],
+    workCity: ['workcity', 'work_city', '工作城市', '工作地点'],
     industry: [
-      'industry', 'sector', '所属行业', '行业', '从事行业'
-    ],
-    department: [
-      'department', 'dept', '所在部门', '部门', '科室'
+      'industry', 'sector', '所属行业', '行业', '从事行业', '工作行业'
     ],
     jobType: [
-      'jobtype', 'job_type', 'employmenttype', 'employment_type', 'worktype',
+      'jobtype', 'job_type', 'worktype',
       '工作性质', '职位类型', '全职兼职', '用工类型'
     ],
+    employmentType: [
+      'employmenttype', 'employment_type', '用工性质'
+    ],
+    monthlySalary: ['monthlysalary', 'monthly_salary', '月薪', '月收入'],
+    annualSalary: ['annualsalary', 'annual_salary', '年薪', '年收入'],
+    refereeName: ['refereename', 'referee_name', '证明人姓名', '证明人'],
+    refereeContact: ['refereecontact', 'referee_contact', '证明人联系方式', '证明人电话', '证明人手机'],
+    refereeTitle: ['refereetitle', 'referee_title', '证明人职位', '证明人职务'],
     leaveReason: [
       'leavereason', 'leave_reason', 'reasonforleaving', '离职原因', '离职理由', '离开原因'
     ],
@@ -217,20 +358,52 @@
       'achievements', 'accomplishment', 'highlights', 'keyachievements',
       '工作业绩', '主要成就', '业绩亮点', '工作成果'
     ],
+    workDescription: [
+      'workdescription', 'work_description', '工作描述', '工作内容', '工作职责描述', '职责描述'
+    ],
     projectName: [
       'projectname', 'project_name', 'projecttitle', '项目名称', '项目名'
     ],
+    projectTeamSize: ['projectteamsize', 'project_team_size', '项目人数', '项目团队规模'],
+    projectOverseas: ['projectoverseas', 'project_overseas', '项目是否海外'],
     projectRole: [
-      'projectrole', 'project_role', 'projecttitle_role', '项目角色', '项目职务', '在项目中担任'
+      'projectrole', 'project_role', '项目角色', '项目职务', '在项目中担任'
     ],
+    projectPracticeMode: ['projectpracticemode', '项目实践形式', '实践形式'],
+    projectStart: ['projectstart', 'project_start', '项目开始', '项目开始时间'],
+    projectEnd: ['projectend', 'project_end', '项目结束', '项目结束时间'],
+    projectCity: ['projectcity', 'project_city', '项目城市'],
+    projectLink: ['projectlink', 'project_link', '项目链接', '项目地址'],
+    projectRefereeName: ['projectrefereename', '项目证明人姓名', '项目证明人'],
+    projectRefereeContact: ['projectrefereecontact', '项目证明人联系方式'],
+    projectRefereeTitle: ['projectrefereetitle', '项目证明人职位'],
     projectDesc: [
       'projectdesc', 'project_desc', 'projectdescription', 'project_description',
       'projectexperience', 'project_experience', '项目经历', '项目描述', '项目介绍', '项目说明'
     ],
+    projectResponsibilities: ['projectresponsibilities', '项目职责', '项目责任'],
+    projectOutcome: ['projectoutcome', '项目成果', '项目结果', '项目产出'],
+    campusOrg: ['campusorg', 'campus_org', '组织名称', '校园组织', '社团名称'],
+    campusLevel: ['campuslevel', 'campus_level', '组织级别', '校园级别'],
+    campusRole: ['campusrole', 'campus_role', '校园职位', '社团职位'],
+    campusStart: ['campusstart', 'campus_start', '校园经历开始'],
+    campusEnd: ['campusend', 'campus_end', '校园经历结束'],
+    campusWorkContent: ['campusworkcontent', '校园工作内容', '组织工作内容'],
+    campusDuty: ['campusduty', '本人职责', '校园职责', '在组织中职责'],
+    socialOrg: ['socialorg', 'social_org', '实践单位', '社会实践单位'],
+    socialRole: ['socialrole', 'social_role', '实践岗位', '实践身份'],
+    socialStart: ['socialstart', 'social_start', '实践开始'],
+    socialEnd: ['socialend', 'social_end', '实践结束'],
+    socialContent: ['socialcontent', '实践内容', '社会实践内容'],
+    techSkills: [
+      'techskills', 'tech_skills', 'technicalskills', '技术技能', '硬技能'
+    ],
     skills: [
       'skills', 'skill', 'expertise', 'competencies', 'techstack',
-      '专业技能', '掌握技能', '技术栈', '技能特长', '技能'
+      '专业技能', '掌握技能', '技术栈', '技能特长', '技能', '技能专长'
     ],
+    softwareSkills: ['softwareskills', 'software_skills', '软件技能', '办公软件'],
+    softSkills: ['softskills', 'soft_skills', '软技能', '综合素质'],
     summary: [
       'summary', 'about', 'bio', 'introduction', 'coverletter', 'cover_letter',
       'objective', 'selfintro', '自我介绍', '个人简介', '自我评价', '求职信',
@@ -240,13 +413,37 @@
       'expectedsalary', 'expected_salary', 'salaryexpectation', 'salary', 'compensation',
       '期望薪资', '期望月薪', '薪资期望', '期望待遇', '薪资要求'
     ],
+    expectedAnnualSalary: [
+      'expectedannualsalary', 'expected_annual_salary', '期望年薪'
+    ],
+    currentSalary: [
+      'currentsalary', 'current_salary', '目前薪资', '当前薪资', '现薪资'
+    ],
     expectedCity: [
       'expectedcity', 'expected_city', 'preferredcity', 'preferred_location', 'preferredlocation',
       'intentioncity', '期望城市', '意向城市', '期望工作地', '意向工作城市', '目标城市'
     ],
+    interviewCity: [
+      'interviewcity', 'interview_city', '面试城市', '面试地点'
+    ],
+    expectedIndustry: [
+      'expectedindustry', 'expected_industry', '期望行业', '意向行业'
+    ],
+    currentIndustry: [
+      'currentindustry', 'current_industry', '目前行业', '当前行业'
+    ],
+    expectedStartDate: [
+      'expectedstartdate', 'expected_start_date', '预计入职时间', '期望入职时间'
+    ],
     jobTarget: [
       'jobtarget', 'job_target', 'desiredposition', 'desired_position', 'targetrole',
-      '求职意向', '目标职位', '期望职位', '意向岗位'
+      '求职意向', '目标职位', '目标岗位', '期望职位', '意向岗位'
+    ],
+    hasRelativeAtCompany: [
+      'hasrelativeatcompany', '是否有亲属在本公司', '是否有亲属在公司', '公司亲属'
+    ],
+    acceptAdjustment: [
+      'acceptadjustment', 'accept_adjustment', '是否接受调剂', '接受调剂'
     ],
     availability: [
       'availability', 'availabledate', '到岗', '可到岗', '到岗时间'
@@ -268,8 +465,67 @@
       'certificates', 'certifications', 'certificate', 'license', '资质证书',
       '证书', '资格证', '认证'
     ],
+    certName: ['certname', 'cert_name', '证书名称', '资质证书名称'],
+    certType: ['certtype', 'cert_type', '证书类型', '资质证书类型'],
+    certDate: ['certdate', 'cert_date', '证书获取时间', '获证时间', '发证日期', '资质获取时间'],
+    certNo: ['certno', 'cert_no', '证书编号', '资质证书编号'],
+    certIssuer: ['certissuer', 'cert_issuer', '颁发机构', '发证机构'],
+    certScore: ['certscore', 'cert_score', '证书成绩'],
+    certExpiry: ['certexpiry', 'cert_expiry', '证书有效期', '有效期'],
+    certDescription: ['certdescription', 'cert_description', '证书描述'],
+    langName: ['langname', 'lang_name', '语言种类', '语种名称'],
+    langDate: ['langdate', 'lang_date', '语言证书获得时间', '外语获得时间'],
+    langCertName: ['langcertname', 'lang_cert_name', '语言证书名称'],
+    langScore: ['langscore', 'lang_score', '语言成绩'],
+    langLevel: ['langlevel', 'lang_level', '语言掌握程度', '外语掌握程度'],
+    langListenSpeak: ['langlistenspeak', '听说能力', '外语听说'],
+    langReadWrite: ['langreadwrite', '读写能力', '外语读写'],
+    familyName: ['familyname', 'family_name_member', '家庭成员姓名', '家人姓名'],
+    familyRelation: ['familyrelation', 'family_relation', '家庭关系', '家庭成员关系', '与本人关系'],
+    familyGender: ['familygender', 'family_gender', '家庭成员性别'],
+    familyEducation: ['familyeducation', 'family_education', '家庭成员教育程度', '家人学历'],
+    familyEthnicity: ['familyethnicity', 'family_ethnicity', '家庭成员民族'],
+    familyIdNumber: ['familyidnumber', 'family_id_number', '家庭成员身份证号', '家人身份证'],
+    familyBirthday: ['familybirthday', 'family_birthday', '家庭成员出生日期'],
+    familyPhone: ['familyphone', 'family_phone', '家庭成员联系电话', '家人电话'],
+    familyEmployer: ['familyemployer', 'family_employer', '家庭成员工作单位', '家人工作单位'],
+    familyTitle: ['familytitle', 'family_title', '家庭成员职位'],
+    familyPoliticalStatus: ['familypoliticalstatus', '家庭成员政治面貌'],
+    familyAddress: ['familyaddress', 'family_address', '家庭成员联系地址', '家人地址'],
+    awardName: ['awardname', 'award_name', '奖项名称', '获奖名称'],
+    awardIssuer: ['awardissuer', 'award_issuer', '颁奖机构', '奖励颁发机构'],
+    awardDate: ['awarddate', 'award_date', '获奖时间', '获奖日期'],
+    awardEnd: ['awardend', 'award_end', '奖项结束时间'],
+    awardLevel: ['awardlevel', 'award_level', '奖项级别'],
+    awardType: ['awardtype', 'award_type', '奖励类型'],
+    awardGrade: ['awardgrade', 'award_grade', '奖励等级'],
+    awardDescription: ['awarddescription', 'award_description', '获奖描述'],
+    patentName: ['patentname', 'patent_name', '专利名称'],
+    patentNo: ['patentno', 'patent_no', '专利号'],
+    patentApplyDate: ['patentapplydate', 'patent_apply_date', '专利申请日期'],
+    patentStatus: ['patentstatus', 'patent_status', '专利状态'],
+    patentInventor: ['patentinventor', 'patent_inventor', '专利发明人', '发明人'],
+    patentDescription: ['patentdescription', 'patent_description', '专利描述'],
+    paperTitle: ['papertitle', 'paper_title', '论文标题', '论文题目'],
+    paperJournal: ['paperjournal', 'paper_journal', '发表期刊', '期刊名称'],
+    paperAuthors: ['paperauthors', 'paper_authors', '论文作者'],
+    paperVolume: ['papervolume', 'paper_volume', '期刊卷期', '卷期'],
+    paperImpactFactor: ['paperimpactfactor', '影响因子'],
+    paperJournalLevel: ['paperjournallevel', '刊物等级', '期刊等级'],
+    paperAuthorOrder: ['paperauthororder', '作者顺序'],
+    paperDate: ['paperdate', 'paper_date', '发表时间', '论文发表时间'],
+    paperDoi: ['paperdoi', 'paper_doi', 'doi'],
+    paperLink: ['paperlink', 'paper_link', '论文链接'],
+    paperAbstract: ['paperabstract', 'paper_abstract', '论文摘要'],
+    trainingName: ['trainingname', 'training_name', '培训名称'],
+    trainingStart: ['trainingstart', 'training_start', '培训开始'],
+    trainingEnd: ['trainingend', 'training_end', '培训结束'],
+    trainingOrg: ['trainingorg', 'training_org', '培训机构'],
+    trainingGain: ['traininggain', 'training_gain', '培训收获'],
+    trainingContent: ['trainingcontent', 'training_content', '培训内容'],
     referralSource: [
-      'referralsource', 'referral_source', '招聘渠道', '应聘渠道', '投递来源', '获知渠道'
+      'referralsource', 'referral_source', '招聘渠道', '应聘渠道', '投递来源', '获知渠道',
+      '招聘信息来源', '信息来源'
     ],
     additionalInfo: [
       'additionalinfo', 'additional_info', 'otherinfo', 'remarks', 'notes',
@@ -279,19 +535,62 @@
 
   /** 更具体字段优先（同长度时参考） */
   var FIELD_ORDER = [
-    'englishName', 'preferredName', 'firstName', 'lastName',
-    'secondaryEmail', 'email', 'wechat', 'qq', 'emergencyContact', 'phone',
-    'birthday', 'idType', 'idNumber', 'gender',
+    // 更具体 / 易冲突优先
+    'emergencyContactName', 'emergencyContactRelation', 'emergencyContactPhone', 'emergencyContact',
+    'namePinyin', 'englishName', 'preferredName', 'firstName', 'lastName', 'resumeTitle',
+    'secondaryEmail', 'email', 'wechat', 'qq', 'phone',
+    'birthday', 'age', 'idType', 'idNumber', 'gender',
+    'nationality', 'ethnicity', 'politicalStatus', 'maritalStatus',
     'linkedin', 'github', 'website',
-    'expectedCity', 'currentCity',
-    'hukou', 'nativePlace', 'willingToRelocate',
-    'gradYear', 'gpa', 'eduStart', 'eduEnd', 'dualDegree', 'school', 'degree', 'major',
-    'projectName', 'projectRole', 'projectDesc',
-    'leaveReason', 'achievements', 'industry', 'department', 'jobType',
+    'expectedCity', 'interviewCity', 'currentCity', 'currentAddress',
+    'hukouType', 'hukou', 'nativePlace', 'studentOrigin', 'archiveLocation',
+    'willingToRelocate', 'acceptAdjustment',
+    'highestDegree', 'eduDegree', 'isFreshGraduate', 'workStatus', 'lastCompany',
+    'englishLevel', 'gaokaoDate', 'gaokaoScore', 'gaokaoSubjects', 'professionalTitle',
+    'healthStatus', 'hasChronicIllness', 'hasCriminalRecord', 'hasMilitaryService', 'isVeteran',
+    'bloodType', 'partyJoinDate', 'leagueOrPartyJoinDate',
+    'isRecommendedPostgrad', 'hasStudyAbroad', 'isPovertyStudent', 'isColorWeak', 'hasOverseasIdentity',
+    'height', 'weight',
+    'personalStrengths', 'hobbies', 'careerPlan',
+    'expectedIndustry', 'currentIndustry', 'expectedStartDate',
+    'expectedAnnualSalary', 'currentSalary', 'expectedSalary',
+    'hasRelativeAtCompany', 'jobTarget',
+    'gradYear', 'gpa', 'eduStart', 'eduEnd', 'degreeAwardDate', 'dualDegree',
+    'isUpgradeFromCollege', 'majorCategory', 'schoolCity', 'schoolType', 'eduStatus', 'eduYears',
+    'studyMode', 'eduMode', 'enrollmentType', 'isTongzhao',
+    'failedCourses', 'classRank', 'majorRank', 'majorClassSize',
+    'eduCertNo', 'degreeCertNo', 'studentId', 'advisorName', 'labName',
+    'isNationalKeyLab', 'isJointTraining', 'counselorName', 'counselorContact', 'isOverseasSchool',
+    'eduDescription', 'majorDescription', 'majorCourses', 'researchDirection', 'thesisTitle',
+    'school', 'degree', 'major', 'department',
+    'internRefereeName', 'internRefereeContact', 'internRefereeTitle',
+    'internCompany', 'internCompanySize', 'internOverseas', 'internDepartment', 'internTitle',
+    'internStart', 'internEnd', 'internCity', 'internIndustry', 'internEmploymentType',
+    'internAnnualSalary', 'internDescription', 'internLeaveReason',
+    'projectRefereeName', 'projectRefereeContact', 'projectRefereeTitle',
+    'projectName', 'projectTeamSize', 'projectOverseas', 'projectRole', 'projectPracticeMode',
+    'projectStart', 'projectEnd', 'projectCity', 'projectLink',
+    'projectDesc', 'projectResponsibilities', 'projectOutcome',
+    'campusOrg', 'campusLevel', 'campusRole', 'campusStart', 'campusEnd', 'campusWorkContent', 'campusDuty',
+    'socialOrg', 'socialRole', 'socialStart', 'socialEnd', 'socialContent',
+    'refereeName', 'refereeContact', 'refereeTitle',
+    'leaveReason', 'achievements', 'workDescription', 'companySize', 'workOverseas',
+    'workCity', 'industry', 'employmentType', 'jobType',
+    'monthlySalary', 'annualSalary', 'workEnd', 'endDate',
     'company', 'title', 'years', 'startDate',
-    'expectedSalary', 'jobTarget', 'noticePeriod', 'earliestStart', 'availability', 'workAuth',
+    'noticePeriod', 'earliestStart', 'availability', 'workAuth', 'referralSource',
+    'certName', 'certType', 'certDate', 'certNo', 'certIssuer', 'certScore', 'certExpiry', 'certDescription',
+    'langName', 'langDate', 'langCertName', 'langScore', 'langLevel', 'langListenSpeak', 'langReadWrite',
     'languages', 'certificates',
-    'skills', 'summary', 'referralSource', 'additionalInfo',
+    'techSkills', 'softwareSkills', 'softSkills', 'skills',
+    'familyIdNumber', 'familyName', 'familyRelation', 'familyGender', 'familyEducation', 'familyEthnicity',
+    'familyBirthday', 'familyPhone', 'familyEmployer', 'familyTitle', 'familyPoliticalStatus', 'familyAddress',
+    'awardName', 'awardIssuer', 'awardDate', 'awardEnd', 'awardLevel', 'awardType', 'awardGrade', 'awardDescription',
+    'patentName', 'patentNo', 'patentApplyDate', 'patentStatus', 'patentInventor', 'patentDescription',
+    'paperTitle', 'paperJournal', 'paperAuthors', 'paperVolume', 'paperImpactFactor', 'paperJournalLevel',
+    'paperAuthorOrder', 'paperDate', 'paperDoi', 'paperLink', 'paperAbstract',
+    'trainingName', 'trainingStart', 'trainingEnd', 'trainingOrg', 'trainingGain', 'trainingContent',
+    'summary', 'additionalInfo',
     'zip', 'province', 'country', 'city', 'address',
     'name'
   ];
@@ -416,7 +715,8 @@
 
   /**
    * 是否「他人联系方式」语境（上司/直属上级/汇报对象等），不应填申请人 wechat/qq/phone。
-   * 紧急联系人仍允许映射到 emergencyContact。
+   * 紧急联系人仍允许映射到 emergencyContact*。
+   * 证明人/家庭成员不走此函数（有独立 referee / family 键），见 isApplicantOnlyKeyBlocked。
    */
   function isOtherPersonContactContext(hints) {
     var raw = String(hints || '');
@@ -428,6 +728,11 @@
     if (h.indexOf('紧急联系人') !== -1 || h.indexOf('紧急联络') !== -1 ||
         h.indexOf('应急联系') !== -1 || h.indexOf('emergencycontact') !== -1 ||
         h.indexOf('emergencyphone') !== -1) {
+      return false;
+    }
+
+    // 证明人有专用键，不在此一律跳过
+    if (h.indexOf('证明人') !== -1 || h.indexOf('referee') !== -1) {
       return false;
     }
 
@@ -456,6 +761,40 @@
         h.indexOf('managerphone') !== -1 || h.indexOf('managercontact') !== -1 ||
         h.indexOf('managername') !== -1 || h.indexOf('reportingto') !== -1) {
       return true;
+    }
+    return false;
+  }
+
+  /** 申请人身份/联系键：在证明人/家庭成员语境下不应被误填 */
+  var APPLICANT_ONLY_KEYS = {
+    name: 1, firstName: 1, lastName: 1, namePinyin: 1, englishName: 1, preferredName: 1,
+    phone: 1, wechat: 1, qq: 1, email: 1, secondaryEmail: 1,
+    idNumber: 1, idType: 1, birthday: 1, gender: 1
+  };
+
+  /**
+   * 证明人 / 家庭成员语境下，禁止把申请人 name/phone/wechat/idNumber 等填进去。
+   * referee / family / emergency 键放行。
+   */
+  function isApplicantOnlyKeyBlocked(key, hints) {
+    if (!key || !APPLICANT_ONLY_KEYS[key]) return false;
+    var raw = String(hints || '');
+    var h = normalize(raw);
+    if (!h) return false;
+    if (h.indexOf('紧急联系人') !== -1 || h.indexOf('紧急联络') !== -1 ||
+        h.indexOf('emergencycontact') !== -1) {
+      return false;
+    }
+    if (h.indexOf('证明人') !== -1 || h.indexOf('referee') !== -1) return true;
+    if (h.indexOf('家庭成员') !== -1 || h.indexOf('家人') !== -1 ||
+        h.indexOf('family') !== -1) {
+      // family_name 作为姓氏 autocomplete 不在此；有「家庭」中文或 family member 才拦
+      if (h.indexOf('家庭') !== -1 || h.indexOf('家人') !== -1 ||
+          h.indexOf('familymember') !== -1 || h.indexOf('family_member') !== -1 ||
+          h.indexOf('familymember') !== -1) {
+        return true;
+      }
+      if (/family\s*(name|phone|id|member|relation|gender|address)/i.test(raw)) return true;
     }
     return false;
   }
@@ -624,7 +963,10 @@
         }
       }
     }
-    if (bestKey) return { key: bestKey, confidence: bestScore, method: bestMethod };
+    if (bestKey) {
+      if (isApplicantOnlyKeyBlocked(bestKey, raw)) return null;
+      return { key: bestKey, confidence: bestScore, method: bestMethod };
+    }
 
     // Pass 2: fuzzy synonym / token / Levenshtein
     bestKey = null;
@@ -649,6 +991,7 @@
       }
     }
     if (bestKey && bestScore >= FUZZY_THRESHOLD) {
+      if (isApplicantOnlyKeyBlocked(bestKey, raw)) return null;
       return { key: bestKey, confidence: Math.round(bestScore * 1000) / 1000, method: bestMethod };
     }
     return null;
@@ -786,6 +1129,108 @@
       var c = profile.city && String(profile.city).trim();
       if (c) return c;
       return (profile.currentCity && String(profile.currentCity).trim()) || '';
+    }
+    // 现居住地址 ↔ 详细地址
+    if (key === 'currentAddress') {
+      var ca = profile.currentAddress && String(profile.currentAddress).trim();
+      if (ca) return ca;
+      return (profile.address && String(profile.address).trim()) || '';
+    }
+    if (key === 'address') {
+      var ad = profile.address && String(profile.address).trim();
+      if (ad) return ad;
+      return (profile.currentAddress && String(profile.currentAddress).trim()) || '';
+    }
+    // 技术技能 ↔ 技能
+    if (key === 'techSkills') {
+      var ts = profile.techSkills && String(profile.techSkills).trim();
+      if (ts) return ts;
+      return (profile.skills && String(profile.skills).trim()) || '';
+    }
+    if (key === 'skills') {
+      var sk = profile.skills && String(profile.skills).trim();
+      if (sk) return sk;
+      return (profile.techSkills && String(profile.techSkills).trim()) || '';
+    }
+    // 国籍 ↔ 国家（仅单向：nationality 可回退 country）
+    if (key === 'nationality') {
+      var nat = profile.nationality && String(profile.nationality).trim();
+      if (nat) return nat;
+      return (profile.country && String(profile.country).trim()) || '';
+    }
+    // 学习形式 ↔ 教育方式
+    if (key === 'studyMode') {
+      var sm = profile.studyMode && String(profile.studyMode).trim();
+      if (sm) return sm;
+      return (profile.eduMode && String(profile.eduMode).trim()) || '';
+    }
+    if (key === 'eduMode') {
+      var em = profile.eduMode && String(profile.eduMode).trim();
+      if (em) return em;
+      return (profile.studyMode && String(profile.studyMode).trim()) || '';
+    }
+    // 用工性质 ↔ 工作性质
+    if (key === 'employmentType') {
+      var et = profile.employmentType && String(profile.employmentType).trim();
+      if (et) return et;
+      return (profile.jobType && String(profile.jobType).trim()) || '';
+    }
+    if (key === 'jobType') {
+      var jt = profile.jobType && String(profile.jobType).trim();
+      if (jt) return jt;
+      return (profile.employmentType && String(profile.employmentType).trim()) || '';
+    }
+    // 工作描述 ↔ 业绩
+    if (key === 'workDescription') {
+      var wd = profile.workDescription && String(profile.workDescription).trim();
+      if (wd) return wd;
+      return (profile.achievements && String(profile.achievements).trim()) || '';
+    }
+    // 紧急联系人：组合回退
+    if (key === 'emergencyContact') {
+      var ec = profile.emergencyContact && String(profile.emergencyContact).trim();
+      if (ec) return ec;
+      var en = profile.emergencyContactName && String(profile.emergencyContactName).trim();
+      var ep = profile.emergencyContactPhone && String(profile.emergencyContactPhone).trim();
+      if (en && ep) return en + ' ' + ep;
+      return en || ep || '';
+    }
+    if (key === 'emergencyContactName') {
+      var ecn = profile.emergencyContactName && String(profile.emergencyContactName).trim();
+      if (ecn) return ecn;
+      // 无法可靠从组合串拆分时不回退，避免污染
+      return '';
+    }
+    if (key === 'emergencyContactPhone') {
+      var ecp = profile.emergencyContactPhone && String(profile.emergencyContactPhone).trim();
+      if (ecp) return ecp;
+      return '';
+    }
+    // endDate ↔ workEnd
+    if (key === 'endDate') {
+      var ed = profile.endDate && String(profile.endDate).trim();
+      if (ed) return ed;
+      return (profile.workEnd && String(profile.workEnd).trim()) || '';
+    }
+    if (key === 'workEnd') {
+      var we = profile.workEnd && String(profile.workEnd).trim();
+      if (we) return we;
+      return (profile.endDate && String(profile.endDate).trim()) || '';
+    }
+    // highestDegree ↔ eduDegree ↔ degree 轻度回退
+    if (key === 'highestDegree') {
+      var hd = profile.highestDegree && String(profile.highestDegree).trim();
+      if (hd) return hd;
+      var edg = profile.eduDegree && String(profile.eduDegree).trim();
+      if (edg) return edg;
+      return (profile.degree && String(profile.degree).trim()) || '';
+    }
+    if (key === 'eduDegree') {
+      var ed2 = profile.eduDegree && String(profile.eduDegree).trim();
+      if (ed2) return ed2;
+      var hd2 = profile.highestDegree && String(profile.highestDegree).trim();
+      if (hd2) return hd2;
+      return (profile.degree && String(profile.degree).trim()) || '';
     }
     var v = profile[key];
     return v != null ? String(v).trim() : '';
@@ -1603,6 +2048,7 @@
     labelTextFromParentPrevSibling: labelTextFromParentPrevSibling,
     cleanLabelPunctuation: cleanLabelPunctuation,
     isOtherPersonContactContext: isOtherPersonContactContext,
+    isApplicantOnlyKeyBlocked: isApplicantOnlyKeyBlocked,
     extractDatePart: extractDatePart,
     detectDatePartRole: detectDatePartRole,
     findNearbyDateGroupLabelText: findNearbyDateGroupLabelText,

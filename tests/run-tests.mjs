@@ -490,9 +490,17 @@ test('PROFILE_FIELDS includes expanded keys', () => {
     'leaveReason', 'achievements', 'projectName', 'projectRole', 'projectDesc',
     'expectedSalary', 'expectedCity', 'jobTarget', 'availability', 'noticePeriod',
     'earliestStart', 'workAuth', 'languages', 'certificates',
-    'skills', 'summary', 'referralSource', 'additionalInfo'
+    'skills', 'summary', 'referralSource', 'additionalInfo',
+    // v1.3.0 playoffer
+    'resumeTitle', 'namePinyin', 'nationality', 'ethnicity', 'politicalStatus', 'maritalStatus',
+    'currentAddress', 'highestDegree', 'isFreshGraduate', 'lastCompany',
+    'emergencyContactName', 'emergencyContactPhone',
+    'internCompany', 'workEnd', 'techSkills', 'certName', 'langName',
+    'familyName', 'familyIdNumber', 'awardName', 'patentName', 'paperTitle', 'trainingName',
+    'campusOrg', 'socialOrg', 'acceptAdjustment', 'eduDegree'
   ];
   need.forEach((k) => assert.ok(Profile.PROFILE_FIELDS.includes(k), 'missing ' + k));
+  assert.ok(Profile.PROFILE_FIELDS.length >= 200, 'expected large playoffer schema, got ' + Profile.PROFILE_FIELDS.length);
 });
 
 test('emptyProfile has all keys empty', () => {
@@ -502,11 +510,17 @@ test('emptyProfile has all keys empty', () => {
 
 test('SAMPLE_PROFILE has Chinese demo data', () => {
   assert.ok(Profile.SAMPLE_PROFILE.name);
+  assert.equal(Profile.SAMPLE_PROFILE.name, '张三');
   assert.ok(Profile.SAMPLE_PROFILE.email.includes('@'));
+  assert.ok(Profile.SAMPLE_PROFILE.email.includes('example.com'));
   assert.ok(Profile.SAMPLE_PROFILE.wechat);
   assert.ok(Profile.SAMPLE_PROFILE.projectDesc);
   assert.ok(Profile.profileHasData(Profile.SAMPLE_PROFILE));
   assert.equal(Profile.profileHasData(Profile.emptyProfile()), false);
+  // 敏感字段默认空；禁止真实 PII
+  assert.equal(Profile.SAMPLE_PROFILE.idNumber, '');
+  assert.equal(Profile.SAMPLE_PROFILE.familyIdNumber, '');
+  assert.ok(!/戴远升/.test(JSON.stringify(Profile.SAMPLE_PROFILE)));
 });
 
 test('normalizeProfile drops unknown keys and trims', () => {
@@ -701,10 +715,10 @@ test('buildSystemPrompt mentions select option matching', () => {
 
 console.log('repo integrity');
 
-test('manifest is MV3 version 1.2.4 with icons', () => {
+test('manifest is MV3 version 1.3.0 with icons', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.2.4');
+  assert.equal(manifest.version, '1.3.0');
   assert.ok(manifest.icons['16']);
   assert.ok(manifest.action.default_icon['48']);
   assert.ok(manifest.content_scripts[0].js.includes('shared/match.js'));
@@ -731,6 +745,12 @@ test('options page has AI section and new fields', () => {
   assert.ok(html.includes('name="expectedCity"'));
   assert.ok(html.includes('name="projectDesc"'));
   assert.ok(html.includes('选填'));
+  assert.ok(html.includes('name="namePinyin"'));
+  assert.ok(html.includes('name="internCompany"'));
+  assert.ok(html.includes('name="familyIdNumber"'));
+  assert.ok(html.includes('个人信息'));
+  assert.ok(html.includes('求职意向'));
+  assert.ok(html.includes('details class="section"'));
 });
 
 test('popup has AI buttons', () => {
@@ -812,7 +832,8 @@ test('D3: bare 微信 still wechat; 紧急联系人 → emergencyContact', () =>
   assert.equal(Match.matchFieldKey('微信号'), 'wechat');
   assert.equal(Match.matchFieldKey('微信'), 'wechat');
   assert.equal(Match.matchFieldKey('紧急联系人'), 'emergencyContact');
-  assert.equal(Match.matchFieldKey('紧急联络人电话'), 'emergencyContact');
+  assert.equal(Match.matchFieldKey('紧急联络人电话'), 'emergencyContactPhone');
+  assert.equal(Match.matchFieldKey('紧急联系人姓名'), 'emergencyContactName');
   assert.equal(Match.isOtherPersonContactContext('紧急联系人微信'), false);
 });
 
@@ -987,7 +1008,7 @@ test('semanticClassTokens drops ant- noise keeps name-like', () => {
   assert.ok(!/ant-input/.test(sem));
 });
 
-test('autofill.js v1.2.4 uses form-item + date part + adjacent pair helpers', () => {
+test('autofill.js v1.3.0 uses form-item + date part + adjacent pair helpers', () => {
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
   assert.ok(src.includes('labelTextFromFormItem'), 'must use form-item labels');
   assert.ok(src.includes('resolveAriaLabelledByText'), 'must use aria-labelledby');
@@ -996,7 +1017,7 @@ test('autofill.js v1.2.4 uses form-item + date part + adjacent pair helpers', ()
   assert.ok(src.includes('findNearbyDateGroupLabelText'), 'must use nearby date group label');
   assert.ok(src.includes('fieldLooksFilled'), 'skip-if-filled intact');
   assert.ok(src.includes('visibleLabelText'), 'visibleLabelText intact');
-  assert.ok(src.includes('1.2.4') || src.includes('v1.2.4'), 'version comment');
+  assert.ok(src.includes('1.3.0') || src.includes('v1.3.0'), 'version comment');
 });
 
 
@@ -1097,6 +1118,68 @@ test('D10: findNearbyDateGroupLabelText with mock nodes', () => {
   const found = Match.findNearbyDateGroupLabelText(yearIn);
   assert.equal(found, '毕业时间');
   assert.equal(Match.matchFieldKey(found), 'eduEnd');
+});
+
+
+console.log('v1.3.0 playoffer schema');
+
+test('v1.3.0 matchKey: critical CN labels', () => {
+  assert.equal(Match.matchFieldKey('姓名拼音'), 'namePinyin');
+  assert.equal(Match.matchFieldKey('政治面貌'), 'politicalStatus');
+  assert.equal(Match.matchFieldKey('是否应届生'), 'isFreshGraduate');
+  assert.equal(Match.matchFieldKey('实习公司'), 'internCompany');
+  assert.equal(Match.matchFieldKey('上一家公司'), 'lastCompany');
+  assert.equal(Match.matchFieldKey('紧急联系人姓名'), 'emergencyContactName');
+  assert.equal(Match.matchFieldKey('现居住地址'), 'currentAddress');
+  assert.equal(Match.matchFieldKey('最高学历'), 'highestDegree');
+  assert.equal(Match.matchFieldKey('目标岗位'), 'jobTarget');
+  assert.equal(Match.matchFieldKey('是否接受调剂'), 'acceptAdjustment');
+  assert.equal(Match.matchFieldKey('技术技能'), 'techSkills');
+  assert.equal(Match.matchFieldKey('国籍'), 'nationality');
+});
+
+test('v1.3.0 denylist: supervisor null; 证明人 not applicant name', () => {
+  assert.equal(Match.matchFieldKey('直接上司电话/微信/QQ'), null);
+  assert.equal(Match.matchFieldKey('证明人姓名'), 'refereeName');
+  assert.notEqual(Match.matchFieldKey('证明人姓名'), 'name');
+  assert.equal(Match.matchFieldKey('证明人电话'), 'refereeContact');
+  assert.notEqual(Match.matchFieldKey('证明人电话'), 'phone');
+});
+
+test('v1.3.0 profileValue aliases and emergency compose', () => {
+  assert.equal(Match.profileValue({ currentAddress: '浦东路1号' }, 'address'), '浦东路1号');
+  assert.equal(Match.profileValue({ address: '详细地址' }, 'currentAddress'), '详细地址');
+  assert.equal(Match.profileValue({ skills: 'JS,TS' }, 'techSkills'), 'JS,TS');
+  assert.equal(
+    Match.profileValue({ emergencyContactName: '李四', emergencyContactPhone: '13900139000' }, 'emergencyContact'),
+    '李四 13900139000'
+  );
+});
+
+test('v1.3.0 normalizeProfile roundtrip keeps new keys', () => {
+  const raw = { name: '张三', namePinyin: 'Zhang San', internCompany: '示例', unknown: 'x' };
+  const n = Profile.normalizeProfile(raw);
+  assert.equal(n.name, '张三');
+  assert.equal(n.namePinyin, 'Zhang San');
+  assert.equal(n.internCompany, '示例');
+  assert.equal(n.unknown, undefined);
+  assert.equal(n.familyIdNumber, '');
+});
+
+test('v1.3.0 FIELD_ORDER: specific keys before generic', () => {
+  const order = Match.FIELD_ORDER;
+  assert.ok(order.indexOf('emergencyContactName') < order.indexOf('name'));
+  assert.ok(order.indexOf('internCompany') < order.indexOf('company'));
+  assert.ok(order.indexOf('lastCompany') < order.indexOf('company'));
+  assert.ok(order.indexOf('highestDegree') < order.indexOf('degree'));
+});
+
+test('v1.3.0 docs playoffer-field-map exists', () => {
+  assert.ok(fs.existsSync(path.join(root, 'docs/playoffer-field-map.md')));
+  const md = fs.readFileSync(path.join(root, 'docs/playoffer-field-map.md'), 'utf8');
+  assert.ok(md.includes('namePinyin'));
+  assert.ok(/姓名拼音|拼音姓名/.test(md));
+  assert.ok(md.includes('实习公司') || md.includes('internCompany'));
 });
 
 console.log('');

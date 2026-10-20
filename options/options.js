@@ -120,6 +120,20 @@
     reader.readAsText(file, 'utf-8');
   });
 
+
+  var expandBtn = document.getElementById('btn-expand-all');
+  var collapseBtn = document.getElementById('btn-collapse-all');
+  if (expandBtn) {
+    expandBtn.addEventListener('click', function () {
+      document.querySelectorAll('details.section').forEach(function (d) { d.open = true; });
+    });
+  }
+  if (collapseBtn) {
+    collapseBtn.addEventListener('click', function () {
+      document.querySelectorAll('details.section').forEach(function (d) { d.open = false; });
+    });
+  }
+
   chrome.storage.local.get(['profile', 'aiSettings'], function (result) {
     writeForm(result.profile);
     writeAiForm(result.aiSettings || (AI && AI.DEFAULT_AI_SETTINGS));
