@@ -1263,6 +1263,29 @@ test('v1.3.3: 日期比较按年月日（容忍分隔符差异）', () => {
   assert.ok(/parseInt\(a\.m, 10\) === parseInt\(w\.m, 10\)/.test(src), '月日应按数值比较');
 });
 
+
+console.log('v1.3.4 日历网格日期面板');
+
+test('v1.3.4: 网格面板翻月 + 点日 + 面板取最外层', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function isCalendarGrid/.test(src), '应识别日历网格');
+  assert.ok(/function gridHeader/.test(src), '应解析表头年月');
+  assert.ok(/function gridNavigate/.test(src), '应能翻月/翻年');
+  assert.ok(/\.d-arrow-/.test(src), '应识别 Element 年份双箭头');
+  assert.ok(/\.arrow-/.test(src), '应识别 Element 月份单箭头');
+  assert.ok(/function gridClickDay/.test(src), '应点当月日格');
+  assert.ok(/prev-month|next-month/.test(src), '应排除上/下月补位格');
+  assert.ok(/b\.width < 150 \|\| b\.height < 90/.test(src), '面板探测应排除标题等碎片');
+  assert.ok(/!byClass\.some\(function \(m\) \{ return m !== n && m\.contains\(n\); \}\)/.test(src), '应只取最外层容器');
+});
+
+test('v1.3.4: 表头支持 2026年10月 / 十月 2026 / 2026-10 三种写法', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/CN_MONTH/.test(src), '应有中文月份映射');
+  assert.ok(/EN_MONTH/.test(src), '应有英文月份映射');
+  assert.ok(/\(19\|20\)\\d\{2\}\\s\*\[-\/\.年\]/.test(src), '应支持 2026-10 / 2026.10 / 2026年10');
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

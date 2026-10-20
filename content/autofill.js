@@ -3,6 +3,7 @@
  * 依赖 shared/match.js（须在 manifest content_scripts 中先于本文件加载）。
  * FILL_FORM / SCAN_FIELDS / COLLECT_FIELDS / APPLY_MAPPINGS
  * 不自动提交；不填 password/file；不盲勾 checkbox。
+ * v1.3.4: 日历网格型日期面板（翻月 + 点日，最外层面板判定）。
  * v1.3.3: 多表格日期面板（年/月/日 分组识别 + 确定按钮）。
  * v1.3.2: 表格布局（td/th 左列）与 Element-UI 下拉的标签发现，修复下拉选单填不上。
  * v1.3.1: 搜索框跳过 + readonly 弹层选择器点击 + 无名 radio 白名单；skipped 原因上报。
@@ -429,10 +430,41 @@
     var byClass = [];
     try {
       Array.prototype.forEach.call(document.querySelectorAll(DATE_PANEL_SEL), function (n) {
-        if (isVisibleEl(n)) byClass.push(n);
+        if (!isVisibleEl(n)) return;
+        var b = n.getBoundingClientRect();
+        // 排除标题/图标等碎片（如 .el-date-picker__header-label 也含 date-picker 字样）
+        if (b.width < 150 || b.height < 90) return;
+        byClass.push(n);
       });
     } catch (_) { /* ignore */ }
-    if (byClass.length) return byClass[byClass.length - 1];
+    if (byClass.length) {
+      // 只保留最外层，避免抓到面板内部的子块
+      var roots = byClass.filter(function (n) {
+        return !byClass.some(function (m) { return m !== n && m.contains(n); });
+      });
+      var list = roots.length ? roots : byClass;
+      return list[list.length - 1];
+    }
+    // 兜底 1：没有 class 线索时，找可见的日历网格（星期表头或可用日格）
+    var grids = [];
+    try {
+      Array.prototype.forEach.call(document.querySelectorAll('table'), function (t) {
+        if (!isVisibleEl(t)) return;
+        var txt = String(t.textContent || '');
+        var isGrid = /日\s*一\s*二\s*三\s*四\s*五\s*六/.test(txt) ||
+          !!t.querySelector('td[class*="available"], td[class*="prev-month"], td[class*="next-month"]');
+        if (!isGrid) return;
+        var host = t.closest('[class*="picker"], [class*="panel"], [class*="popup"], [class*="dropdown"], [class*="calendar"], [class*="date"]') || t;
+        if (isVisibleEl(host)) grids.push(host);
+      });
+    } catch (_) { /* ignore */ }
+    if (grids.length) {
+      var gridRoots = grids.filter(function (n) {
+        return !grids.some(function (m) { return m !== n && m.contains(n); });
+      });
+      var gl = gridRoots.length ? gridRoots : grids;
+      return gl[gl.length - 1];
+    }
     if (!yearText) return null;
     var generic = [];
     try {
@@ -490,6 +522,130 @@
       return true;
     }
     return false;
+  }
+
+  // ————— v1.3.4：日历网格型日期面板（‹‹ ‹ 十月 2026 › ›› + 星期表头 + 单月网格）—————
+
+  var CN_MONTH = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12 };
+  var EN_MONTH = ['january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december'];
+
+  function isCalendarGrid(panel) {
+    if (!panel) return false;
+    if (panel.querySelector('td.prev-month, td.next-month, td.current, .el-date-table, .laydate-theme-grid')) return true;
+    var dayBtn = panel.querySelector('td[class*="available"], td[class*="disabled"]');
+    if (dayBtn) return true;
+    var t = String(panel.textContent || '');
+    return /日\s*一\s*二\s*三\s*四\s*五\s*六/.test(t);
+  }
+
+  function gridHeader(panel) {
+    var txt = '';
+    var heads = panel.querySelectorAll('[class*="header"], [class*="title"], .laydate-header');
+    for (var i = 0; i < heads.length; i++) txt += ' ' + String(heads[i].textContent || '');
+    if (!txt.replace(/\s+/g, '')) txt = String(panel.textContent || '').slice(0, 160);
+    txt = txt.replace(/\s+/g, ' ');
+    var ym = txt.match(/(19|20)\d{2}/);
+    var year = ym ? parseInt(ym[0], 10) : null;
+    var month = null;
+    var zh = txt.match(/(十一|十二|十|[一二三四五六七八九])月/);
+    if (zh && CN_MONTH[zh[1]]) month = CN_MONTH[zh[1]];
+    if (!month) {
+      var lower = txt.toLowerCase();
+      for (var k = 0; k < EN_MONTH.length; k++) {
+        if (lower.indexOf(EN_MONTH[k]) !== -1) { month = k + 1; break; }
+      }
+    }
+    if (!month) {
+      var num = txt.match(/(\d{1,2})\s*月/);
+      if (num) month = parseInt(num[1], 10);
+    }
+    if (!month) {
+      var iso = txt.match(/(19|20)\d{2}\s*[-/.年]\s*(\d{1,2})/) || txt.match(/(\d{1,2})\s*[-/.]\s*(19|20)\d{2}/);
+      if (iso) month = parseInt(iso[2], 10);
+    }
+    return { year: year, month: month };
+  }
+
+  /** 找翻页箭头：unit=year 用双箭头(d-arrow-*)，unit=month 用单箭头(arrow-*) */
+  function pickArrow(panel, dir, unit) {
+    var suffix = dir < 0 ? 'left' : 'right';
+    var cls = unit === 'year' ? '.d-arrow-' + suffix : '.arrow-' + suffix;
+    var byCls = panel.querySelector(cls);
+    if (byCls && isVisibleEl(byCls)) return byCls;
+    // 兜底：按方向 + 文本/属性猜
+    var nodes = Array.prototype.slice.call(panel.querySelectorAll('button, i, span, div'));
+    var hits = [];
+    nodes.forEach(function (n) {
+      if (!isVisibleEl(n)) return;
+      var m = (String(n.className || '') + ' ' + (n.getAttribute('title') || '') + ' ' +
+        (n.getAttribute('aria-label') || '') + ' ' + String(n.textContent || '')).toLowerCase();
+      var dirOk = dir < 0 ? /left|prev|上|‹|«/.test(m) : /right|next|下|›|»/.test(m);
+      if (!dirOk) return;
+      if (String(n.textContent || '').trim().length > 6) return;
+      hits.push(n);
+    });
+    if (!hits.length) return null;
+    if (unit === 'year') return dir < 0 ? hits[0] : hits[hits.length - 1];
+    return dir < 0 ? hits[hits.length - 1] : hits[0];
+  }
+
+  /** 翻到目标年月（先按整年跳，再按月跳） */
+  async function gridNavigate(panel, y, m) {
+    for (var guard = 0; guard < 60; guard++) {
+      var cur = gridHeader(panel);
+      if (!cur.year || !cur.month) return false;
+      var d = (y * 12 + m) - (cur.year * 12 + cur.month);
+      if (d === 0) return true;
+      var unit = Math.abs(d) >= 12 ? 'year' : 'month';
+      var btn = pickArrow(panel, d < 0 ? -1 : 1, unit);
+      if (!btn) {
+        // 年份按钮没有就退回按月翻
+        btn = pickArrow(panel, d < 0 ? -1 : 1, 'month');
+        if (!btn) return false;
+      }
+      simulateClick(btn);
+      await sleep(unit === 'year' ? 140 : 120);
+    }
+    return false;
+  }
+
+  /** 在网格里点当月的那一天（排除上/下月补位与禁用格） */
+  function gridClickDay(panel, day) {
+    var cells = panel.querySelectorAll('td');
+    var fallback = null;
+    for (var i = 0; i < cells.length; i++) {
+      var td = cells[i];
+      var cls = String(td.className || '');
+      if (/prev-month|next-month|disabled|not-current/.test(cls)) continue;
+      var txt = String(td.textContent || '').replace(/\s+/g, ' ').trim();
+      if (parseInt(txt, 10) !== day) continue;
+      if (!isVisibleEl(td)) continue;
+      if (/\bavailable\b|\bcurrent\b/.test(cls)) { simulateClick(td); return true; }
+      if (!fallback) fallback = td;
+    }
+    if (fallback) { simulateClick(fallback); return true; }
+    return false;
+  }
+
+  async function tryCalendarGrid(el, desired) {
+    var parts = parseDateParts(desired);
+    if (!parts) return false;
+    var panel = findDatePanel(parts.y);
+    if (!panel) return false;
+    var navOk = await gridNavigate(panel, parseInt(parts.y, 10), parseInt(parts.m, 10));
+    if (!navOk) return false;
+    await sleep(150);
+    panel = findDatePanel(parts.y) || panel;
+    var dayOk = gridClickDay(panel, parseInt(parts.d, 10));
+    if (!dayOk) return false;
+    await sleep(220);
+    if (!dateValueMatches(el.value, desired)) {
+      var again = findDatePanel(parts.y);
+      if (again) clickPanelConfirm(again);
+      await sleep(260);
+    }
+    return true;
   }
 
   /** 把面板里的数字列表分组：年份组(>=1900) / 月份组(<=12) / 日期组(<=31) */
@@ -570,8 +726,12 @@
       setTimeout(async function () {
         // ① 先试「年 / 月 / 日」多表格日期面板
         var parts = parseDateParts(desired);
-        if (parts && findDatePanel(parts.y)) {
-          var panelOk = await tryDatePanel(el, desired);
+        var pid = parts ? findDatePanel(parts.y) : null;
+        if (parts && pid) {
+          // ② 日历网格（‹‹ ‹ 十月 2026 › ›› + 星期表头）走翻月 + 点日；其余走年/月/日分栏
+          var panelOk = isCalendarGrid(pid)
+            ? await tryCalendarGrid(el, desired)
+            : await tryDatePanel(el, desired);
           if (panelOk && dateValueMatches(el.value, desired)) { resolve(true); return; }
           // 面板路径失败：重开再走普通候选路径
           simulateClick(el);
