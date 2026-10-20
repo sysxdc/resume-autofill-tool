@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.2.2**
+当前版本：**1.2.3**
 
 ## 功能概览
 
@@ -102,7 +102,7 @@ node tests/run-tests.mjs
 
 ```text
 resume-autofill-tool/
-├── manifest.json                 # MV3，version 1.2.2
+├── manifest.json                 # MV3，version 1.2.3
 ├── shared/
 │   ├── profile.js                # 字段列表 / 示例 / normalize
 │   ├── match.js                  # 关键词、模糊评分、denylist
@@ -131,6 +131,13 @@ resume-autofill-tool/
 - 证件号等敏感字段为选填；公共电脑请勿保存。
 
 ## Changelog
+
+### 1.2.3
+- **D2 antd / React 表单标签**：`getLabelText` 增加 `aria-labelledby`、`.ant-form-item` / `.el-form-item` 等 form-item 标签发现，以及父列 previousSibling 回退；SCAN/COLLECT hints 优先放标签（D6）。
+- **D3 上司联系人 denylist**：`直接上司电话/微信/QQ` 等不再误映射到申请人 `wechat`/`phone`/`qq`；`紧急联系人` 仍映射 `emergencyContact`。
+- **D4 年/月拆分**：`extractDatePart` + `detectDatePartRole`，对 `birthday`/`eduStart` 等日期字段的「年」「月」分栏分别填入年份/月份。
+- D1/D5（visibleLabelText、skip-if-filled）已在 1.2.2，本版不回归。
+- 新增 Node 测试；manifest **1.2.3**。
 
 ### 1.2.2
 - **visibleLabelText**：标签文本只取可见文案，跳过 select/option/input 等控件子树，修复「学历 / Degree」被 option 里 `High School` 的 `school` 误匹配为学校字段。

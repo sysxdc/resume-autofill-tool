@@ -3,6 +3,7 @@
  * 依赖 shared/match.js（须在 manifest content_scripts 中先于本文件加载）。
  * FILL_FORM / SCAN_FIELDS / COLLECT_FIELDS / APPLY_MAPPINGS
  * 不自动提交；不填 password/file；不盲勾 checkbox。
+ * v1.2.3: getLabelText 支持 antd/form-item、aria-labelledby；年/月日期拆分；hints 优先标签。
  * v1.2.2: getLabelText 用 visibleLabelText；已填字段 skip-if-filled（不覆盖）。
  */
 (function () {
@@ -17,24 +18,60 @@
   var MAX_FILLS_PER_KEY = M.MAX_FILLS_PER_KEY;
 
   function getLabelText(el) {
+    // 1. label[for]
     if (el.id) {
       try {
         var label = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
-        if (label) return M.visibleLabelText(label);
+        if (label) {
+          var tFor = M.visibleLabelText(label);
+          if (tFor) return tFor;
+        }
       } catch (_) { /* ignore */ }
     }
+    // 1b. wrapping label
     var parentLabel = el.closest('label');
-    if (parentLabel) return M.visibleLabelText(parentLabel);
+    if (parentLabel) {
+      var tWrap = M.visibleLabelText(parentLabel);
+      if (tWrap) return tWrap;
+    }
+    // 1c. aria-label
     var aria = el.getAttribute('aria-label');
-    if (aria) return aria;
+    if (aria && String(aria).trim()) return String(aria).trim();
+    // 1d. aria-describedby
     var describedBy = el.getAttribute('aria-describedby');
     if (describedBy) {
       var desc = document.getElementById(describedBy);
-      if (desc) return desc.textContent || '';
+      if (desc) {
+        var tDesc = String(desc.textContent || '').replace(/\s+/g, ' ').trim();
+        if (tDesc) return tDesc;
+      }
     }
+    // 2. aria-labelledby
+    if (M.resolveAriaLabelledByText) {
+      var tAria = M.resolveAriaLabelledByText(el, function (id) {
+        return document.getElementById(id);
+      });
+      if (tAria) return tAria;
+    }
+    // 3. form-item container (antd / element / semi / formily)
+    if (M.labelTextFromFormItem) {
+      var tForm = M.labelTextFromFormItem(el);
+      if (tForm) return tForm;
+    }
+    // 4. previousElementSibling
     var prev = el.previousElementSibling;
     if (prev && /^(LABEL|SPAN|DIV|P|STRONG)$/i.test(prev.tagName)) {
-      return prev.textContent || '';
+      var tPrev = M.visibleLabelText
+        ? M.visibleLabelText(prev)
+        : String(prev.textContent || '');
+      tPrev = String(tPrev || '').replace(/\s+/g, ' ').trim();
+      if (M.cleanLabelPunctuation) tPrev = M.cleanLabelPunctuation(tPrev);
+      if (tPrev) return tPrev;
+    }
+    // 5. parent's previousElementSibling (label-col | control-col)
+    if (M.labelTextFromParentPrevSibling) {
+      var tCol = M.labelTextFromParentPrevSibling(el);
+      if (tCol) return tCol;
     }
     return '';
   }
@@ -62,16 +99,22 @@
   }
 
   function collectHints(el) {
+    var label = getLabelText(el);
     var parts = [
+      label,
+      el.getAttribute('placeholder'),
       el.name,
       el.id,
-      el.getAttribute('placeholder'),
       el.getAttribute('aria-label'),
       el.getAttribute('data-testid'),
-      el.getAttribute('data-automation-id'),
-      typeof el.className === 'string' ? el.className : '',
-      getLabelText(el)
+      el.getAttribute('data-automation-id')
     ];
+    // 已有有用标签时不倾倒 antd 长 className；否则仅保留语义 token
+    if (!label || !String(label).trim()) {
+      var cn = typeof el.className === 'string' ? el.className : '';
+      var sem = M.semanticClassTokens ? M.semanticClassTokens(cn) : '';
+      if (sem) parts.push(sem);
+    }
     return parts.filter(Boolean).join(' ');
   }
 
@@ -220,6 +263,17 @@
       var value = M.profileValue(profile, key);
       if (!value) return;
       if (fieldLooksFilled(el)) return;
+      var hints = collectHints(el);
+      if (M.maybeExtractDatePartValue && (M.isDatePartProfileKey(key) || M.detectDatePartRole(hints))) {
+        var maxLen = el.getAttribute('maxlength');
+        var ph = el.getAttribute('placeholder') || '';
+        value = M.maybeExtractDatePartValue(value, hints, {
+          profileKey: key,
+          maxLength: maxLen ? parseInt(maxLen, 10) : 0,
+          zeroPadMonth: maxLen === '2' || /^(mm|月)$/i.test(String(ph).trim())
+        });
+      }
+      if (!value) return;
       if (setNativeValue(el, value)) {
         filled += 1;
         keyCounts[key] = count + 1;
@@ -247,6 +301,25 @@
       var el = els[m.index];
       if (!el) return;
       if (fieldLooksFilled(el)) return;
+      var hints = collectHints(el);
+      var role = M.detectDatePartRole ? M.detectDatePartRole(hints) : null;
+      // AI 已给纯年/月则保留；完整日期且字段为年/月分栏时再拆
+      if (role && M.extractDatePart) {
+        var alreadyPart =
+          (role === 'year' && /^\d{4}$/.test(value)) ||
+          (role === 'month' && /^(0?[1-9]|1[0-2])$/.test(value)) ||
+          (role === 'day' && /^(0?[1-9]|[12]\d|3[01])$/.test(value));
+        if (!alreadyPart && M.extractDatePart(value, role)) {
+          var maxLen = el.getAttribute('maxlength');
+          var ph = el.getAttribute('placeholder') || '';
+          value = M.maybeExtractDatePartValue(value, hints, {
+            profileKey: m.profileKey || '',
+            maxLength: maxLen ? parseInt(maxLen, 10) : 0,
+            zeroPadMonth: maxLen === '2' || /^(mm|月)$/i.test(String(ph).trim())
+          });
+        }
+      }
+      if (!value) return;
       if (setNativeValue(el, value)) {
         filled += 1;
         var k = m.profileKey || ('custom:' + m.index);

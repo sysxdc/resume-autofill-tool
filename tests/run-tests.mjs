@@ -701,10 +701,10 @@ test('buildSystemPrompt mentions select option matching', () => {
 
 console.log('repo integrity');
 
-test('manifest is MV3 version 1.2.2 with icons', () => {
+test('manifest is MV3 version 1.2.3 with icons', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.2.2');
+  assert.equal(manifest.version, '1.2.3');
   assert.ok(manifest.icons['16']);
   assert.ok(manifest.action.default_icon['48']);
   assert.ok(manifest.content_scripts[0].js.includes('shared/match.js'));
@@ -793,6 +793,207 @@ test('autofill.js uses visibleLabelText; no parentLabel.textContent', () => {
   assert.ok(src.includes('visibleLabelText'), 'must call visibleLabelText');
   assert.ok(!src.includes('parentLabel.textContent'), 'must not use parentLabel.textContent');
   assert.ok(src.includes('fieldLooksFilled'), 'must implement skip-if-filled');
+});
+
+console.log('v1.2.3 D3 other-person contact');
+
+test('D3: supervisor wechat/phone labels → null', () => {
+  assert.equal(Match.matchFieldKey('直接上司电话/微信/QQ'), null);
+  assert.equal(Match.matchFieldKey('直属上级微信'), null);
+  assert.equal(Match.matchFieldKey('直属领导手机号'), null);
+  assert.equal(Match.matchFieldKey('上级领导联系电话'), null);
+  assert.equal(Match.matchFieldKey('汇报对象微信'), null);
+  assert.equal(Match.matchFieldKey("Supervisor's phone / WeChat"), null);
+  assert.equal(Match.matchFieldKey('reporting_manager_wechat'), null);
+  assert.equal(Match.isOtherPersonContactContext('直接上司电话/微信/QQ'), true);
+});
+
+test('D3: bare 微信 still wechat; 紧急联系人 → emergencyContact', () => {
+  assert.equal(Match.matchFieldKey('微信号'), 'wechat');
+  assert.equal(Match.matchFieldKey('微信'), 'wechat');
+  assert.equal(Match.matchFieldKey('紧急联系人'), 'emergencyContact');
+  assert.equal(Match.matchFieldKey('紧急联络人电话'), 'emergencyContact');
+  assert.equal(Match.isOtherPersonContactContext('紧急联系人微信'), false);
+});
+
+console.log('v1.2.3 D4 extractDatePart');
+
+test('extractDatePart: ISO slash dot and Chinese', () => {
+  assert.equal(Match.extractDatePart('2020-06', 'year'), '2020');
+  assert.equal(Match.extractDatePart('2020-06', 'month'), '6');
+  assert.equal(Match.extractDatePart('2020/6', 'year'), '2020');
+  assert.equal(Match.extractDatePart('2020/6', 'month'), '6');
+  assert.equal(Match.extractDatePart('2020.06', 'year'), '2020');
+  assert.equal(Match.extractDatePart('2020.06', 'month'), '6');
+  assert.equal(Match.extractDatePart('2020年6月', 'year'), '2020');
+  assert.equal(Match.extractDatePart('2020年6月', 'month'), '6');
+  assert.equal(Match.extractDatePart('2020-06-15', 'day'), '15');
+  assert.equal(Match.extractDatePart('2020年6月15日', 'day'), '15');
+});
+
+test('extractDatePart: bare year / empty / invalid part', () => {
+  assert.equal(Match.extractDatePart('2021', 'year'), '2021');
+  assert.equal(Match.extractDatePart('2021', 'month'), '');
+  assert.equal(Match.extractDatePart('', 'year'), '');
+  assert.equal(Match.extractDatePart('2020-06', 'quarter'), '');
+  assert.equal(Match.extractDatePart(null, 'year'), '');
+});
+
+test('detectDatePartRole: conservative year/month', () => {
+  assert.equal(Match.detectDatePartRole('edu_start_year'), 'year');
+  assert.equal(Match.detectDatePartRole('birth_month'), 'month');
+  assert.equal(Match.detectDatePartRole('入学时间 年'), 'year');
+  assert.equal(Match.detectDatePartRole('入学时间 月'), 'month');
+  assert.equal(Match.detectDatePartRole('开始日期 year yyyy'), 'year');
+  assert.equal(Match.detectDatePartRole('年'), null, 'bare 年 alone is dangerous');
+  assert.equal(Match.detectDatePartRole('月'), null, 'bare 月 alone is dangerous');
+  assert.equal(Match.detectDatePartRole('工作年限'), null);
+});
+
+test('maybeExtractDatePartValue zero-pads month when maxlength 2', () => {
+  const v = Match.maybeExtractDatePartValue('2020-06', '入学时间 月 edu_start_month', {
+    profileKey: 'eduStart',
+    maxLength: 2,
+    zeroPadMonth: true
+  });
+  assert.equal(v, '06');
+  const y = Match.maybeExtractDatePartValue('2020年6月', '毕业年份 年 gradYear', {
+    profileKey: 'gradYear'
+  });
+  assert.equal(y, '2020');
+});
+
+console.log('v1.2.3 D2 antd form-item labels');
+
+test('labelTextFromFormItem: ant-form-item sibling label', () => {
+  function text(v) {
+    return { nodeType: 3, nodeValue: v };
+  }
+  function el(tag, opts, kids) {
+    if (Array.isArray(opts)) {
+      kids = opts;
+      opts = {};
+    }
+    opts = opts || {};
+    const node = {
+      nodeType: 1,
+      tagName: tag,
+      className: opts.className || '',
+      childNodes: kids || [],
+      children: (kids || []).filter((k) => k && k.nodeType === 1),
+      parentElement: null,
+      parentNode: null,
+      previousElementSibling: null,
+      textContent: '',
+      getAttribute(n) {
+        return opts.attrs && opts.attrs[n] != null ? String(opts.attrs[n]) : null;
+      }
+    };
+    function tc(n) {
+      if (!n) return '';
+      if (n.nodeType === 3) return n.nodeValue || '';
+      return (n.childNodes || []).map(tc).join('');
+    }
+    node.textContent = tc(node);
+    return node;
+  }
+  function wire(n, p) {
+    if (!n || n.nodeType !== 1) return;
+    n.parentElement = p;
+    n.parentNode = p;
+    (n.children || []).forEach((c) => wire(c, n));
+  }
+
+  const labelInner = el('LABEL', {}, [text('真实姓名'), text(' *')]);
+  const labelCol = el('DIV', { className: 'ant-form-item-label' }, [labelInner]);
+  const input = el('INPUT', { className: 'ant-input ant-input-lg', attrs: { name: '', id: '' } }, []);
+  const control = el('DIV', { className: 'ant-form-item-control' }, [input]);
+  const item = el('DIV', { className: 'ant-form-item' }, [labelCol, control]);
+  wire(item, null);
+
+  const label = Match.labelTextFromFormItem(input);
+  assert.equal(label, '真实姓名');
+  assert.equal(Match.matchFieldKey(label), 'name');
+});
+
+test('labelTextFromFormItem: el-form-item__label', () => {
+  function text(v) {
+    return { nodeType: 3, nodeValue: v };
+  }
+  function el(tag, opts, kids) {
+    if (Array.isArray(opts)) {
+      kids = opts;
+      opts = {};
+    }
+    opts = opts || {};
+    const node = {
+      nodeType: 1,
+      tagName: tag,
+      className: opts.className || '',
+      childNodes: kids || [],
+      children: (kids || []).filter((k) => k && k.nodeType === 1),
+      parentElement: null,
+      parentNode: null,
+      textContent: ''
+    };
+    function tc(n) {
+      if (!n) return '';
+      if (n.nodeType === 3) return n.nodeValue || '';
+      return (n.childNodes || []).map(tc).join('');
+    }
+    node.textContent = tc(node);
+    return node;
+  }
+  function wire(n, p) {
+    if (!n || n.nodeType !== 1) return;
+    n.parentElement = p;
+    n.parentNode = p;
+    (n.children || []).forEach((c) => wire(c, n));
+  }
+  const lab = el('LABEL', { className: 'el-form-item__label' }, [text('微信号')]);
+  const input = el('INPUT', { className: 'el-input__inner' }, []);
+  const content = el('DIV', { className: 'el-form-item__content' }, [input]);
+  const item = el('DIV', { className: 'el-form-item' }, [lab, content]);
+  wire(item, null);
+  assert.equal(Match.labelTextFromFormItem(input), '微信号');
+  assert.equal(Match.matchFieldKey(Match.labelTextFromFormItem(input)), 'wechat');
+});
+
+test('resolveAriaLabelledByText via mock getElementById', () => {
+  const labelNode = {
+    nodeType: 1,
+    tagName: 'LABEL',
+    childNodes: [{ nodeType: 3, nodeValue: '邮箱地址' }],
+    textContent: '邮箱地址'
+  };
+  const input = {
+    getAttribute(n) {
+      return n === 'aria-labelledby' ? 'lbl-email' : null;
+    }
+  };
+  const text = Match.resolveAriaLabelledByText(input, (id) =>
+    id === 'lbl-email' ? labelNode : null
+  );
+  assert.equal(text, '邮箱地址');
+  assert.equal(Match.matchFieldKey(text), 'email');
+});
+
+test('semanticClassTokens drops ant- noise keeps name-like', () => {
+  const sem = Match.semanticClassTokens(
+    'ant-input ant-input-lg css-dev-only-do-not-override-1x email-field phone_input'
+  );
+  assert.ok(/email/i.test(sem));
+  assert.ok(/phone/i.test(sem));
+  assert.ok(!/ant-input/.test(sem));
+});
+
+test('autofill.js v1.2.3 uses form-item + date part helpers', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(src.includes('labelTextFromFormItem'), 'must use form-item labels');
+  assert.ok(src.includes('resolveAriaLabelledByText'), 'must use aria-labelledby');
+  assert.ok(src.includes('maybeExtractDatePartValue'), 'must extract date parts');
+  assert.ok(src.includes('fieldLooksFilled'), 'skip-if-filled intact');
+  assert.ok(src.includes('1.2.3') || src.includes('v1.2.3'), 'version comment');
 });
 
 console.log('');

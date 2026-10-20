@@ -2,6 +2,7 @@
  * 共享字段匹配逻辑：关键词、同义、模糊评分、姓名拆分、profile 取值、select 匹配、label 可见文本。
  * 浏览器挂到 ResumeAutofillMatch；Node 通过 module.exports 引入。
  *
+ * v1.2.3: antd/form-item 标签发现；上司联系人 denylist；年/月日期拆分 extractDatePart。
  * v1.2.2: visibleLabelText — 跳过 select/option/input 等控件子树，避免 option 文案污染标签匹配。
  * v1.2.1: select 仅匹配 option；Yes/No 归一；地区枚举禁止城市硬填。
  * v1.2.0: 拓展字段同义、Levenshtein/token 模糊匹配；保留 v1.1.1 denylist / autocomplete 优先。
@@ -313,7 +314,11 @@
     'subjecttoanyemployment',
     'incapacity', 'anycapacity',
     'prefernottosay', 'declinetoself',
-    'race', 'sexualorientation', 'lgbtq'
+    'race', 'sexualorientation', 'lgbtq',
+    // 上司/他人联系人（避免把申请人微信/电话填进「直接上司…」）
+    '直接上司', '直属上级', '直属领导', '上级领导', '汇报对象',
+    'supervisor', 'reportingto', 'linemanager', 'managername',
+    'managerphone', 'managercontact', 'reportingmanager'
   ];
 
   /** 学历中英同义，便于 select 模糊匹配 */
@@ -405,6 +410,52 @@
     if (/previously\s+worked/i.test(rawLower)) return true;
     if (/worked\s+at\s+or\s+consulted/i.test(rawLower)) return true;
     if (/ever\s+worked\s+for/i.test(rawLower)) return true;
+    return false;
+  }
+
+  /**
+   * 是否「他人联系方式」语境（上司/直属上级/汇报对象等），不应填申请人 wechat/qq/phone。
+   * 紧急联系人仍允许映射到 emergencyContact。
+   */
+  function isOtherPersonContactContext(hints) {
+    var raw = String(hints || '');
+    var rawLower = raw.toLowerCase();
+    var h = normalize(raw);
+    if (!h && !rawLower) return false;
+
+    // 紧急联系人属于申请人侧，不算「他人」
+    if (h.indexOf('紧急联系人') !== -1 || h.indexOf('紧急联络') !== -1 ||
+        h.indexOf('应急联系') !== -1 || h.indexOf('emergencycontact') !== -1 ||
+        h.indexOf('emergencyphone') !== -1) {
+      return false;
+    }
+
+    var zhMarkers = [
+      '直接上司', '直属上级', '直属领导', '上级领导', '汇报对象',
+      '上司', '直属上级', '上级的', '经理的联系', '领导的联系'
+    ];
+    var i;
+    for (i = 0; i < zhMarkers.length; i++) {
+      if (h.indexOf(normalize(zhMarkers[i])) !== -1 || raw.indexOf(zhMarkers[i]) !== -1) {
+        // 「上司」单独出现时需与联系方式共现，避免误伤无关字段
+        if (zhMarkers[i] === '上司') {
+          if (/微信|电话|手机|qq|联系|wechat|phone|mobile|tel/i.test(raw)) return true;
+          continue;
+        }
+        return true;
+      }
+    }
+
+    if (/\bsupervisors?\b/i.test(rawLower)) return true;
+    if (/reporting\s*managers?/i.test(rawLower)) return true;
+    if (/line\s*managers?/i.test(rawLower)) return true;
+    if (/manager'?s?\s*(phone|contact|wechat|mobile|email|name)/i.test(rawLower)) return true;
+    if (/\breporting\s*to\b/i.test(rawLower)) return true;
+    if (h.indexOf('reportingmanager') !== -1 || h.indexOf('linemanager') !== -1 ||
+        h.indexOf('managerphone') !== -1 || h.indexOf('managercontact') !== -1 ||
+        h.indexOf('managername') !== -1 || h.indexOf('reportingto') !== -1) {
+      return true;
+    }
     return false;
   }
 
@@ -544,6 +595,7 @@
     if (embedded) return { key: embedded, confidence: 1, method: 'autocomplete' };
 
     if (isSkipContext(rawLower, h)) return null;
+    if (isOtherPersonContactContext(raw)) return null;
 
     var bestKey = null;
     var bestLen = -1;
@@ -1002,6 +1054,452 @@
     return walk(labelEl).replace(/\s+/g, ' ').trim();
   }
 
+  function getElClassName(el) {
+    if (!el) return '';
+    var c = el.className;
+    if (typeof c === 'string') return c;
+    if (c && typeof c.baseVal === 'string') return c.baseVal;
+    return '';
+  }
+
+  function getElAttr(el, name) {
+    if (!el) return '';
+    if (typeof el.getAttribute === 'function') {
+      var v = el.getAttribute(name);
+      return v == null ? '' : String(v);
+    }
+    if (el.attributes && el.attributes[name] != null) return String(el.attributes[name]);
+    if (el[name] != null && typeof el[name] !== 'function') return String(el[name]);
+    return '';
+  }
+
+  function cleanLabelPunctuation(s) {
+    var t = String(s || '')
+      .replace(/[*＊✱ ass]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!t) return '';
+    if (/^[:：\-\/\\|·•.。,，、]+$/.test(t)) return '';
+    return t;
+  }
+
+  function looksLikeOptionPollution(text) {
+    var s = String(text || '');
+    if (s.length > 80) return true;
+    if (/\b(high\s*school|bachelor|master|phd|select\s*one|please\s*select)\b/i.test(s) &&
+        /\/|,/.test(s) && s.length > 40) return true;
+    return false;
+  }
+
+  /**
+   * 从 aria-labelledby 解析可见标签文本。
+   * @param {object} el
+   * @param {(id:string)=>object|null} [getElementById]
+   */
+  function resolveAriaLabelledByText(el, getElementById) {
+    var raw = getElAttr(el, 'aria-labelledby');
+    if (!raw) return '';
+    var ids = String(raw).split(/\s+/).filter(Boolean);
+    if (!ids.length) return '';
+    var getter = getElementById;
+    if (typeof getter !== 'function' && typeof document !== 'undefined' && document.getElementById) {
+      getter = function (id) { return document.getElementById(id); };
+    }
+    if (typeof getter !== 'function') return '';
+    var parts = [];
+    var i, node, tag, piece;
+    for (i = 0; i < ids.length; i++) {
+      node = getter(ids[i]);
+      if (!node) continue;
+      tag = node.tagName ? String(node.tagName).toUpperCase() : '';
+      if (tag === 'LABEL') piece = visibleLabelText(node);
+      else piece = String(node.textContent || visibleLabelText(node) || '').replace(/\s+/g, ' ').trim();
+      piece = cleanLabelPunctuation(piece);
+      if (piece && !looksLikeOptionPollution(piece)) parts.push(piece);
+    }
+    return parts.join(' ').trim();
+  }
+
+  function classHasToken(className, token) {
+    return String(className || '').split(/\s+/).indexOf(token) !== -1;
+  }
+
+  function classIncludes(className, substr) {
+    return String(className || '').indexOf(substr) !== -1;
+  }
+
+  function findChildByClassOrTag(root, predicates) {
+    if (!root) return null;
+    var queue = [root];
+    var seen = 0;
+    while (queue.length && seen < 80) {
+      var cur = queue.shift();
+      seen += 1;
+      if (cur !== root) {
+        var tag = cur.tagName ? String(cur.tagName).toUpperCase() : '';
+        var cn = getElClassName(cur);
+        var p;
+        for (p = 0; p < predicates.length; p++) {
+          if (predicates[p](cur, tag, cn)) return cur;
+        }
+      }
+      var kids = cur.children || cur.childNodes || [];
+      var i;
+      for (i = 0; i < kids.length; i++) {
+        var k = kids[i];
+        if (k && (k.nodeType === 1 || k.tagName)) queue.push(k);
+      }
+    }
+    return null;
+  }
+
+  function extractTextFromLabelContainer(labelContainer) {
+    if (!labelContainer) return '';
+    var labelEl = null;
+    if (labelContainer.tagName && String(labelContainer.tagName).toUpperCase() === 'LABEL') {
+      labelEl = labelContainer;
+    } else {
+      labelEl = findChildByClassOrTag(labelContainer, [
+        function (el, tag) { return tag === 'LABEL'; }
+      ]);
+    }
+    var raw;
+    if (labelEl) raw = visibleLabelText(labelEl) || String(labelEl.textContent || '');
+    else raw = visibleLabelText(labelContainer) || String(labelContainer.textContent || '');
+    return cleanLabelPunctuation(raw);
+  }
+
+  /**
+   * 从 antd/element-ui/semi/formily 等 form-item 容器取标签文本。
+   * 兼容真实 DOM（closest/parentElement）与最小 Node mock（parentElement + className）。
+   */
+  function labelTextFromFormItem(el) {
+    if (!el) return '';
+
+    function walkUp(start, maxDepth, testFn) {
+      var cur = start;
+      var depth = 0;
+      while (cur && depth < maxDepth) {
+        if (testFn(cur)) return cur;
+        cur = cur.parentElement || cur.parentNode || null;
+        if (cur && cur.nodeType && cur.nodeType !== 1) cur = cur.parentElement || null;
+        depth += 1;
+      }
+      return null;
+    }
+
+    var namedSelectors = [
+      function (node) { return classHasToken(getElClassName(node), 'ant-form-item'); },
+      function (node) { return classHasToken(getElClassName(node), 'el-form-item'); },
+      function (node) { return classHasToken(getElClassName(node), 'semi-form-field'); },
+      function (node) { return classIncludes(getElClassName(node), 'formily-item'); },
+      function (node) {
+        var cn = getElClassName(node);
+        return classIncludes(cn, 'form-item') && !classIncludes(cn, 'form-item-label') &&
+          !classIncludes(cn, 'form-item-control');
+      }
+    ];
+
+    var container = null;
+    if (typeof el.closest === 'function') {
+      try {
+        container = el.closest('.ant-form-item') ||
+          el.closest('.el-form-item') ||
+          el.closest('.semi-form-field') ||
+          el.closest('.formily-item') ||
+          el.closest('[class*="form-item"]');
+      } catch (_) { container = null; }
+    }
+    if (!container) {
+      var si;
+      for (si = 0; si < namedSelectors.length && !container; si++) {
+        container = walkUp(el, 8, namedSelectors[si]);
+      }
+    }
+
+    if (container) {
+      var labelBox = findChildByClassOrTag(container, [
+        function (node, tag, cn) {
+          return classHasToken(cn, 'ant-form-item-label') ||
+            classHasToken(cn, 'el-form-item__label') ||
+            classIncludes(cn, '-form-item-label') ||
+            tag === 'LABEL';
+        }
+      ]);
+      var t = extractTextFromLabelContainer(labelBox || container);
+      if (t) return t;
+    }
+
+    // Bounded walk ≤6 parents looking for a child label container
+    var parent = el.parentElement || el.parentNode || null;
+    var depth = 0;
+    while (parent && depth < 6) {
+      if (parent.nodeType && parent.nodeType !== 1) {
+        parent = parent.parentElement || null;
+        depth += 1;
+        continue;
+      }
+      var childLabel = findChildByClassOrTag(parent, [
+        function (node, tag, cn) {
+          return classHasToken(cn, 'ant-form-item-label') ||
+            classHasToken(cn, 'el-form-item__label') ||
+            classIncludes(cn, '-form-item-label') ||
+            (tag === 'LABEL' && node !== el);
+        }
+      ]);
+      if (childLabel) {
+        var t2 = extractTextFromLabelContainer(childLabel);
+        if (t2) return t2;
+      }
+      parent = parent.parentElement || parent.parentNode || null;
+      depth += 1;
+    }
+    return '';
+  }
+
+  /**
+   * 父节点的 previousElementSibling 是否像标签列（label-col | control-col）。
+   */
+  function labelTextFromParentPrevSibling(el) {
+    if (!el) return '';
+    var parent = el.parentElement || el.parentNode || null;
+    if (!parent) return '';
+    var prev = parent.previousElementSibling;
+    if (!prev) return '';
+    var tag = prev.tagName ? String(prev.tagName).toUpperCase() : '';
+    var cn = getElClassName(prev);
+    var looksLabel =
+      tag === 'LABEL' ||
+      classIncludes(cn, 'label') ||
+      classIncludes(cn, 'form-item-label') ||
+      /^(LABEL|SPAN|DIV|P|STRONG|TD|TH)$/i.test(tag);
+    if (!looksLabel) return '';
+    var t = extractTextFromLabelContainer(prev);
+    if (t) return t;
+    return cleanLabelPunctuation(String(prev.textContent || visibleLabelText(prev) || ''));
+  }
+
+  /** 可拆分的日期类 profile 键 */
+  var DATE_PART_KEYS = {
+    birthday: 1,
+    startDate: 1,
+    eduStart: 1,
+    eduEnd: 1,
+    gradYear: 1,
+    earliestStart: 1,
+    availability: 1
+  };
+
+  /**
+   * 从完整日期字符串提取年/月/日。
+   * @param {string} value
+   * @param {'year'|'month'|'day'} part
+   * @returns {string}
+   */
+  function extractDatePart(value, part) {
+    var raw = String(value == null ? '' : value).trim();
+    if (!raw) return '';
+    var p = String(part || '').toLowerCase();
+    if (p !== 'year' && p !== 'month' && p !== 'day') return '';
+
+    // Already a bare 4-digit year
+    if (/^\d{4}$/.test(raw)) {
+      if (p === 'year') return raw;
+      return '';
+    }
+    // Bare month 1–12
+    if (/^(0?[1-9]|1[0-2])$/.test(raw)) {
+      if (p === 'month') return String(parseInt(raw, 10));
+      return '';
+    }
+
+    var year = '';
+    var month = '';
+    var day = '';
+
+    var m;
+    // 2020年6月12日 / 2020年6月
+    m = raw.match(/(\d{4})\s*年\s*(\d{1,2})\s*月(?:\s*(\d{1,2})\s*日)?/);
+    if (m) {
+      year = m[1];
+      month = m[2];
+      day = m[3] || '';
+    }
+    if (!year) {
+      // ISO / dash / slash / dot: 2020-06-12, 2020/6, 2020.06
+      m = raw.match(/(\d{4})[-\/.](\d{1,2})(?:[-\/.](\d{1,2}))?/);
+      if (m) {
+        year = m[1];
+        month = m[2];
+        day = m[3] || '';
+      }
+    }
+    if (!year) {
+      // year only with 年
+      m = raw.match(/(\d{4})\s*年/);
+      if (m) year = m[1];
+    }
+    if (!year) {
+      m = raw.match(/\b(\d{4})\b/);
+      if (m) year = m[1];
+    }
+    if (!month) {
+      m = raw.match(/(\d{1,2})\s*月/);
+      if (m) month = m[1];
+    }
+
+    if (p === 'year') return year || '';
+    if (p === 'month') {
+      if (!month) return '';
+      var mi = parseInt(month, 10);
+      if (!(mi >= 1 && mi <= 12)) return '';
+      return String(mi);
+    }
+    if (p === 'day') {
+      if (!day) return '';
+      var di = parseInt(day, 10);
+      if (!(di >= 1 && di <= 31)) return '';
+      return String(di);
+    }
+    return '';
+  }
+
+  /**
+   * 检测字段是否为年/月/日分栏。
+   * 保守：裸「年」「月」不够，需 name/id/placeholder 或上下文暗示日期字段。
+   * @returns {'year'|'month'|'day'|null}
+   */
+  function detectDatePartRole(hints) {
+    var raw = String(hints || '');
+    var rawLower = raw.toLowerCase();
+    var h = normalize(raw);
+    if (!h && !raw) return null;
+
+    // Explicit name/id patterns
+    if (/(?:^|[^a-z])(birth|start|end|edu|grad|enroll|hire|avail|earliest)[_\-]?year(?:[^a-z]|$)/i.test(rawLower) ||
+        /(?:^|[^a-z])year(?:of)?(?:birth|grad|start|end)(?:[^a-z]|$)/i.test(rawLower) ||
+        h.indexOf('出生年') !== -1 || h.indexOf('入学年') !== -1 || h.indexOf('毕业年') !== -1 ||
+        h.indexOf('开始年') !== -1 || h.indexOf('结束年') !== -1) {
+      return 'year';
+    }
+    if (/(?:^|[^a-z])(birth|start|end|edu|grad|enroll|hire|avail|earliest)[_\-]?month(?:[^a-z]|$)/i.test(rawLower) ||
+        /(?:^|[^a-z])month(?:of)?(?:birth|grad|start|end)(?:[^a-z]|$)/i.test(rawLower) ||
+        h.indexOf('出生月') !== -1 || h.indexOf('入学月') !== -1 || h.indexOf('毕业月') !== -1 ||
+        h.indexOf('开始月') !== -1 || h.indexOf('结束月') !== -1) {
+      return 'month';
+    }
+    if (/(?:^|[^a-z])(birth|start|end|edu)[_\-]?day(?:[^a-z]|$)/i.test(rawLower) ||
+        h.indexOf('出生日') !== -1) {
+      return 'day';
+    }
+
+    var dateContext =
+      /开始|结束|入学|毕业|在职|出生|入职|到岗|任职|就读|年月日|年月/.test(raw) ||
+      /\b(birthday|birth|start\s*date|end\s*date|grad|enrol|education|employ|available|earliest)\b/i.test(rawLower) ||
+      h.indexOf('startdate') !== -1 || h.indexOf('edustart') !== -1 || h.indexOf('eduend') !== -1 ||
+      h.indexOf('birthday') !== -1 || h.indexOf('gradyear') !== -1 || h.indexOf('earlieststart') !== -1;
+
+    // placeholder / short label year or month with date context
+    var yearOnly =
+      (/^(年|year|yyyy|年\/年)$/i.test(raw.trim()) ||
+        /\b(yyyy|year)\b/i.test(rawLower) && !/\b(month|day|mm|dd)\b/i.test(rawLower) ||
+        /(^|[\s\|])年([\s\|]|$)/.test(raw) ||
+        /placeholder[^|]{0,20}年/.test(rawLower) ||
+        /(?:^|[^a-z\u4e00-\u9fff])年(?:[^a-z\u4e00-\u9fff]|$)/.test(raw) &&
+          !/年月|年份|年度|年限|年薪|年级|年假/.test(raw));
+
+    var monthOnly =
+      (/^(月|month|mm|月\/月)$/i.test(raw.trim()) ||
+        /\b(mm|month)\b/i.test(rawLower) && !/\b(year|day|yyyy|dd)\b/i.test(rawLower) ||
+        /(^|[\s\|])月([\s\|]|$)/.test(raw) ||
+        /placeholder[^|]{0,20}月/.test(rawLower));
+
+    if (dateContext && yearOnly && !monthOnly) return 'year';
+    if (dateContext && monthOnly && !yearOnly) return 'month';
+
+    // Combined label like "入学时间 年" / "开始日期 年"
+    if (dateContext && /年/.test(raw) && !/月/.test(raw) &&
+        (h.indexOf('年') !== -1) && raw.length < 40) {
+      if (/开始|结束|入学|毕业|出生|入职|到岗|任职|就读/.test(raw) ||
+          /\b(start|end|birth|grad|enrol)/i.test(rawLower)) {
+        return 'year';
+      }
+    }
+    if (dateContext && /月/.test(raw) && !/年/.test(raw) && raw.length < 40) {
+      if (/开始|结束|入学|毕业|出生|入职|到岗|任职|就读/.test(raw) ||
+          /\b(start|end|birth|grad|enrol)/i.test(rawLower)) {
+        return 'month';
+      }
+    }
+
+    // "入学 年" style with sibling context already in hints
+    if ((/入学|毕业|出生|开始|结束|在职/.test(raw)) &&
+        (/(?:^|[\s\|\/])年(?:[\s\|\/]|$)/.test(raw) || /\byear\b/i.test(rawLower))) {
+      if (!/月|month|mm/i.test(raw)) return 'year';
+    }
+    if ((/入学|毕业|出生|开始|结束|在职/.test(raw)) &&
+        (/(?:^|[\s\|\/])月(?:[\s\|\/]|$)/.test(raw) || /\bmonth\b|\bmm\b/i.test(rawLower))) {
+      if (!/年|year|yyyy/i.test(raw) || /年月/.test(raw) === false) {
+        // if both 年 and 月 present as "年月", don't treat as month-only
+        if (!/年/.test(raw) && !/\byear\b|yyyy/i.test(rawLower)) return 'month';
+      }
+    }
+
+    return null;
+  }
+
+  function isDatePartProfileKey(key) {
+    return !!(key && DATE_PART_KEYS[key]);
+  }
+
+  /**
+   * 若字段是年/月分栏且值为完整日期，则拆分；否则原样返回。
+   * zeroPadMonth: maxlength=2 或 placeholder 暗示时补零。
+   */
+  function maybeExtractDatePartValue(value, hints, options) {
+    var role = detectDatePartRole(hints);
+    if (!role) return String(value == null ? '' : value);
+    var opts = options || {};
+    var key = opts.profileKey || '';
+    // 无明确 role 时已返回；有 role 时允许对日期键或 hints 含日期上下文拆分
+    if (key && !isDatePartProfileKey(key) && !detectDatePartRole(hints)) {
+      return String(value == null ? '' : value);
+    }
+    var part = extractDatePart(value, role);
+    if (!part) {
+      // value already looks like the part
+      if (role === 'year' && /^\d{4}$/.test(String(value).trim())) return String(value).trim();
+      if (role === 'month' && /^(0?[1-9]|1[0-2])$/.test(String(value).trim())) {
+        part = String(parseInt(String(value).trim(), 10));
+      } else {
+        return String(value == null ? '' : value);
+      }
+    }
+    if (role === 'month' && (opts.zeroPadMonth || opts.maxLength === 2)) {
+      var n = parseInt(part, 10);
+      if (n >= 1 && n <= 12) part = (n < 10 ? '0' : '') + n;
+    }
+    return part;
+  }
+
+  /** 仅保留语义相关的 className token，避免 antd 长类名淹没关键词 */
+  function semanticClassTokens(className) {
+    var raw = String(className || '');
+    if (!raw) return '';
+    var tokens = raw.split(/\s+/);
+    var keep = [];
+    var i, t, n;
+    var SEM = /name|email|phone|mobile|tel|wechat|weixin|qq|address|city|school|degree|major|company|title|salary|birth|date|year|month|gender|github|linkedin|resume|skill/i;
+    for (i = 0; i < tokens.length; i++) {
+      t = tokens[i];
+      if (!t || t.length > 48) continue;
+      if (/^(ant-|el-|semi-|css-|Mui|chakra)/i.test(t)) continue;
+      n = normalize(t);
+      if (SEM.test(t) || SEM.test(n)) keep.push(t);
+    }
+    return keep.join(' ');
+  }
+
   return {
     FIELD_KEYWORDS: FIELD_KEYWORDS,
     FIELD_ORDER: FIELD_ORDER,
@@ -1009,6 +1507,7 @@
     FUZZY_THRESHOLD: FUZZY_THRESHOLD,
     AUTOCOMPLETE_MAP: AUTOCOMPLETE_MAP,
     SKIP_SUBSTRINGS: SKIP_SUBSTRINGS,
+    DATE_PART_KEYS: DATE_PART_KEYS,
     normalize: normalize,
     levenshtein: levenshtein,
     similarity: similarity,
@@ -1027,9 +1526,20 @@
     isBasedRegionQuestion: isBasedRegionQuestion,
     expandDegreeSynonyms: expandDegreeSynonyms,
     visibleLabelText: visibleLabelText,
+    resolveAriaLabelledByText: resolveAriaLabelledByText,
+    labelTextFromFormItem: labelTextFromFormItem,
+    labelTextFromParentPrevSibling: labelTextFromParentPrevSibling,
+    cleanLabelPunctuation: cleanLabelPunctuation,
+    isOtherPersonContactContext: isOtherPersonContactContext,
+    extractDatePart: extractDatePart,
+    detectDatePartRole: detectDatePartRole,
+    isDatePartProfileKey: isDatePartProfileKey,
+    maybeExtractDatePartValue: maybeExtractDatePartValue,
+    semanticClassTokens: semanticClassTokens,
     isSkipContext: function (hints) {
       var raw = String(hints || '');
       return isSkipContext(raw.toLowerCase(), normalize(raw));
     }
   };
 });
+
