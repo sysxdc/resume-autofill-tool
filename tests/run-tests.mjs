@@ -715,10 +715,10 @@ test('buildSystemPrompt mentions select option matching', () => {
 
 console.log('repo integrity');
 
-test('manifest is MV3 version 1.3.0 with icons', () => {
+test('manifest is MV3 v1.3.x with icons', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.3.0');
+  assert.ok(/^1\.3\.\d+$/.test(manifest.version), `version=${manifest.version}`);
   assert.ok(manifest.icons['16']);
   assert.ok(manifest.action.default_icon['48']);
   assert.ok(manifest.content_scripts[0].js.includes('shared/match.js'));
@@ -1180,6 +1180,51 @@ test('v1.3.0 docs playoffer-field-map exists', () => {
   assert.ok(md.includes('namePinyin'));
   assert.ok(/姓名拼音|拼音姓名/.test(md));
   assert.ok(md.includes('实习公司') || md.includes('internCompany'));
+});
+
+
+console.log('v1.3.1 真实站点修正：关键词 / 搜索框 / readonly 弹层 / 无名 radio');
+
+test('v1.3.1: 应聘职位归 jobTarget，不再被 summary 抢', () => {
+  assert.equal(Match.matchFieldKey('应聘职位'), 'jobTarget');
+  assert.equal(Match.matchFieldKey('JOB_OBJECTIVE'), 'jobTarget');
+  assert.equal(Match.matchFieldKey('应聘岗位'), 'jobTarget');
+  // 自我评价仍应命中 summary
+  assert.equal(Match.matchFieldKey('自我评价'), 'summary');
+});
+
+test('v1.3.1: 所获荣誉 / ext_honor 归 honors', () => {
+  assert.equal(Match.matchFieldKey('所获荣誉'), 'honors');
+  assert.equal(Match.matchFieldKey('ext_honor'), 'honors');
+  assert.equal(Match.matchFieldKey('获奖情况'), 'honors');
+});
+
+test('v1.3.1: profile 新增 honors 字段（schema / 空档 / 样例）', () => {
+  assert.ok(Profile.PROFILE_FIELDS.includes('honors'));
+  assert.equal(Profile.emptyProfile().honors, '');
+  assert.ok(String(Profile.SAMPLE_PROFILE.honors || '').length > 0);
+  const round = Profile.normalizeProfile({ honors: '校级优秀学生干部' });
+  assert.equal(round.honors, '校级优秀学生干部');
+});
+
+test('v1.3.1: autofill 源守卫（搜索框跳过 / readonly 弹层 / radio 白名单 / 不提交）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function isSearchBox/.test(src), 'isSearchBox 应存在');
+  assert.ok(/搜索\|查找\|关键字/.test(src), '搜索框关键词应存在');
+  assert.ok(/function fillReadonlyPicker/.test(src), 'fillReadonlyPicker 应存在');
+  assert.ok(/RADIO_SAFE_KEYS/.test(src), 'radio 白名单应存在');
+  assert.ok(/allowPickerClick/.test(src), 'picker 开关应存在');
+  assert.ok(!/\.submit\s*\(/.test(src), '内容脚本不得调用 form.submit()');
+  assert.ok(!/requestSubmit/.test(src), '内容脚本不得调用 requestSubmit');
+});
+
+
+test('v1.3.1: 出生日期是整日期，不被拆成 day', () => {
+  const hints = '出生日期 出生日期 BIRTHDAY';
+  assert.equal(Match.detectDatePartRole(hints), null, '出生日期不应被判为 day');
+  assert.equal(Match.maybeExtractDatePartValue('1998-05-20', hints, { profileKey: 'birthday' }), '1998-05-20');
+  // 真正的“出生日”单栏仍应识别
+  assert.equal(Match.detectDatePartRole('出生日'), 'day');
 });
 
 console.log('');

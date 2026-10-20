@@ -3,6 +3,7 @@
  * 依赖 shared/match.js（须在 manifest content_scripts 中先于本文件加载）。
  * FILL_FORM / SCAN_FIELDS / COLLECT_FIELDS / APPLY_MAPPINGS
  * 不自动提交；不填 password/file；不盲勾 checkbox。
+ * v1.3.1: 搜索框跳过 + readonly 弹层选择器点击 + 无名 radio 白名单；skipped 原因上报。
  * v1.3.0: D10 相邻年/月 placeholder 对 + 附近日期组标签；D9 拆分失败跳过。
  * v1.2.3: getLabelText 支持 antd/form-item、aria-labelledby；年/月日期拆分；hints 优先标签。
  * v1.2.2: getLabelText 用 visibleLabelText；已填字段 skip-if-filled（不覆盖）。
@@ -177,6 +178,18 @@
     return raw || (el.tagName.toLowerCase() + (el.type ? '[' + el.type + ']' : ''));
   }
 
+  /**
+   * v1.3.1: 搜索框（“请输入关键字查找”类）不是简历字段，填进去只会污染命中结果。
+   */
+  function isSearchBox(el) {
+    var ph = String((el.getAttribute && el.getAttribute('placeholder')) || '');
+    var aria = String((el.getAttribute && el.getAttribute('aria-label')) || '');
+    var name = String(el.name || '');
+    return /搜索|查找|关键字|检索|search/i.test(ph) ||
+      /搜索|查找|检索|search/i.test(aria) ||
+      /search|keyword/i.test(name);
+  }
+
   function isSkippable(el) {
     var t = (el.type || '').toLowerCase();
     return (
@@ -187,7 +200,8 @@
       t === 'reset' ||
       t === 'file' ||
       t === 'password' ||
-      el.disabled
+      el.disabled ||
+      isSearchBox(el)
     );
   }
 
@@ -291,19 +305,214 @@
     });
   }
 
-  function fillFromProfile(profile) {
+  // ————— v1.3.1：readonly 弹层选择器 + 无名 radio 组 —————
+
+  /** 肯定不能点的选项文案（防止误触提交类按钮） */
+  var PICKER_BLOCK_RE = /^(提交|保存|取消|关闭|确定删除|删除|清除|重置|退出|submit|save|cancel|close|reset|delete)$/i;
+
+  /** 允许自动勾选的单选组（语义容易误判的组不在此列） */
+  var RADIO_SAFE_KEYS = { gender: 1, maritalStatus: 1, politicalStatus: 1, ethnicity: 1 };
+
+  function isReadonlyPicker(el) {
+    if (!el || el.disabled || !el.readOnly) return false;
+    var t = (el.type || 'text').toLowerCase();
+    return t === 'text' || t === 'search' || t === 'tel' || t === 'number';
+  }
+
+  function simulateClick(el) {
+    try {
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      el.click();
+    } catch (_) {
+      try { el.click(); } catch (e) { /* ignore */ }
+    }
+  }
+
+  /** 可见性判断：offsetParent 在 position:fixed 弹层里恒为 null，改用 rect + computedStyle */
+  function isVisibleEl(n) {
+    if (!n || n.nodeType !== 1) return false;
+    var rect = n.getBoundingClientRect ? n.getBoundingClientRect() : null;
+    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+    try {
+      var st = window.getComputedStyle(n);
+      if (!st || st.visibility === 'hidden' || st.display === 'none' || Number(st.opacity) === 0) return false;
+    } catch (_) { /* ignore */ }
+    return true;
+  }
+
+  /** 在可见层里找与目标值匹配的选项节点（只返回容器式叶子节点） */
+  function pickVisibleCandidates(desired) {
+    var want = String(desired || '').replace(/\s+/g, ' ').trim();
+    if (!want) return [];
+    var nodes = document.querySelectorAll('[role="option"], li, dd, .option, .picker-item, .list-item, .dropdown-item, .weui-cell');
+    var out = [];
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var txt = String(n.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!txt || txt.length > 40 || PICKER_BLOCK_RE.test(txt)) continue;
+      if (!isVisibleEl(n)) continue;
+      if (n.querySelector('input, textarea, select')) continue;
+      var score = 0;
+      if (txt === want) score = 3;
+      else if (txt.indexOf(want) === 0 || want.indexOf(txt) === 0) score = 2;
+      else if (txt.indexOf(want) !== -1) score = 1;
+      if (!score) continue;
+      out.push({ el: n, score: score, len: txt.length });
+    }
+    out.sort(function (a, b) { return b.score - a.score || a.len - b.len; });
+    return out.slice(0, 4);
+  }
+
+  /**
+   * 点击 readonly 输入框 → 在弹出层里按文本选值 → 回读验证。
+   * 失败时不强写 value（readonly 写了也不生效），并返回 false 供上层记录原因。
+   */
+  /** 选项值是否就是我们想要的目标值（严格比对，避免“值变了”就算成功） */
+  function pickerValueMatches(actual, desired) {
+    var a = normalizeChoiceText(actual);
+    var w = normalizeChoiceText(desired);
+    if (!a || !w) return false;
+    if (a === w) return true;
+    // 日期/薪资等带格式差异：允许一侧包含另一侧（至少 4 位，避免 "26" 命中 "2026"）
+    if (a.length >= 4 && w.length >= 4 && (a.indexOf(w) !== -1 || w.indexOf(a) !== -1)) return true;
+    return false;
+  }
+
+  function fillReadonlyPicker(el, desired) {
+    var before = String(el.value || '');
+    simulateClick(el);
+    return new Promise(function (resolve) {
+      setTimeout(function () {
+        var cands = pickVisibleCandidates(desired);
+        if (!cands.length) { resolve(false); return; }
+        var i = 0;
+        var tryNext = function () {
+          if (i >= cands.length) {
+            // 全部失败：尽量还原原值，避免留下错值
+            if (String(el.value || '') !== before) {
+              try { simulateClick(el); } catch (_) { /* ignore */ }
+            }
+            resolve(false);
+            return;
+          }
+          simulateClick(cands[i].el);
+          i += 1;
+          setTimeout(function () {
+            if (pickerValueMatches(el.value, desired)) { resolve(true); return; }
+            // 弹层可能已被关闭，重新打开再试下一个候选
+            if (i < cands.length) simulateClick(el);
+            setTimeout(tryNext, i < cands.length ? 260 : 0);
+          }, 300);
+        };
+        tryNext();
+      }, 420);
+    });
+  }
+
+  /** 取 radio 的选项文案 */
+  function radioOptionText(radio) {
+    var lab = radio.closest ? radio.closest('label') : null;
+    if (lab) {
+      var t = M.visibleLabelText ? M.visibleLabelText(lab) : lab.textContent;
+      t = String(t || '').replace(/\s+/g, ' ').trim();
+      if (t) return t.slice(0, 30);
+    }
+    var p = radio.parentElement;
+    return String((p && p.textContent) || '').replace(/\s+/g, ' ').trim().slice(0, 30);
+  }
+
+  /** 无名 radio 分组：同一容器内 ≥2 个无 name 的 radio */
+  function collectUnnamedRadioGroups() {
+    var radios = Array.from(document.querySelectorAll('input[type=radio]')).filter(function (r) {
+      return !r.disabled && !r.name && r.offsetParent;
+    });
+    var groups = [];
+    var used = {};
+    radios.forEach(function (r) {
+      if (used[r.id || ''] && r.id) return;
+      var node = r.parentElement;
+      for (var up = 0; up < 4 && node; up++, node = node.parentElement) {
+        var inside = Array.from(node.querySelectorAll('input[type=radio]')).filter(function (x) {
+          return !x.disabled && !x.name && x.offsetParent;
+        });
+        if (inside.length >= 2 && String(node.textContent || '').length < 180) {
+          if (groups.indexOf(node) === -1) groups.push(node);
+          return;
+        }
+      }
+    });
+    return groups;
+  }
+
+  /** 组文案：容器内非选项文本的首段，或前一个兄弟节点 */
+  function radioGroupLabelName(container) {
+    var texts = [];
+    var walk = function (node, depth) {
+      if (depth > 2 || !node) return;
+      var kids = node.children || [];
+      for (var i = 0; i < kids.length; i++) {
+        var kid = kids[i];
+        if (!kid || kid.nodeType !== 1) continue;
+        if (/^(INPUT|LABEL)$/i.test(kid.tagName)) continue;
+        var t = String(kid.textContent || '').replace(/\s+/g, ' ').trim();
+        if (t && t.length <= 24 && !/^[男女是否]$/.test(t)) { texts.push(t); return; }
+        walk(kid, depth + 1);
+        if (texts.length) return;
+      }
+    };
+    walk(container, 0);
+    if (texts.length) return texts[0];
+    var prev = container.previousElementSibling;
+    if (prev) {
+      var t2 = String(prev.textContent || '').replace(/\s+/g, ' ').trim();
+      if (t2 && t2.length <= 24) return t2;
+    }
+    return '';
+  }
+
+  function normalizeChoiceText(s) {
+    return String(s || '').replace(/[\s\u3000:：*]/g, '').toLowerCase();
+  }
+
+  /** 在组内按 profile 值选中对应 radio（只点，不伪造 value） */
+  function fillRadioGroup(container, key, value) {
+    var want = normalizeChoiceText(value);
+    if (!want) return false;
+    var radios = Array.from(container.querySelectorAll('input[type=radio]')).filter(function (r) {
+      return !r.disabled && !r.name && r.offsetParent;
+    });
+    for (var i = 0; i < radios.length; i++) {
+      var opt = normalizeChoiceText(radioOptionText(radios[i]));
+      if (!opt) continue;
+      if (opt === want || (opt.length >= 2 && want.indexOf(opt) !== -1)) {
+        simulateClick(radios[i]);
+        if (radios[i].checked) { highlight(radios[i]); return true; }
+      }
+    }
+    return false;
+  }
+
+  async function fillFromProfile(profile, options) {
+    var opts = options || {};
     var filled = 0;
     var filledKeys = [];
+    var skipped = [];
     var keyCounts = {};
+    var els = iterFillableFields();
 
-    iterFillableFields().forEach(function (el) {
+    for (var idx = 0; idx < els.length; idx++) {
+      var el = els[idx];
       var key = matchKeyForElement(el);
-      if (!key) return;
+      if (!key) continue;
       var count = keyCounts[key] || 0;
-      if (count >= MAX_FILLS_PER_KEY) return;
+      if (count >= MAX_FILLS_PER_KEY) continue;
       var value = M.profileValue(profile, key);
-      if (!value) return;
-      if (fieldLooksFilled(el)) return;
+      if (!value) {
+        if (skipped.length < 12) skipped.push({ key: key, reason: 'no_profile_value' });
+        continue;
+      }
+      if (fieldLooksFilled(el)) continue;
       var hints = collectHints(el);
       var adjacentRole = detectAdjacentDatePairRole(el);
       var dateOpts = {
@@ -320,16 +529,52 @@
           adjacentPairRole: adjacentRole || undefined
         });
       }
-      if (!value) return;
-      if (setNativeValue(el, value)) {
+      if (!value) continue;
+
+      var ok = false;
+      if (isReadonlyPicker(el)) {
+        // 只读展示框：真值需要点击弹层选择；默认开启，可用 options.allowPickerClick=false 关闭
+        if (opts.allowPickerClick === false) {
+          skipped.push({ key: key, reason: 'readonly_picker_disabled' });
+          continue;
+        }
+        ok = await fillReadonlyPicker(el, value);
+        if (!ok) skipped.push({ key: key, reason: 'readonly_picker_not_found' });
+      } else {
+        ok = setNativeValue(el, value);
+        if (!ok) skipped.push({ key: key, reason: 'set_value_failed' });
+      }
+
+      if (ok) {
         filled += 1;
         keyCounts[key] = count + 1;
         if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
         highlight(el);
       }
-    });
+    }
 
-    return { filled: filled, filledKeys: filledKeys };
+    // 无名单选组（性别/婚姻/政治面貌/民族）：语义明确才勾
+    if (opts.allowRadio !== false) {
+      collectUnnamedRadioGroups().forEach(function (container) {
+        var labelName = radioGroupLabelName(container);
+        if (!labelName) return;
+        var scored = M.matchFieldKeyScored ? M.matchFieldKeyScored(labelName, {}) : null;
+        var gkey = scored && scored.key;
+        if (!gkey || !RADIO_SAFE_KEYS[gkey]) return;
+        if (scored.confidence < 0.9) return;
+        var gval = M.profileValue(profile, gkey);
+        if (!gval) return;
+        var before = (keyCounts['radio:' + gkey] || 0);
+        if (before) return;
+        if (fillRadioGroup(container, gkey, gval)) {
+          keyCounts['radio:' + gkey] = 1;
+          filled += 1;
+          if (filledKeys.indexOf(gkey) === -1) filledKeys.push(gkey);
+        }
+      });
+    }
+
+    return { filled: filled, filledKeys: filledKeys, skipped: skipped };
   }
 
   /**
@@ -396,13 +641,18 @@
     });
   }
 
-  async function handleFill() {
+  async function handleFill(options) {
     var profile = await loadProfile();
     if (!profileHasData(profile)) {
       return { ok: false, filled: 0, filledKeys: [], reason: 'empty_profile' };
     }
-    var result = fillFromProfile(profile);
-    return { ok: true, filled: result.filled, filledKeys: result.filledKeys };
+    var result = await fillFromProfile(profile, options || {});
+    return {
+      ok: true,
+      filled: result.filled,
+      filledKeys: result.filledKeys,
+      skipped: result.skipped || []
+    };
   }
 
   async function handleScan() {
@@ -420,9 +670,71 @@
     return { ok: true, filled: result.filled, filledKeys: result.filledKeys };
   }
 
+  var IS_TOP_FRAME = (function () {
+    try { return window.top === window; } catch (_) { return false; }
+  })();
+
+  /**
+   * v1.3.1（iframe 支持）：all_frames 后每个子 frame 都会收到 FILL_FORM 广播。
+   * 子 frame 自己填完 → 用 postMessage 把统计结果汇报给父 frame，并且**不**调用
+   * sendResponse，这样消息通道里只有顶层 frame 应答，popup 拿到的是汇总结果。
+   */
+  function reportToParent(payload) {
+    try {
+      if (IS_TOP_FRAME) return;
+      (window.top || window.parent).postMessage({ __raFill: payload }, '*');
+    } catch (_) { /* ignore */ }
+  }
+
+  function collectFrameResults(ms) {
+    return new Promise(function (resolve) {
+      var agg = { filled: 0, filledKeys: [], frames: 0, skipped: [] };
+      var onMsg = function (e) {
+        var d = e && e.data;
+        if (!d || !d.__raFill) return;
+        agg.filled += Number(d.__raFill.filled) || 0;
+        agg.frames += 1;
+        (d.__raFill.filledKeys || []).forEach(function (k) {
+          if (agg.filledKeys.indexOf(k) === -1) agg.filledKeys.push(k);
+        });
+        (d.__raFill.skipped || []).forEach(function (x) {
+          if (agg.skipped.length < 20) agg.skipped.push(x);
+        });
+      };
+      try { window.addEventListener('message', onMsg); } catch (_) { /* ignore */ }
+      setTimeout(function () {
+        try { window.removeEventListener('message', onMsg); } catch (_) { /* ignore */ }
+        resolve(agg);
+      }, ms);
+    });
+  }
+
+  async function handleFillMultiFrame(options) {
+    var own = await handleFill(options || {});
+    if (!IS_TOP_FRAME) {
+      reportToParent(own);
+      return own;
+    }
+    // 顶层：留一点时间收集子 frame 的汇报
+    var agg = await collectFrameResults(900);
+    if (!agg.frames) return own;
+    return {
+      ok: own.ok !== false,
+      filled: own.filled + agg.filled,
+      filledKeys: own.filledKeys.concat(agg.filledKeys.filter(function (k) {
+        return own.filledKeys.indexOf(k) === -1;
+      })),
+      skipped: (own.skipped || []).concat(agg.skipped).slice(0, 20),
+      frames: agg.frames + 1
+    };
+  }
+
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     if (message && message.type === 'FILL_FORM') {
-      handleFill().then(sendResponse);
+      handleFillMultiFrame(message.options || {}).then(function (r) {
+        // 子 frame 不应答，只把结果 postMessage 给顶层
+        if (IS_TOP_FRAME) sendResponse(r);
+      });
       return true;
     }
     if (message && message.type === 'SCAN_FIELDS') {

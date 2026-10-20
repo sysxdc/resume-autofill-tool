@@ -4,6 +4,7 @@
  *
  * v1.3.0: playoffer 全量字段关键词 / FIELD_ORDER；紧急联系人拆分；地址/技能别名；证明人/家庭 denylist。
  * v1.2.4: D9 毕业时间→eduEnd + 拆分失败跳过；D10 相邻年/月 placeholder 与附近日期组标签。
+ * v1.3.1: honors 键；应聘职位归 jobTarget（不再被 summary 抢）；
  * v1.2.3: antd/form-item 标签发现；上司联系人 denylist；年/月日期拆分 extractDatePart。
  * v1.2.2: visibleLabelText — 跳过 select/option/input 等控件子树，避免 option 文案污染标签匹配。
  * v1.2.1: select 仅匹配 option；Yes/No 归一；地区枚举禁止城市硬填。
@@ -404,9 +405,13 @@
     ],
     softwareSkills: ['softwareskills', 'software_skills', '软件技能', '办公软件'],
     softSkills: ['softskills', 'soft_skills', '软技能', '综合素质'],
+    honors: [
+      'honors', 'honor', 'honour', 'awardsummary', 'ext_honor', 'ext_honors',
+      '所获荣誉', '荣誉奖项', '获奖情况', '获奖经历', '主要荣誉', '荣誉奖励', '在校荣誉'
+    ],
     summary: [
       'summary', 'about', 'bio', 'introduction', 'coverletter', 'cover_letter',
-      'objective', 'selfintro', '自我介绍', '个人简介', '自我评价', '求职信',
+      'selfintro', '自我介绍', '个人简介', '自我评价', '求职信',
       '个人总结', '简介', '补充说明', 'whyjoin', 'why_join', 'whydoyouwant'
     ],
     expectedSalary: [
@@ -437,7 +442,9 @@
     ],
     jobTarget: [
       'jobtarget', 'job_target', 'desiredposition', 'desired_position', 'targetrole',
-      '求职意向', '目标职位', '目标岗位', '期望职位', '意向岗位'
+      'jobobjective', 'job_objective', 'positionapplied', 'appliedposition', 'applyposition',
+      '求职意向', '目标职位', '目标岗位', '期望职位', '意向岗位', '应聘职位', '应聘岗位',
+      '申请职位', '意向职位', '应征职位'
     ],
     hasRelativeAtCompany: [
       'hasrelativeatcompany', '是否有亲属在本公司', '是否有亲属在公司', '公司亲属'
@@ -585,6 +592,7 @@
     'techSkills', 'softwareSkills', 'softSkills', 'skills',
     'familyIdNumber', 'familyName', 'familyRelation', 'familyGender', 'familyEducation', 'familyEthnicity',
     'familyBirthday', 'familyPhone', 'familyEmployer', 'familyTitle', 'familyPoliticalStatus', 'familyAddress',
+    'honors',
     'awardName', 'awardIssuer', 'awardDate', 'awardEnd', 'awardLevel', 'awardType', 'awardGrade', 'awardDescription',
     'patentName', 'patentNo', 'patentApplyDate', 'patentStatus', 'patentInventor', 'patentDescription',
     'paperTitle', 'paperJournal', 'paperAuthors', 'paperVolume', 'paperImpactFactor', 'paperJournalLevel',
@@ -1837,8 +1845,11 @@
         h.indexOf('开始月') !== -1 || h.indexOf('结束月') !== -1) {
       return 'month';
     }
-    if (/(?:^|[^a-z])(birth|start|end|edu)[_\-]?day(?:[^a-z]|$)/i.test(rawLower) ||
-        h.indexOf('出生日') !== -1) {
+    // “出生日期 / 出生时间”是完整日期字段，不能当“日”拆分；只有单独的“出生日/日”才是 day
+    var birthDayOnly = h.indexOf('出生日') !== -1 &&
+      h.indexOf('出生日期') === -1 && h.indexOf('出生时间') === -1 && h.indexOf('出生年月日') === -1;
+    // 必须带分隔符：birth_day / start-day；裸 “birthday” 是完整日期字段，不是 day 分栏
+    if (/(?:^|[^a-z])(birth|start|end|edu)[_\-]day(?:[^a-z]|$)/i.test(rawLower) || birthDayOnly) {
       return 'day';
     }
 

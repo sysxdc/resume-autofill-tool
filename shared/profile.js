@@ -90,6 +90,7 @@
     'familyBirthday', 'familyPhone', 'familyEmployer', 'familyTitle', 'familyPoliticalStatus', 'familyAddress',
     // —— 获奖 ——
     'awardName', 'awardIssuer', 'awardDate', 'awardEnd', 'awardLevel', 'awardType', 'awardGrade', 'awardDescription',
+    'honors',
     // —— 专利 ——
     'patentName', 'patentNo', 'patentApplyDate', 'patentStatus', 'patentInventor', 'patentDescription',
     // —— 论文 ——
@@ -175,6 +176,7 @@
     gaokaoScore: '620',
     gaokaoSubjects: '理科',
     professionalTitle: '',
+    honors: '校级优秀学生干部（2018）；CET-6 520 分；校级程序设计竞赛二等奖',
     highestDegree: '本科',
     isFreshGraduate: '否',
     workStatus: '在职',
