@@ -2,6 +2,7 @@
  * 共享字段匹配逻辑：关键词、同义、模糊评分、姓名拆分、profile 取值、select 匹配、label 可见文本。
  * 浏览器挂到 ResumeAutofillMatch；Node 通过 module.exports 引入。
  *
+ * v1.2.4: D9 毕业时间→eduEnd + 拆分失败跳过；D10 相邻年/月 placeholder 与附近日期组标签。
  * v1.2.3: antd/form-item 标签发现；上司联系人 denylist；年/月日期拆分 extractDatePart。
  * v1.2.2: visibleLabelText — 跳过 select/option/input 等控件子树，避免 option 文案污染标签匹配。
  * v1.2.1: select 仅匹配 option；Yes/No 归一；地区枚举禁止城市硬填。
@@ -169,7 +170,7 @@
     ],
     gradYear: [
       'graduationyear', 'gradyear', 'grad_year', 'yearofgraduation', 'endyear',
-      '毕业年份', '毕业时间', '毕业年'
+      '毕业年份', '毕业年'
     ],
     gpa: [
       'gpa', 'grade point', '平均绩点', '学分绩点', '成绩绩点'
@@ -178,7 +179,7 @@
       'edustart', 'edu_start', 'enrollmentdate', 'enrollment', '入学时间', '入学日期', '就读开始'
     ],
     eduEnd: [
-      'eduend', 'edu_end', 'graduationdate', '毕业日期', '就读结束', '学业结束'
+      'eduend', 'edu_end', 'graduationdate', '毕业日期', '毕业时间', '就读结束', '学业结束'
     ],
     dualDegree: [
       'dualdegree', 'dual_degree', 'doublemajor', 'double_major', '辅修', '双学位', '第二学位'
@@ -1367,13 +1368,16 @@
   /**
    * 检测字段是否为年/月/日分栏。
    * 保守：裸「年」「月」不够，需 name/id/placeholder 或上下文暗示日期字段。
+   * options.adjacentPairRole: 同组互补 placeholder（年+月）时，允许无 dateContext 也返回角色。
    * @returns {'year'|'month'|'day'|null}
    */
-  function detectDatePartRole(hints) {
+  function detectDatePartRole(hints, options) {
     var raw = String(hints || '');
     var rawLower = raw.toLowerCase();
     var h = normalize(raw);
-    if (!h && !raw) return null;
+    var opts = options || {};
+    var adj = opts.adjacentPairRole || '';
+    if (!h && !raw && adj !== 'year' && adj !== 'month') return null;
 
     // Explicit name/id patterns
     if (/(?:^|[^a-z])(birth|start|end|edu|grad|enroll|hire|avail|earliest)[_\-]?year(?:[^a-z]|$)/i.test(rawLower) ||
@@ -1445,7 +1449,70 @@
       }
     }
 
+    // D10: adjacent complementary placeholder pair (年+月) without dateContext
+    if (adj === 'year' || adj === 'month') {
+      var bareYear =
+        yearOnly ||
+        /^(年|year|yyyy)$/i.test(raw.trim()) ||
+        (!String(raw).trim() && adj === 'year');
+      var bareMonth =
+        monthOnly ||
+        /^(月|month|mm)$/i.test(raw.trim()) ||
+        (!String(raw).trim() && adj === 'month');
+      if (adj === 'year' && bareYear && !monthOnly) return 'year';
+      if (adj === 'month' && bareMonth && !yearOnly) return 'month';
+    }
+
     return null;
+  }
+
+  var DATE_GROUP_LABEL_RE = /入学|毕业|开始|结束|出生|入职|就读|在职/;
+  var DATE_GROUP_LABEL_CLASS = /form-item-label|ant-form-item-label|el-form-item__label|semi-form-field-label|formily-item-label/i;
+
+  /**
+   * 在祖先链（约 8 层）中查找含入学/毕业/开始/结束等的短标签文案。
+   * 用于 Moka 等仅有 placeholder「年」「月」、getLabelText 为空的配对输入。
+   */
+  function findNearbyDateGroupLabelText(el) {
+    if (!el) return '';
+    var node = el.parentElement || el.parentNode || null;
+    var depth, i, kid, cls, tag, t, prev, hops, kids;
+    for (depth = 0; depth < 8 && node; depth++) {
+      kids = node.children || [];
+      for (i = 0; i < kids.length; i++) {
+        kid = kids[i];
+        if (!kid || kid.nodeType !== 1) continue;
+        cls = String(kid.className || '');
+        tag = String(kid.tagName || '').toUpperCase();
+        if (tag === 'LABEL' || DATE_GROUP_LABEL_CLASS.test(cls)) {
+          t = cleanLabelPunctuation(
+            visibleLabelText(kid) || String(kid.textContent || '')
+          );
+          t = String(t || '').replace(/\s+/g, ' ').trim();
+          if (t && t.length < 48 && DATE_GROUP_LABEL_RE.test(t)) return t;
+        }
+      }
+      prev = node.previousElementSibling || null;
+      hops = 0;
+      while (prev && hops < 4) {
+        cls = String(prev.className || '');
+        tag = String(prev.tagName || '').toUpperCase();
+        t = cleanLabelPunctuation(
+          visibleLabelText(prev) || String(prev.textContent || '')
+        );
+        t = String(t || '').replace(/\s+/g, ' ').trim();
+        if (t && t.length < 48 && DATE_GROUP_LABEL_RE.test(t)) {
+          if (tag === 'LABEL' || DATE_GROUP_LABEL_CLASS.test(cls) ||
+              /^(LABEL|SPAN|DIV|P|STRONG|DT|LEGEND)$/i.test(tag)) {
+            return t;
+          }
+        }
+        prev = prev.previousElementSibling || null;
+        hops++;
+      }
+      node = node.parentElement || node.parentNode || null;
+    }
+    return '';
   }
 
   function isDatePartProfileKey(key) {
@@ -1454,25 +1521,30 @@
 
   /**
    * 若字段是年/月分栏且值为完整日期，则拆分；否则原样返回。
+   * 有 role 但拆不出对应部分时返回 ''（跳过），绝不把整年塞进月份格。
    * zeroPadMonth: maxlength=2 或 placeholder 暗示时补零。
+   * options.adjacentPairRole 会传给 detectDatePartRole。
    */
   function maybeExtractDatePartValue(value, hints, options) {
-    var role = detectDatePartRole(hints);
-    if (!role) return String(value == null ? '' : value);
     var opts = options || {};
+    var role = detectDatePartRole(hints, opts);
+    if (!role) return String(value == null ? '' : value);
     var key = opts.profileKey || '';
     // 无明确 role 时已返回；有 role 时允许对日期键或 hints 含日期上下文拆分
-    if (key && !isDatePartProfileKey(key) && !detectDatePartRole(hints)) {
+    if (key && !isDatePartProfileKey(key) && !detectDatePartRole(hints, opts)) {
       return String(value == null ? '' : value);
     }
     var part = extractDatePart(value, role);
     if (!part) {
-      // value already looks like the part
+      // value already looks like the part for this role
       if (role === 'year' && /^\d{4}$/.test(String(value).trim())) return String(value).trim();
       if (role === 'month' && /^(0?[1-9]|1[0-2])$/.test(String(value).trim())) {
         part = String(parseInt(String(value).trim(), 10));
+      } else if (role === 'day' && /^(0?[1-9]|[12]\d|3[01])$/.test(String(value).trim())) {
+        part = String(parseInt(String(value).trim(), 10));
       } else {
-        return String(value == null ? '' : value);
+        // D9: never fall back to the original full/wrong value
+        return '';
       }
     }
     if (role === 'month' && (opts.zeroPadMonth || opts.maxLength === 2)) {
@@ -1533,6 +1605,7 @@
     isOtherPersonContactContext: isOtherPersonContactContext,
     extractDatePart: extractDatePart,
     detectDatePartRole: detectDatePartRole,
+    findNearbyDateGroupLabelText: findNearbyDateGroupLabelText,
     isDatePartProfileKey: isDatePartProfileKey,
     maybeExtractDatePartValue: maybeExtractDatePartValue,
     semanticClassTokens: semanticClassTokens,

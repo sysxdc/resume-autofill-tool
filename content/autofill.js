@@ -3,6 +3,7 @@
  * 依赖 shared/match.js（须在 manifest content_scripts 中先于本文件加载）。
  * FILL_FORM / SCAN_FIELDS / COLLECT_FIELDS / APPLY_MAPPINGS
  * 不自动提交；不填 password/file；不盲勾 checkbox。
+ * v1.2.4: D10 相邻年/月 placeholder 对 + 附近日期组标签；D9 拆分失败跳过。
  * v1.2.3: getLabelText 支持 antd/form-item、aria-labelledby；年/月日期拆分；hints 优先标签。
  * v1.2.2: getLabelText 用 visibleLabelText；已填字段 skip-if-filled（不覆盖）。
  */
@@ -98,10 +99,50 @@
     return String(el.value || '').trim() !== '';
   }
 
+  /**
+   * Moka 等：同父/祖父内仅有 placeholder「年」「月」的互补输入对。
+   * @returns {'year'|'month'|null}
+   */
+  function detectAdjacentDatePairRole(el) {
+    if (!el || !el.getAttribute) return null;
+    var ph = String(el.getAttribute('placeholder') || '').trim();
+    var ourRole = null;
+    if (/^(年|year|yyyy)$/i.test(ph)) ourRole = 'year';
+    else if (/^(月|month|mm)$/i.test(ph)) ourRole = 'month';
+    else return null;
+    var wantRe = ourRole === 'year' ? /^(月|month|mm)$/i : /^(年|year|yyyy)$/i;
+    var containers = [];
+    if (el.parentElement) containers.push(el.parentElement);
+    if (el.parentElement && el.parentElement.parentElement) {
+      containers.push(el.parentElement.parentElement);
+    }
+    var c, inputs, i, other, otherPh;
+    for (c = 0; c < containers.length; c++) {
+      try {
+        inputs = containers[c].querySelectorAll('input');
+      } catch (_) {
+        continue;
+      }
+      for (i = 0; i < inputs.length; i++) {
+        other = inputs[i];
+        if (other === el) continue;
+        otherPh = String(other.getAttribute('placeholder') || '').trim();
+        if (wantRe.test(otherPh)) return ourRole;
+      }
+    }
+    return null;
+  }
+
   function collectHints(el) {
     var label = getLabelText(el);
+    var adjacentRole = detectAdjacentDatePairRole(el);
+    var groupLabel = '';
+    if ((!label || !String(label).trim()) && adjacentRole && M.findNearbyDateGroupLabelText) {
+      groupLabel = M.findNearbyDateGroupLabelText(el) || '';
+    }
+    var primaryLabel = (label && String(label).trim()) ? label : groupLabel;
     var parts = [
-      label,
+      primaryLabel,
       el.getAttribute('placeholder'),
       el.name,
       el.id,
@@ -110,7 +151,7 @@
       el.getAttribute('data-automation-id')
     ];
     // 已有有用标签时不倾倒 antd 长 className；否则仅保留语义 token
-    if (!label || !String(label).trim()) {
+    if (!primaryLabel || !String(primaryLabel).trim()) {
       var cn = typeof el.className === 'string' ? el.className : '';
       var sem = M.semanticClassTokens ? M.semanticClassTokens(cn) : '';
       if (sem) parts.push(sem);
@@ -264,13 +305,19 @@
       if (!value) return;
       if (fieldLooksFilled(el)) return;
       var hints = collectHints(el);
-      if (M.maybeExtractDatePartValue && (M.isDatePartProfileKey(key) || M.detectDatePartRole(hints))) {
+      var adjacentRole = detectAdjacentDatePairRole(el);
+      var dateOpts = {
+        profileKey: key,
+        adjacentPairRole: adjacentRole || undefined
+      };
+      if (M.maybeExtractDatePartValue && (M.isDatePartProfileKey(key) || M.detectDatePartRole(hints, dateOpts))) {
         var maxLen = el.getAttribute('maxlength');
         var ph = el.getAttribute('placeholder') || '';
         value = M.maybeExtractDatePartValue(value, hints, {
           profileKey: key,
           maxLength: maxLen ? parseInt(maxLen, 10) : 0,
-          zeroPadMonth: maxLen === '2' || /^(mm|月)$/i.test(String(ph).trim())
+          zeroPadMonth: maxLen === '2' || /^(mm|月)$/i.test(String(ph).trim()),
+          adjacentPairRole: adjacentRole || undefined
         });
       }
       if (!value) return;
@@ -302,7 +349,9 @@
       if (!el) return;
       if (fieldLooksFilled(el)) return;
       var hints = collectHints(el);
-      var role = M.detectDatePartRole ? M.detectDatePartRole(hints) : null;
+      var adjacentRole = detectAdjacentDatePairRole(el);
+      var dateOpts = { adjacentPairRole: adjacentRole || undefined };
+      var role = M.detectDatePartRole ? M.detectDatePartRole(hints, dateOpts) : null;
       // AI 已给纯年/月则保留；完整日期且字段为年/月分栏时再拆
       if (role && M.extractDatePart) {
         var alreadyPart =
@@ -315,7 +364,8 @@
           value = M.maybeExtractDatePartValue(value, hints, {
             profileKey: m.profileKey || '',
             maxLength: maxLen ? parseInt(maxLen, 10) : 0,
-            zeroPadMonth: maxLen === '2' || /^(mm|月)$/i.test(String(ph).trim())
+            zeroPadMonth: maxLen === '2' || /^(mm|月)$/i.test(String(ph).trim()),
+            adjacentPairRole: adjacentRole || undefined
           });
         }
       }

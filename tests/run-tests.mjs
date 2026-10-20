@@ -701,10 +701,10 @@ test('buildSystemPrompt mentions select option matching', () => {
 
 console.log('repo integrity');
 
-test('manifest is MV3 version 1.2.3 with icons', () => {
+test('manifest is MV3 version 1.2.4 with icons', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.equal(manifest.version, '1.2.3');
+  assert.equal(manifest.version, '1.2.4');
   assert.ok(manifest.icons['16']);
   assert.ok(manifest.action.default_icon['48']);
   assert.ok(manifest.content_scripts[0].js.includes('shared/match.js'));
@@ -987,13 +987,116 @@ test('semanticClassTokens drops ant- noise keeps name-like', () => {
   assert.ok(!/ant-input/.test(sem));
 });
 
-test('autofill.js v1.2.3 uses form-item + date part helpers', () => {
+test('autofill.js v1.2.4 uses form-item + date part + adjacent pair helpers', () => {
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
   assert.ok(src.includes('labelTextFromFormItem'), 'must use form-item labels');
   assert.ok(src.includes('resolveAriaLabelledByText'), 'must use aria-labelledby');
   assert.ok(src.includes('maybeExtractDatePartValue'), 'must extract date parts');
+  assert.ok(src.includes('detectAdjacentDatePairRole'), 'must detect adjacent year/month pair');
+  assert.ok(src.includes('findNearbyDateGroupLabelText'), 'must use nearby date group label');
   assert.ok(src.includes('fieldLooksFilled'), 'skip-if-filled intact');
-  assert.ok(src.includes('1.2.3') || src.includes('v1.2.3'), 'version comment');
+  assert.ok(src.includes('visibleLabelText'), 'visibleLabelText intact');
+  assert.ok(src.includes('1.2.4') || src.includes('v1.2.4'), 'version comment');
+});
+
+
+console.log('v1.2.4 D9 gradYear/eduEnd + month extract skip');
+
+test('D9: 毕业时间 → eduEnd; 毕业年份/毕业年 → gradYear', () => {
+  assert.equal(Match.matchFieldKey('毕业时间'), 'eduEnd');
+  assert.equal(Match.matchFieldKey('毕业年份'), 'gradYear');
+  assert.equal(Match.matchFieldKey('毕业年'), 'gradYear');
+  assert.equal(Match.matchFieldKey('入学时间'), 'eduStart');
+});
+
+test('D9: maybeExtractDatePartValue skips bare year into month box', () => {
+  assert.equal(
+    Match.maybeExtractDatePartValue('2020', '毕业时间 月', { profileKey: 'gradYear' }),
+    ''
+  );
+  const m = Match.maybeExtractDatePartValue('2020-06', '毕业时间 月', {
+    profileKey: 'eduEnd'
+  });
+  assert.ok(m === '6' || m === '06', 'month should be 6 or 06, got ' + m);
+  assert.equal(
+    Match.maybeExtractDatePartValue('2020-06', '毕业时间 月', {
+      profileKey: 'eduEnd',
+      zeroPadMonth: true
+    }),
+    '06'
+  );
+  assert.equal(
+    Match.maybeExtractDatePartValue('2020-06', '毕业时间 年', { profileKey: 'eduEnd' }),
+    '2020'
+  );
+});
+
+console.log('v1.2.4 D10 adjacent placeholder year/month');
+
+test('D10: detectDatePartRole adjacentPairRole', () => {
+  assert.equal(Match.detectDatePartRole('年'), null, 'bare 年 alone still dangerous');
+  assert.equal(Match.detectDatePartRole('年', { adjacentPairRole: 'year' }), 'year');
+  assert.equal(Match.detectDatePartRole('月', { adjacentPairRole: 'month' }), 'month');
+  assert.equal(
+    Match.detectDatePartRole('placeholder 月', { adjacentPairRole: 'month' }),
+    'month'
+  );
+});
+
+test('D10: findNearbyDateGroupLabelText with mock nodes', () => {
+  function text(v) {
+    return { nodeType: 3, nodeValue: v };
+  }
+  function el(tag, opts, kids) {
+    if (Array.isArray(opts)) {
+      kids = opts;
+      opts = {};
+    }
+    opts = opts || {};
+    const node = {
+      nodeType: 1,
+      tagName: tag,
+      className: opts.className || '',
+      childNodes: kids || [],
+      children: (kids || []).filter((k) => k && k.nodeType === 1),
+      parentElement: null,
+      parentNode: null,
+      previousElementSibling: null,
+      textContent: '',
+      getAttribute(n) {
+        return opts.attrs && opts.attrs[n] != null ? String(opts.attrs[n]) : null;
+      }
+    };
+    function tc(n) {
+      if (!n) return '';
+      if (n.nodeType === 3) return n.nodeValue || '';
+      return (n.childNodes || []).map(tc).join('');
+    }
+    node.textContent = tc(node);
+    return node;
+  }
+  function wire(n, p) {
+    if (!n || n.nodeType !== 1) return;
+    n.parentElement = p;
+    n.parentNode = p;
+    (n.children || []).forEach((c) => wire(c, n));
+  }
+
+  const labelCol = el('DIV', { className: 'ant-form-item-label' }, [
+    el('LABEL', {}, [text('毕业时间')])
+  ]);
+  const yearIn = el('INPUT', { attrs: { placeholder: '年' } }, []);
+  const monthIn = el('INPUT', { attrs: { placeholder: '月' } }, []);
+  const control = el('DIV', { className: 'ant-form-item-control' }, [yearIn, monthIn]);
+  const item = el('DIV', { className: 'ant-form-item' }, [labelCol, control]);
+  wire(item, null);
+  // sibling links for children of item
+  labelCol.previousElementSibling = null;
+  control.previousElementSibling = labelCol;
+
+  const found = Match.findNearbyDateGroupLabelText(yearIn);
+  assert.equal(found, '毕业时间');
+  assert.equal(Match.matchFieldKey(found), 'eduEnd');
 });
 
 console.log('');

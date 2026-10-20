@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.2.3**
+当前版本：**1.2.4**
 
 ## 功能概览
 
@@ -102,7 +102,7 @@ node tests/run-tests.mjs
 
 ```text
 resume-autofill-tool/
-├── manifest.json                 # MV3，version 1.2.3
+├── manifest.json                 # MV3，version 1.2.4
 ├── shared/
 │   ├── profile.js                # 字段列表 / 示例 / normalize
 │   ├── match.js                  # 关键词、模糊评分、denylist
@@ -126,11 +126,19 @@ resume-autofill-tool/
 - 不同网站字段命名差异大；可先「AI 巡查」或「扫描字段」。
 - 浏览器内置页（`chrome://` 等）无法注入脚本。
 - 不会自动勾选 checkbox/radio，不会填写 password/file，不会提交表单。
+- **只填空也会填「空白模板行」**（空的教育/工作段），可能多出一段示例经历；提交前请删多余段。
 - SPA 动态渲染的表单若出现较晚，可刷新后再点填写。
 - 自定义 AI Base 若域名不在权限内：当前 `host_permissions` 为 `<all_urls>`；若你自行收窄权限，需为 API 域名补权限。
 - 证件号等敏感字段为选填；公共电脑请勿保存。
 
 ## Changelog
+
+### 1.2.4
+- **D9 毕业时间 / 月份拆分**：`毕业时间` 改映射 `eduEnd`（不再误为 `gradYear`）；`maybeExtractDatePartValue` 在年/月角色拆分失败时返回空串跳过，避免把年份 `2020` 塞进月份格。
+- **D10 相邻年/月 placeholder**：Moka 等仅有 `placeholder="年"` / `"月"` 的输入对，通过相邻互补检测 + 祖先日期组标签（入学/毕业/…）完成角色与字段匹配。
+- **安全 / 只填空说明**：只填空也会填「空白模板行」（空的教育/工作段），可能多出一段示例经历；提交前请删多余段。
+- D1/D5（visibleLabelText、skip-if-filled）保持不变。
+- manifest **1.2.4**；测试套件 79+。
 
 ### 1.2.3
 - **D2 antd / React 表单标签**：`getLabelText` 增加 `aria-labelledby`、`.ant-form-item` / `.el-form-item` 等 form-item 标签发现，以及父列 previousSibling 回退；SCAN/COLLECT hints 优先放标签（D6）。
