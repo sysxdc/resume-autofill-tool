@@ -3,6 +3,7 @@
  * 依赖 shared/match.js（须在 manifest content_scripts 中先于本文件加载）。
  * FILL_FORM / SCAN_FIELDS / COLLECT_FIELDS / APPLY_MAPPINGS
  * 不自动提交；不填 password/file；不盲勾 checkbox。
+ * v1.3.2: 表格布局（td/th 左列）与 Element-UI 下拉的标签发现，修复下拉选单填不上。
  * v1.3.1: 搜索框跳过 + readonly 弹层选择器点击 + 无名 radio 白名单；skipped 原因上报。
  * v1.3.0: D10 相邻年/月 placeholder 对 + 附近日期组标签；D9 拆分失败跳过。
  * v1.2.3: getLabelText 支持 antd/form-item、aria-labelledby；年/月日期拆分；hints 优先标签。
@@ -74,6 +75,32 @@
     if (M.labelTextFromParentPrevSibling) {
       var tCol = M.labelTextFromParentPrevSibling(el);
       if (tCol) return tCol;
+    }
+    // 6. 表格布局（Redsea / 老 HR 系统）：字段名在左侧单元格
+    var cell = el.closest ? el.closest('td, th') : null;
+    if (cell) {
+      var prevCell = cell.previousElementSibling;
+      if (prevCell) {
+        var tCell = M.visibleLabelText
+          ? M.visibleLabelText(prevCell)
+          : String(prevCell.textContent || '');
+        tCell = String(tCell || '').replace(/\s+/g, ' ').trim();
+        if (M.cleanLabelPunctuation) tCell = M.cleanLabelPunctuation(tCell);
+        if (tCell && tCell.length <= 40) return tCell;
+      }
+    }
+    // 7. Element-UI 自定义下拉：标题常在控件容器的前一个兄弟节点
+    var selBox = el.closest
+      ? el.closest('.dictionary-selector, .el-select, .form-select, .ant-select')
+      : null;
+    if (selBox) {
+      var pv = selBox.previousElementSibling;
+      if (pv) {
+        var tPv = M.visibleLabelText ? M.visibleLabelText(pv) : String(pv.textContent || '');
+        tPv = String(tPv || '').replace(/\s+/g, ' ').trim();
+        if (M.cleanLabelPunctuation) tPv = M.cleanLabelPunctuation(tPv);
+        if (tPv && tPv.length <= 40) return tPv;
+      }
     }
     return '';
   }

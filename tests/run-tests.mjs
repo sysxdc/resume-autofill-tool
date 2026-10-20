@@ -1227,6 +1227,23 @@ test('v1.3.1: 出生日期是整日期，不被拆成 day', () => {
   assert.equal(Match.detectDatePartRole('出生日'), 'day');
 });
 
+
+console.log('v1.3.2 表格布局 / Element-UI 下拉标签');
+
+test('v1.3.2: getLabelText 支持表格布局与 el-select 兄弟标签', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/closest\('td, th'\)/.test(src), '应支持 td/th 左列取标签');
+  assert.ok(/previousElementSibling/.test(src), '应读取前一个兄弟/单元格');
+  assert.ok(/dictionary-selector/.test(src), '应识别 Element-UI 下拉容器');
+  assert.ok(/el-select/.test(src), '应覆盖 el-select');
+});
+
+test('v1.3.2: manifest 版本已递增', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  assert.ok(/^1\.3\.\d+$/.test(manifest.version), manifest.version);
+  assert.equal(manifest.content_scripts[0].all_frames, true);
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
