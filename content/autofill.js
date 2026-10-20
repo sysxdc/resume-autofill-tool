@@ -3,6 +3,7 @@
  * 依赖 shared/match.js（须在 manifest content_scripts 中先于本文件加载）。
  * FILL_FORM / SCAN_FIELDS / COLLECT_FIELDS / APPLY_MAPPINGS
  * 不自动提交；不填 password/file；不盲勾 checkbox。
+ * v1.3.3: 多表格日期面板（年/月/日 分组识别 + 确定按钮）。
  * v1.3.2: 表格布局（td/th 左列）与 Element-UI 下拉的标签发现，修复下拉选单填不上。
  * v1.3.1: 搜索框跳过 + readonly 弹层选择器点击 + 无名 radio 白名单；skipped 原因上报。
  * v1.3.0: D10 相邻年/月 placeholder 对 + 附近日期组标签；D9 拆分失败跳过。
@@ -406,11 +407,176 @@
     return false;
   }
 
+
+  // ————— v1.3.3：多表格日期面板（年/月/日 分栏）—————
+
+  var DATE_PANEL_SEL = '.layui-laydate, .laydate, .el-picker-panel, .el-date-picker, ' +
+    '.ant-picker-dropdown, .flatpickr-calendar, [class*="datepicker"], [class*="date-picker"], ' +
+    '[class*="datePicker"], [class*="calendar"], [class*="DatePicker"]';
+
+  function sleep(ms) {
+    return new Promise(function (r) { setTimeout(r, ms); });
+  }
+
+  function parseDateParts(value) {
+    var m = String(value || '').match(/(\d{4})\D{0,3}(\d{1,2})\D{0,3}(\d{1,2})/);
+    if (!m) return null;
+    return { y: m[1], m: String(parseInt(m[2], 10)), d: String(parseInt(m[3], 10)) };
+  }
+
+  /** 可见的日期面板：先按常见类名找；找不到就按“含年份文本的可见 table/ul”兜底 */
+  function findDatePanel(yearText) {
+    var byClass = [];
+    try {
+      Array.prototype.forEach.call(document.querySelectorAll(DATE_PANEL_SEL), function (n) {
+        if (isVisibleEl(n)) byClass.push(n);
+      });
+    } catch (_) { /* ignore */ }
+    if (byClass.length) return byClass[byClass.length - 1];
+    if (!yearText) return null;
+    var generic = [];
+    try {
+      Array.prototype.forEach.call(document.querySelectorAll('table, ul, [class*="list"], [class*="panel"], [class*="popup"], [class*="dropdown"]'), function (n) {
+        if (!isVisibleEl(n)) return;
+        var txt = String(n.textContent || '');
+        if (txt.indexOf(yearText) === -1) return;
+        generic.push(n);
+      });
+    } catch (_) { /* ignore */ }
+    return generic.length ? generic[generic.length - 1] : null;
+  }
+
+  /** 在面板里点一个“文本等于目标数字”的叶子项（年/月/日通用） */
+  function clickPanelItem(scope, text, hintRe) {
+    if (!scope) return false;
+    var want = String(text || '').trim();
+    if (!want) return false;
+    var wantNum = parseInt(want, 10);
+    var nodes = scope.querySelectorAll('td, li, dd, span, div, a');
+    var best = null;
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n.childElementCount) continue;          // 只点叶子，避免点到容器
+      var t = String(n.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!t) continue;
+      var same = (t === want) || (!isNaN(wantNum) && !isNaN(parseInt(t, 10)) && String(parseInt(t, 10)) === String(wantNum));
+      if (!same) continue;
+      if (!isVisibleEl(n)) continue;
+      var bonus = 0;
+      var p = n;
+      for (var u = 0; u < 4 && p; u++, p = p.parentElement) {
+        var cls = String((p.className || ''));
+        if (hintRe && hintRe.test(cls)) { bonus = 1; break; }
+      }
+      if (!best || bonus > best.bonus) best = { el: n, bonus: bonus };
+      if (bonus) break;
+    }
+    if (!best) return false;
+    simulateClick(best.el);
+    return true;
+  }
+
+  /** 面板里的确认按钮（确定/确认/完成/OK）——有些日期面板点完还要确认 */
+  function clickPanelConfirm(scope) {
+    var root = scope || document;
+    var nodes = root.querySelectorAll('button, a, span, div, input[type=button]');
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      var t = String(n.textContent || n.value || '').replace(/\s+/g, ' ').trim();
+      if (!/^(确定|确认|完成|ok|OK|Ok)$/.test(t)) continue;
+      if (n.disabled) continue;
+      if (!isVisibleEl(n)) continue;
+      simulateClick(n);
+      return true;
+    }
+    return false;
+  }
+
+  /** 把面板里的数字列表分组：年份组(>=1900) / 月份组(<=12) / 日期组(<=31) */
+  function numericGroups(root) {
+    var groups = [];
+    if (!root || !root.querySelectorAll) return groups;
+    var sel = 'table, ul, ol, dl, [class*="list"], [role="listbox"], [class*="column"], [class*="col"]';
+    Array.prototype.forEach.call(root.querySelectorAll(sel), function (n) {
+      if (!isVisibleEl(n)) return;
+      var cells = n.querySelectorAll('td, li, dd, span, div, a');
+      var vals = [];
+      Array.prototype.forEach.call(cells, function (c) {
+        if (c.childElementCount) return;
+        var t = String(c.textContent || '').trim();
+        if (!/^\d{1,4}$/.test(t)) return;
+        vals.push(parseInt(t, 10));
+      });
+      if (vals.length < 2) return;
+      var max = Math.max.apply(null, vals);
+      var type = max >= 1900 ? 'year' : (max <= 12 ? 'month' : (max <= 31 ? 'day' : null));
+      if (type) groups.push({ el: n, type: type, count: vals.length });
+    });
+    return groups;
+  }
+
+  /** 依次点 年 → 月 → 日；每步按“分组类型”重新定位（面板常被整体重渲染） */
+  async function tryDatePanel(el, desired) {
+    var parts = parseDateParts(desired);
+    if (!parts) return false;
+    var root = findDatePanel(parts.y);
+    if (!root) return false;
+    // 上溯到能同时看到多组数字列表的祖先（多表格面板的公共容器）
+    var scope = root;
+    for (var u = 0; u < 4 && scope.parentElement; u++) {
+      var types = {};
+      numericGroups(scope).forEach(function (g) { types[g.type] = 1; });
+      if (Object.keys(types).length >= 2) break;
+      scope = scope.parentElement;
+    }
+    var step = function (text, type) {
+      var groups = numericGroups(scope).filter(function (g) { return g.type === type; });
+      for (var i = 0; i < groups.length; i++) {
+        if (clickPanelItem(groups[i].el, text, null)) return true;
+      }
+      return false;
+    };
+    var g0 = numericGroups(scope).map(function (g) { return g.type + ':' + g.count; });
+    var okY = step(parts.y, 'year');
+    if (!okY) return false;
+    await sleep(220);
+    var okM = step(parts.m, 'month');
+    if (!okM) return false;
+    await sleep(220);
+    var okD = step(parts.d, 'day');
+    if (!okD) return false;
+    await sleep(180);
+    if (!dateValueMatches(el.value, desired)) {
+      if (!clickPanelConfirm(scope)) clickPanelConfirm(findDatePanel(parts.y) || scope);
+    }
+    await sleep(300);
+    return true;
+  }
+
+  /** 目标是否已是完整日期（允许 1998-05-20 / 1998/5/20 / 1998年05月20日） */
+  function dateValueMatches(actual, desired) {
+    var a = parseDateParts(actual);
+    var w = parseDateParts(desired);
+    if (a && w) {
+      return a.y === w.y && parseInt(a.m, 10) === parseInt(w.m, 10) && parseInt(a.d, 10) === parseInt(w.d, 10);
+    }
+    return pickerValueMatches(actual, desired);
+  }
+
   function fillReadonlyPicker(el, desired) {
     var before = String(el.value || '');
     simulateClick(el);
     return new Promise(function (resolve) {
-      setTimeout(function () {
+      setTimeout(async function () {
+        // ① 先试「年 / 月 / 日」多表格日期面板
+        var parts = parseDateParts(desired);
+        if (parts && findDatePanel(parts.y)) {
+          var panelOk = await tryDatePanel(el, desired);
+          if (panelOk && dateValueMatches(el.value, desired)) { resolve(true); return; }
+          // 面板路径失败：重开再走普通候选路径
+          simulateClick(el);
+          await sleep(300);
+        }
         var cands = pickVisibleCandidates(desired);
         if (!cands.length) { resolve(false); return; }
         var i = 0;
@@ -426,7 +592,7 @@
           simulateClick(cands[i].el);
           i += 1;
           setTimeout(function () {
-            if (pickerValueMatches(el.value, desired)) { resolve(true); return; }
+            if (dateValueMatches(el.value, desired)) { resolve(true); return; }
             // 弹层可能已被关闭，重新打开再试下一个候选
             if (i < cands.length) simulateClick(el);
             setTimeout(tryNext, i < cands.length ? 260 : 0);

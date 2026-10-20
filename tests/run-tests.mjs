@@ -1244,6 +1244,25 @@ test('v1.3.2: manifest 版本已递增', () => {
   assert.equal(manifest.content_scripts[0].all_frames, true);
 });
 
+
+console.log('v1.3.3 多表格日期面板');
+
+test('v1.3.3: 日期面板分段选择 + 确认按钮', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function parseDateParts/.test(src), '应有日期拆分');
+  assert.ok(/function findDatePanel/.test(src), '应有面板探测');
+  assert.ok(/function numericGroups/.test(src), '应有年/月/日分组识别');
+  assert.ok(/function tryDatePanel/.test(src), '应有分段点选');
+  assert.ok(/function clickPanelConfirm/.test(src), '应处理“确定”按钮');
+  assert.ok(/async function tryDatePanel\(el, desired\)/.test(src), '分段点选应能读回值判断是否需要确定');
+});
+
+test('v1.3.3: 日期比较按年月日（容忍分隔符差异）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function dateValueMatches/.test(src));
+  assert.ok(/parseInt\(a\.m, 10\) === parseInt\(w\.m, 10\)/.test(src), '月日应按数值比较');
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
