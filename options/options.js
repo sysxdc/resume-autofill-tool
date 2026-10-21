@@ -152,6 +152,137 @@
     document.getElementById('ai-model').value = s.model || '';
   }
 
+
+  // ————— v1.6.0：侧栏导航（单区块渲染 + #hash + 未保存提示 + 完成数）—————
+  var panes = Array.prototype.slice.call(document.querySelectorAll('.pane'));
+  var navItems = Array.prototype.slice.call(document.querySelectorAll('.nav-item'));
+  var topbarTitle = document.getElementById('topbar-title');
+  var topbarCode = document.getElementById('topbar-code');
+  var saveState = document.getElementById('save-state');
+  var currentPaneId = 'library';
+
+  function paneById(id) {
+    for (var i = 0; i < panes.length; i++) {
+      if (panes[i].getAttribute('data-pane-id') === id) return panes[i];
+    }
+    return null;
+  }
+
+  function countFilled(pane) {
+    var n = 0;
+    pane.querySelectorAll('input, select, textarea').forEach(function (el) {
+      if (el.type === 'file' || el.type === 'hidden' || el.disabled) return;
+      if (el.type === 'checkbox' || el.type === 'radio') {
+        if (el.checked) n += 1;
+        return;
+      }
+      if (String(el.value || '').trim()) n += 1;
+    });
+    return n;
+  }
+
+  function refreshCounts() {
+    navItems.forEach(function (a) {
+      var pane = paneById(a.getAttribute('data-pane'));
+      if (!pane) return;
+      var filled = countFilled(pane);
+      var badge = a.querySelector('[data-nav-count]');
+      if (badge) {
+        badge.textContent = filled ? String(filled) : '·';
+        badge.setAttribute('data-filled', filled ? 'true' : 'false');
+      }
+      var stat = pane.querySelector('[data-pane-filled]');
+      if (stat) {
+        var unit = stat.parentElement && stat.parentElement.querySelector('span');
+        var paneId = pane.getAttribute('data-pane-id');
+        if (paneId === 'library') {
+          var archives = pane.querySelectorAll('.resume-item').length;
+          stat.textContent = String(archives);
+          stat.setAttribute('data-zero', archives ? 'false' : 'true');
+          if (unit) unit.textContent = '份档案';
+        } else if (paneId === 'ai') {
+          var on = !!document.getElementById('ai-enabled') && document.getElementById('ai-enabled').checked;
+          stat.textContent = on ? 'ON' : 'OFF';
+          stat.setAttribute('data-zero', on ? 'false' : 'true');
+          if (unit) unit.textContent = 'AI 状态';
+        } else {
+          stat.textContent = String(filled);
+          stat.setAttribute('data-zero', filled ? 'false' : 'true');
+          if (unit) unit.textContent = '已填字段';
+        }
+      }
+    });
+  }
+
+  function showPane(id, opts) {
+    var target = paneById(id) || paneById('library');
+    if (!target) return;
+    currentPaneId = target.getAttribute('data-pane-id');
+    panes.forEach(function (p) { p.hidden = p !== target; });
+    navItems.forEach(function (a) {
+      var on = a.getAttribute('data-pane') === currentPaneId;
+      a.setAttribute('aria-current', on ? 'true' : 'false');
+    });
+    var title = target.getAttribute('data-title') || '';
+    var code = target.getAttribute('data-code') || '';
+    if (topbarTitle) topbarTitle.textContent = title;
+    if (topbarCode) topbarCode.textContent = code;
+    var seq = target.querySelector('.pane-seq');
+    if (seq) {
+      var idx = panes.indexOf(target) + 1;
+      seq.textContent = String(idx).padStart(2, '0') + ' / ' + String(panes.length).padStart(2, '0');
+    }
+    document.title = title + ' — 简历填写工具';
+    if (!opts || opts.scroll !== false) window.scrollTo({ top: 0, behavior: 'instant' in window ? 'auto' : 'auto' });
+    if (history.replaceState) history.replaceState(null, '', '#' + currentPaneId);
+  }
+
+  navItems.forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      e.preventDefault();
+      showPane(a.getAttribute('data-pane'));
+    });
+  });
+
+  function markDirty() {
+    if (!saveState) return;
+    if (saveState.getAttribute('data-state') === 'dirty') return;
+    saveState.setAttribute('data-state', 'dirty');
+    saveState.textContent = '未保存';
+  }
+
+  function markClean() {
+    if (!saveState) return;
+    saveState.setAttribute('data-state', 'clean');
+    saveState.textContent = '已保存';
+  }
+
+  document.addEventListener('input', function (e) {
+    if (e.target && e.target.closest && e.target.closest('#profile-form')) markDirty();
+  });
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.closest && e.target.closest('#profile-form')) markDirty();
+  });
+  document.addEventListener('keydown', function (e) {
+    if ((e.metaKey || e.ctrlKey) && String(e.key).toLowerCase() === 's') {
+      e.preventDefault();
+      if (form && form.requestSubmit) form.requestSubmit();
+      else if (form) form.dispatchEvent(new Event('submit', { cancelable: true }));
+    }
+  });
+  window.addEventListener('hashchange', function () {
+    var id = String(location.hash || '').replace('#', '');
+    if (id && id !== currentPaneId) showPane(id);
+  });
+
+  // 保存成功后同步状态：showStatus 里会调用 markFormClean
+  var _markFormClean = markFormClean;
+  markFormClean = function () {
+    _markFormClean();
+    markClean();
+    refreshCounts();
+  };
+
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     // 表单只有扁平字段；必须从当前档案 / storage 拼回 eduList 等，否则一点保存就清空多段经历
@@ -397,6 +528,7 @@
       var items = await DB.listResumes();
       var activeId = await DB.getActiveId();
       renderResumeList(items, activeId);
+      refreshCounts();
     } catch (err) {
       if (listEl) listEl.innerHTML = '<p class="warn">简历库不可用：' + esc(err && err.message) + '</p>';
     }
@@ -599,4 +731,14 @@
     writeAiForm(result.aiSettings || (AI && AI.DEFAULT_AI_SETTINGS));
     markFormClean();
   });
+
+  // ————— v1.6.0 初始化：按 hash 恢复分区、刷新完成数 —————
+  window.addEventListener('load', function () {
+    refreshCounts();
+    var initial = String(location.hash || '').replace('#', '');
+    showPane(initial || currentPaneId, { scroll: false });
+  });
+  document.addEventListener('input', refreshCounts);
+  document.addEventListener('change', refreshCounts);
+
 })();

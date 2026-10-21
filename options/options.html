@@ -3,27 +3,95 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>编辑简历资料 — 简历填写工具</title>
+  <title>简历资料库 — 简历填写工具</title>
   <link rel="stylesheet" href="options.css" />
 </head>
 <body>
-  <div class="wrap">
-    <header class="header">
-      <h1>编辑简历资料</h1>
-      <p class="subtitle">资料保存在本机 <code>chrome.storage.local</code>，不会上传到任何服务器（启用 AI 时除外，见下方说明）。字段布局对齐 playoffer 风格 ATS 简历模型（v1.5.0）：支持多份简历共存，教育/工作/项目可存多段，主条目字段自动取第一段。</p>
-    </header>
+  <div class="app">
+    <aside class="side">
+      <div class="brand">
+        <p class="brand-mark">简历填写工具</p>
+        <p class="brand-sub">本地资料库 · 一键填充</p>
+      </div>
 
-    <div class="toolbar">
-      <button type="button" class="btn ghost" id="btn-import">导入 JSON</button>
-      <button type="button" class="btn ghost" id="btn-export">导出 JSON</button>
-      <button type="button" class="btn ghost" id="btn-sample">加载示例资料</button>
-      <button type="button" class="btn ghost" id="btn-expand-all">展开全部</button>
-      <button type="button" class="btn ghost" id="btn-collapse-all">折叠全部</button>
-      <input type="file" id="import-file" accept="application/json,.json" hidden />
-    </div>
+      <nav class="nav" aria-label="资料分区">
+        <ul class="nav-list">
+          <li><a class="nav-item" href="#library" data-pane="library"><span class="nav-code">LIB</span><span class="nav-label">简历库</span><span class="nav-count" data-nav-count="library">0</span></a></li>
+        </ul>
+        <p class="nav-group">基本信息</p>
+        <ul class="nav-list">
+          <li><a class="nav-item" href="#profile" data-pane="profile"><span class="nav-code">PROFILE</span><span class="nav-label">个人信息</span><span class="nav-count" data-nav-count="profile">0</span></a></li>
+          <li><a class="nav-item" href="#intent" data-pane="intent"><span class="nav-code">INTENT</span><span class="nav-label">求职意向</span><span class="nav-count" data-nav-count="intent">0</span></a></li>
+        </ul>
+        <p class="nav-group">经历（多段）</p>
+        <ul class="nav-list">
+          <li><a class="nav-item" href="#edu" data-pane="edu"><span class="nav-code">EDU</span><span class="nav-label">教育经历（多段）</span><span class="nav-count" data-nav-count="edu">0</span></a></li>
+          <li><a class="nav-item" href="#work" data-pane="work"><span class="nav-code">WORK</span><span class="nav-label">工作经历（多段）</span><span class="nav-count" data-nav-count="work">0</span></a></li>
+          <li><a class="nav-item" href="#project" data-pane="project"><span class="nav-code">PROJ</span><span class="nav-label">项目经历（多段）</span><span class="nav-count" data-nav-count="project">0</span></a></li>
+        </ul>
+        <p class="nav-group">主条目（兼容旧字段）</p>
+        <ul class="nav-list">
+          <li><a class="nav-item" href="#edu-flat" data-pane="edu-flat"><span class="nav-code">EDU.F</span><span class="nav-label">教育背景（主条目）</span><span class="nav-count" data-nav-count="edu-flat">0</span></a></li>
+          <li><a class="nav-item" href="#intern-flat" data-pane="intern-flat"><span class="nav-code">INT.F</span><span class="nav-label">实习经历（主条目）</span><span class="nav-count" data-nav-count="intern-flat">0</span></a></li>
+          <li><a class="nav-item" href="#work-flat" data-pane="work-flat"><span class="nav-code">WRK.F</span><span class="nav-label">工作经历（主条目）</span><span class="nav-count" data-nav-count="work-flat">0</span></a></li>
+          <li><a class="nav-item" href="#project-flat" data-pane="project-flat"><span class="nav-code">PRJ.F</span><span class="nav-label">项目经历（主条目）</span><span class="nav-count" data-nav-count="project-flat">0</span></a></li>
+          <li><a class="nav-item" href="#campus" data-pane="campus"><span class="nav-code">CAMP</span><span class="nav-label">校园经历</span><span class="nav-count" data-nav-count="campus">0</span></a></li>
+          <li><a class="nav-item" href="#practice" data-pane="practice"><span class="nav-code">PRAC</span><span class="nav-label">社会实践</span><span class="nav-count" data-nav-count="practice">0</span></a></li>
+        </ul>
+        <p class="nav-group">其他信息</p>
+        <ul class="nav-list">
+          <li><a class="nav-item" href="#skills" data-pane="skills"><span class="nav-code">SKILL</span><span class="nav-label">技能专长</span><span class="nav-count" data-nav-count="skills">0</span></a></li>
+          <li><a class="nav-item" href="#cert" data-pane="cert"><span class="nav-code">CERT</span><span class="nav-label">证书（主条目）</span><span class="nav-count" data-nav-count="cert">0</span></a></li>
+          <li><a class="nav-item" href="#lang" data-pane="lang"><span class="nav-code">LANG</span><span class="nav-label">外语能力（主条目）</span><span class="nav-count" data-nav-count="lang">0</span></a></li>
+          <li><a class="nav-item" href="#family" data-pane="family"><span class="nav-code">FAM</span><span class="nav-label">家庭情况（选填 / 敏感）</span><span class="nav-count" data-nav-count="family">0</span></a></li>
+          <li><a class="nav-item" href="#award" data-pane="award"><span class="nav-code">AWRD</span><span class="nav-label">获奖</span><span class="nav-count" data-nav-count="award">0</span></a></li>
+          <li><a class="nav-item" href="#patent" data-pane="patent"><span class="nav-code">PATN</span><span class="nav-label">专利</span><span class="nav-count" data-nav-count="patent">0</span></a></li>
+          <li><a class="nav-item" href="#paper" data-pane="paper"><span class="nav-code">PAPR</span><span class="nav-label">论文</span><span class="nav-count" data-nav-count="paper">0</span></a></li>
+          <li><a class="nav-item" href="#training" data-pane="training"><span class="nav-code">TRNG</span><span class="nav-label">培训</span><span class="nav-count" data-nav-count="training">0</span></a></li>
+        </ul>
+        <ul class="nav-list">
+          <li><a class="nav-item" href="#ai" data-pane="ai"><span class="nav-code">AI</span><span class="nav-label">AI 设置</span><span class="nav-count" data-nav-count="ai">0</span></a></li>
+        </ul>
+      </nav>
 
-    <section class="resume-lib">
-      <h2>简历库 <span class="lib-sub">本地解析，多份共存</span></h2>
+      <div class="side-foot">
+        <div class="side-actions">
+          <button type="button" class="btn ghost sm" id="btn-import">导入 JSON</button>
+          <button type="button" class="btn ghost sm" id="btn-export">导出 JSON</button>
+          <button type="button" class="btn ghost sm" id="btn-sample">示例资料</button>
+        </div>
+        <input type="file" id="import-file" accept="application/json,.json" hidden />
+        <p class="side-note">资料只存在本机 <code>chrome.storage.local</code>，不上传。</p>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <div class="topbar-lead">
+          <p class="topbar-eyebrow" id="topbar-code">LIB</p>
+          <h1 class="topbar-title" id="topbar-title">简历库</h1>
+        </div>
+        <div class="topbar-actions">
+          <span class="save-state" id="save-state" data-state="clean">已保存</span>
+          <button type="submit" class="btn primary" form="profile-form">保存资料</button>
+          <button type="button" class="btn ghost" id="btn-clear">清空</button>
+          <span class="save-status" id="save-status" role="status" aria-live="polite"></span>
+        </div>
+      </div>
+
+      <div class="panes">
+        <section class="pane" id="pane-library" data-pane-id="library" data-code="LIB" data-title="简历库" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">简历</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">LIB</span><span class="pane-seq"></span></p>
+              <h2>简历库</h2>
+            <p class="pane-note">本地解析、多份共存。导入 PDF / DOCX / TXT / MD 后保存进简历库，随时切换应用到表单。</p>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
+    <div class="lib-wrap">
       <div class="lib-row">
         <label class="btn ghost">导入简历文件<input type="file" id="resume-file" accept=".pdf,.docx,.txt,.md" hidden /></label>
         <span class="muted" id="resume-file-name">支持 PDF / DOCX / TXT / MD；扫描件（纯图片 PDF）需先转文字</span>
@@ -49,11 +117,22 @@
         <button type="button" class="btn ghost" id="btn-import-lib">导入档案 JSON</button>
         <input type="file" id="import-lib-file" accept="application/json,.json" hidden />
       </div>
-    </section>
+      </div>
+          </div>
+        </section>
 
-    <form id="profile-form" autocomplete="off">
-      <details class="section" open>
-        <summary>个人信息</summary>
+
+      <form id="profile-form" autocomplete="off" class="form-panes">
+        <section class="pane" id="pane-profile" data-pane-id="profile" data-code="PROFILE" data-title="个人信息">
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">个人</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">PROFILE</span><span class="pane-seq"></span></p>
+              <h2>个人信息</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label>简历名称<input type="text" name="resumeTitle" placeholder="例如：张三-前端工程师简历" /></label>
           <label>姓名<input type="text" name="name" placeholder="例如：张三" /></label>
@@ -127,10 +206,19 @@
           <label class="full">职业规划<textarea name="careerPlan" rows="2" placeholder=""></textarea></label>
           <label class="full">补充信息<textarea name="additionalInfo" rows="2" placeholder=""></textarea></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>求职意向</summary>
+        <section class="pane" id="pane-intent" data-pane-id="intent" data-code="INTENT" data-title="求职意向" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">意向</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">INTENT</span><span class="pane-seq"></span></p>
+              <h2>求职意向</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label>目标岗位<input type="text" name="jobTarget" placeholder="" /></label>
           <label>期望行业<input type="text" name="expectedIndustry" placeholder="" /></label>
@@ -149,32 +237,70 @@
           <label>最早到岗<input type="text" name="earliestStart" placeholder="" /></label>
           <label class="full">工作许可 / 签证<input type="text" name="workAuth" placeholder="" /></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-
-      <details class="section" open>
-        <summary>教育经历（多段）</summary>
-        <p class="section-note">可添加多段教育；保存后写入 <code>eduList</code>。下方「教育背景（主条目）」仍为扁平兼容字段，通常与第一段同步。</p>
+        <section class="pane" id="pane-edu" data-pane-id="edu" data-code="EDU" data-title="教育经历（多段）" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">教育</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">EDU</span><span class="pane-seq"></span></p>
+              <h2>教育经历（多段）</h2>
+            <p class="pane-note">可添加多段教育；保存后写入 <code>eduList</code>。下方「教育背景（主条目）」仍为扁平兼容字段，通常与第一段同步。</p>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
+        
         <div id="list-eduList" class="list-editor" data-list="eduList"></div>
         <button type="button" class="btn ghost list-add" data-list="eduList">＋ 添加教育经历</button>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>工作经历（多段）</summary>
-        <p class="section-note">可添加多段工作；保存后写入 <code>workList</code>。</p>
+        <section class="pane" id="pane-work" data-pane-id="work" data-code="WORK" data-title="工作经历（多段）" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">工作</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">WORK</span><span class="pane-seq"></span></p>
+              <h2>工作经历（多段）</h2>
+            <p class="pane-note">可添加多段工作；保存后写入 <code>workList</code>。</p>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
+        
         <div id="list-workList" class="list-editor" data-list="workList"></div>
         <button type="button" class="btn ghost list-add" data-list="workList">＋ 添加工作经历</button>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>项目经历（多段）</summary>
-        <p class="section-note">可添加多段项目；保存后写入 <code>projectList</code>。</p>
+        <section class="pane" id="pane-project" data-pane-id="project" data-code="PROJ" data-title="项目经历（多段）" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">项目</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">PROJ</span><span class="pane-seq"></span></p>
+              <h2>项目经历（多段）</h2>
+            <p class="pane-note">可添加多段项目；保存后写入 <code>projectList</code>。</p>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
+        
         <div id="list-projectList" class="list-editor" data-list="projectList"></div>
         <button type="button" class="btn ghost list-add" data-list="projectList">＋ 添加项目经历</button>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>教育背景（主条目）</summary>
+        <section class="pane" id="pane-edu-flat" data-pane-id="edu-flat" data-code="EDU.F" data-title="教育背景（主条目）" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">学历</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">EDU.F</span><span class="pane-seq"></span></p>
+              <h2>教育背景（主条目）</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label>毕业院校 / 学校<input type="text" name="school" placeholder="" /></label>
           <label>学历<input type="text" name="eduDegree" placeholder="本科 / 硕士…" /></label>
@@ -219,10 +345,19 @@
           <label class="full">毕业论文<input type="text" name="thesisTitle" placeholder="" /></label>
           <label>双学位 / 辅修<input type="text" name="dualDegree" placeholder="" /></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>实习经历（主条目）</summary>
+        <section class="pane" id="pane-intern-flat" data-pane-id="intern-flat" data-code="INT.F" data-title="实习经历（主条目）" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">实习</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">INT.F</span><span class="pane-seq"></span></p>
+              <h2>实习经历（主条目）</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label>实习公司<input type="text" name="internCompany" placeholder="" /></label>
           <label>实习公司规模<input type="text" name="internCompanySize" placeholder="" /></label>
@@ -241,11 +376,21 @@
           <label class="full">实习描述<textarea name="internDescription" rows="3" placeholder=""></textarea></label>
           <label>实习离职原因<input type="text" name="internLeaveReason" placeholder="" /></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>工作经历（主条目）</summary>
-        <p class="section-note">工作「部门」与教育「院系」共用键 <code>department</code>（扁平主条目）；请在教育分区填写院系，或按目标表单习惯填写。</p>
+        <section class="pane" id="pane-work-flat" data-pane-id="work-flat" data-code="WRK.F" data-title="工作经历（主条目）" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">任职</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">WRK.F</span><span class="pane-seq"></span></p>
+              <h2>工作经历（主条目）</h2>
+            <p class="pane-note">工作「部门」与教育「院系」共用键 <code>department</code>（扁平主条目）；请在教育分区填写院系，或按目标表单习惯填写。</p>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
+        
         <div class="grid">
           <label>公司<input type="text" name="company" placeholder="" /></label>
           <label>公司规模<input type="text" name="companySize" placeholder="" /></label>
@@ -275,10 +420,19 @@
           <label class="full">工作描述<textarea name="workDescription" rows="3" placeholder=""></textarea></label>
           <label>离职原因<input type="text" name="leaveReason" placeholder="" /></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>项目经历（主条目）</summary>
+        <section class="pane" id="pane-project-flat" data-pane-id="project-flat" data-code="PRJ.F" data-title="项目经历（主条目）" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">课题</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">PRJ.F</span><span class="pane-seq"></span></p>
+              <h2>项目经历（主条目）</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label>项目名称<input type="text" name="projectName" placeholder="" /></label>
           <label>项目人数<input type="text" name="projectTeamSize" placeholder="" /></label>
@@ -296,10 +450,19 @@
           <label class="full">项目职责<textarea name="projectResponsibilities" rows="2" placeholder=""></textarea></label>
           <label class="full">项目成果<textarea name="projectOutcome" rows="2" placeholder=""></textarea></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>校园经历</summary>
+        <section class="pane" id="pane-campus" data-pane-id="campus" data-code="CAMP" data-title="校园经历" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">校园</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">CAMP</span><span class="pane-seq"></span></p>
+              <h2>校园经历</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label>组织名称<input type="text" name="campusOrg" placeholder="" /></label>
           <label>组织级别<input type="text" name="campusLevel" placeholder="" /></label>
@@ -309,10 +472,19 @@
           <label class="full">工作内容<textarea name="campusWorkContent" rows="2" placeholder=""></textarea></label>
           <label class="full">本人职责<textarea name="campusDuty" rows="2" placeholder=""></textarea></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>社会实践</summary>
+        <section class="pane" id="pane-practice" data-pane-id="practice" data-code="PRAC" data-title="社会实践" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">实践</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">PRAC</span><span class="pane-seq"></span></p>
+              <h2>社会实践</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label>实践单位<input type="text" name="socialOrg" placeholder="" /></label>
           <label>实践岗位 / 身份<input type="text" name="socialRole" placeholder="" /></label>
@@ -320,10 +492,19 @@
           <label>结束时间<input type="text" name="socialEnd" placeholder="" /></label>
           <label class="full">实践内容<textarea name="socialContent" rows="3" placeholder=""></textarea></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>技能专长</summary>
+        <section class="pane" id="pane-skills" data-pane-id="skills" data-code="SKILL" data-title="技能专长" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">技能</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">SKILL</span><span class="pane-seq"></span></p>
+              <h2>技能专长</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label class="full">技术技能<textarea name="techSkills" rows="2" placeholder=""></textarea></label>
           <label class="full">技能（兼容）<textarea name="skills" rows="2" placeholder="与技术技能可互为别名"></textarea></label>
@@ -332,10 +513,19 @@
           <label class="full">软技能<input type="text" name="softSkills" placeholder="" /></label>
           <label class="full">证书摘要<input type="text" name="certificates" placeholder="多证摘要；明细见下方证书分区" /></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>证书（主条目）</summary>
+        <section class="pane" id="pane-cert" data-pane-id="cert" data-code="CERT" data-title="证书（主条目）" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">证书</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">CERT</span><span class="pane-seq"></span></p>
+              <h2>证书（主条目）</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label>证书名称<input type="text" name="certName" placeholder="" /></label>
           <label>证书类型<input type="text" name="certType" placeholder="" /></label>
@@ -346,10 +536,19 @@
           <label>有效期<input type="text" name="certExpiry" placeholder="" /></label>
           <label class="full">证书描述<textarea name="certDescription" rows="2" placeholder=""></textarea></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>外语能力（主条目）</summary>
+        <section class="pane" id="pane-lang" data-pane-id="lang" data-code="LANG" data-title="外语能力（主条目）" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">外语</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">LANG</span><span class="pane-seq"></span></p>
+              <h2>外语能力（主条目）</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label>语言种类<input type="text" name="langName" placeholder="" /></label>
           <label>获得时间<input type="text" name="langDate" placeholder="" /></label>
@@ -359,11 +558,21 @@
           <label>听说<input type="text" name="langListenSpeak" placeholder="" /></label>
           <label>读写<input type="text" name="langReadWrite" placeholder="" /></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>家庭情况（选填 / 敏感）</summary>
-        <p class="section-note">家庭成员信息默认选填，请勿在公共电脑保存敏感内容。</p>
+        <section class="pane" id="pane-family" data-pane-id="family" data-code="FAM" data-title="家庭情况（选填 / 敏感）" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">家庭</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">FAM</span><span class="pane-seq"></span></p>
+              <h2>家庭情况（选填 / 敏感）</h2>
+            <p class="pane-note">家庭成员信息默认选填，请勿在公共电脑保存敏感内容。</p>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
+        
         <div class="grid">
           <label>姓名（选填）<input type="text" name="familyName" placeholder="" /></label>
           <label>关系（选填）<input type="text" name="familyRelation" placeholder="" /></label>
@@ -378,10 +587,19 @@
           <label>政治面貌（选填）<input type="text" name="familyPoliticalStatus" placeholder="" /></label>
           <label class="full">联系地址（选填）<input type="text" name="familyAddress" placeholder="" /></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>获奖</summary>
+        <section class="pane" id="pane-award" data-pane-id="award" data-code="AWRD" data-title="获奖" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">获奖</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">AWRD</span><span class="pane-seq"></span></p>
+              <h2>获奖</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label>所获荣誉（自由文本）<textarea name="honors" rows="2" placeholder="校级优秀学生干部；CET-6 520…"></textarea></label>
           <label>奖项名称<input type="text" name="awardName" placeholder="" /></label>
@@ -393,10 +611,19 @@
           <label>奖励等级<input type="text" name="awardGrade" placeholder="" /></label>
           <label class="full">获奖描述<textarea name="awardDescription" rows="2" placeholder=""></textarea></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>专利</summary>
+        <section class="pane" id="pane-patent" data-pane-id="patent" data-code="PATN" data-title="专利" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">专利</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">PATN</span><span class="pane-seq"></span></p>
+              <h2>专利</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label>专利名称<input type="text" name="patentName" placeholder="" /></label>
           <label>专利号<input type="text" name="patentNo" placeholder="" /></label>
@@ -405,10 +632,19 @@
           <label>发明人<input type="text" name="patentInventor" placeholder="" /></label>
           <label class="full">专利描述<textarea name="patentDescription" rows="2" placeholder=""></textarea></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>论文</summary>
+        <section class="pane" id="pane-paper" data-pane-id="paper" data-code="PAPR" data-title="论文" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">论文</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">PAPR</span><span class="pane-seq"></span></p>
+              <h2>论文</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label class="full">论文标题<input type="text" name="paperTitle" placeholder="" /></label>
           <label>发表期刊<input type="text" name="paperJournal" placeholder="" /></label>
@@ -422,10 +658,19 @@
           <label class="full">论文链接<input type="url" name="paperLink" placeholder="" /></label>
           <label class="full">论文摘要<textarea name="paperAbstract" rows="3" placeholder=""></textarea></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <details class="section">
-        <summary>培训</summary>
+        <section class="pane" id="pane-training" data-pane-id="training" data-code="TRNG" data-title="培训" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">培训</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">TRNG</span><span class="pane-seq"></span></p>
+              <h2>培训</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
         <div class="grid">
           <label>培训名称<input type="text" name="trainingName" placeholder="" /></label>
           <label>开始时间<input type="text" name="trainingStart" placeholder="" /></label>
@@ -434,18 +679,23 @@
           <label class="full">培训收获<textarea name="trainingGain" rows="2" placeholder=""></textarea></label>
           <label class="full">培训内容<textarea name="trainingContent" rows="2" placeholder=""></textarea></label>
         </div>
-      </details>
+          </div>
+        </section>
 
-      <div class="form-actions">
-        <button type="submit" class="btn primary">保存资料</button>
-        <button type="button" class="btn ghost" id="btn-clear">清空</button>
-        <span class="save-status" id="save-status" role="status" aria-live="polite"></span>
-      </div>
-    </form>
+      </form>
 
-    <form id="ai-form" autocomplete="off" class="ai-form">
-      <fieldset>
-        <legend>AI 设置</legend>
+        <section class="pane" id="pane-ai" data-pane-id="ai" data-code="AI" data-title="AI 设置" hidden>
+          <header class="pane-head">
+            <span class="pane-tab" aria-hidden="true">AI</span>
+            <div class="pane-meta">
+              <p class="pane-eyebrow"><span class="pane-code">AI</span><span class="pane-seq"></span></p>
+              <h2>AI 设置</h2>
+            </div>
+            <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
+          </header>
+          <div class="pane-body">
+<form id="ai-form" autocomplete="off" class="ai-form">
+<div class="ai-body">
         <p class="ai-note">
           AI 巡查 / 填写为可选功能。默认使用本地模糊匹配，无需联网。
           启用后，仅在你点击「AI 巡查」或「AI 填写」时，将<strong>非空简历字段</strong>与当前页表单标签发送至你配置的 API；
@@ -470,9 +720,15 @@
           <button type="submit" class="btn primary">保存 AI 设置</button>
           <span class="save-status" id="ai-save-status" role="status" aria-live="polite"></span>
         </div>
-      </fieldset>
+      </div>
     </form>
+          </div>
+        </section>
+
+      </div>
+    </main>
   </div>
+
   <script src="../lib/pdf.min.js"></script>
   <script src="../lib/mammoth.browser.min.js"></script>
   <script src="../shared/profile.js"></script>
