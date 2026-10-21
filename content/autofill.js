@@ -1789,6 +1789,56 @@
     return null;
   }
 
+  /**
+   * 联动下拉（语种 → 语言等级 / 省 → 市 / 学校 → 专业）：上一级没选，下一级根本没有选项。
+   * 直接写第二级必然失败，所以按「先上一级 → 等选项刷新 → 再下一级 → 逐级回读」来做，
+   * 具体实现放在 shared/select-chain.js（可被 DOM 测试直接驱动）。
+   */
+  async function fillLinkedSelectChains(profile, filledKeys) {
+    var C = globalThis.ResumeAutofillSelectChain;
+    if (!C || !C.fillChain) return 0;
+    var langName = M.profileValue(profile, 'langName') || '';
+    var langLevel = M.profileValue(profile, 'langLevel') || M.profileValue(profile, 'englishLevel') || '';
+    if (!langName || !langLevel) return 0;
+
+    // 收集带 label 的下拉宿主，按 label 归到「语种」/「语言等级」两桶
+    var hosts = iterCustomSelectHosts();
+    var langs = [];
+    var levels = [];
+    hosts.forEach(function (host) {
+      var item = host.closest ? host.closest('.ant-form-item, .el-form-item, .form-item, .form-group, tr, .row') : null;
+      if (!item) return;
+      var lab = item.querySelector('.ant-form-item-label, .el-form-item__label, label');
+      var label = lab ? String(lab.textContent || '').replace(/\s+/g, '').replace(/\*/g, '') : '';
+      if (!label) return;
+      var key = M.matchFieldKey(label, {});
+      if (key === 'langName') langs.push({ host: host, label: label });
+      else if (key === 'langLevel' || key === 'englishLevel') levels.push({ host: host, label: label });
+    });
+
+    var filled = 0;
+    var n = Math.min(langs.length, levels.length);
+    for (var i = 0; i < n; i++) {
+      var res = null;
+      try {
+        res = await C.fillChain([
+          { host: langs[i].host, value: langName, label: langs[i].label },
+          { host: levels[i].host, value: langLevel, label: levels[i].label }
+        ]);
+      } catch (_) { res = null; }
+      if (res && res.ok) {
+        filled += 1;
+        ['langName', 'langLevel'].forEach(function (k) {
+          if (filledKeys.indexOf(k) === -1) filledKeys.push(k);
+        });
+        recordFill(langs[i].host, 'langName', langName);
+        recordFill(levels[i].host, 'langLevel', langLevel);
+        highlight(levels[i].host);
+      }
+    }
+    return filled;
+  }
+
   function fillCustomSelect(host, value, key) {
     if (isPhoenixHost(host)) return fillPhoenixHost(host, value, key);
     if (isAntdV3SelectHost(host)) return fillAntdV3Select(host, value);
@@ -2481,7 +2531,6 @@
 
   // ————— v1.3.3：多表格日期面板（年/月/日 分栏）—————
 
-  // 最近一次日期策略尝试（诊断用；fillReadonlyPickerAntd 写入、fill() 读出来）
   var lastDateTries = [];
 
   // 填写审计：记下每次「以为填上了」的元素与期望值，整轮结束后回读核对
@@ -2539,10 +2588,6 @@
     } catch (_) { return null; }
   }
 
-  var DATE_PANEL_SEL = '.layui-laydate, .laydate, .el-picker-panel, .el-date-picker, ' +
-    '.ant-picker-dropdown, .flatpickr-calendar, [class*="datepicker"], [class*="date-picker"], ' +
-    '[class*="datePicker"], [class*="calendar"], [class*="DatePicker"]';
-
   function sleep(ms) {
     return new Promise(function (r) { setTimeout(r, ms); });
   }
@@ -2574,146 +2619,30 @@
 
   /** 列表容器常与“确定/箭头”同父：往上找带按钮的容器，最多 2 层 */
   function expandToActionableHost(host) {
-    if (S) return S.expandToActionableHost(host);
-    var h = host;
-    for (var up = 0; up < 2 && h && h.parentElement; up++) {
-      var hasBtn = h.querySelectorAll('button, [class*="arrow"], [role="button"]').length > 0;
-      var txt = String(h.textContent || '');
-      var hasConfirm = /确定|确认|完成|OK|ok/.test(txt);
-      if (hasBtn || hasConfirm) return h;
-      var parent = h.parentElement;
-      // 只在“仍像弹层”的范围内上溯，避免退到 body 把整页当面板
-      if (String(parent.textContent || '').length > 2000) break;
-      h = parent;
-    }
-    return h || host;
+    if (!S) return false;
+    return S.expandToActionableHost(host);
+
   }
 
   /** 可见的日期面板：先按常见类名找；找不到就按“含年份文本的可见 table/ul”兜底 */
   function findDatePanel(yearText) {
-    if (S) return S.findDatePanel(yearText);
-    var byClass = [];
-    try {
-      Array.prototype.forEach.call(document.querySelectorAll(DATE_PANEL_SEL), function (n) {
-        if (!isVisibleEl(n)) return;
-        var b = n.getBoundingClientRect();
-        // 排除标题/图标等碎片（如 .el-date-picker__header-label 也含 date-picker 字样）
-        if (b.width < 150 || b.height < 90) return;
-        byClass.push(n);
-      });
-    } catch (_) { /* ignore */ }
-    if (byClass.length) {
-      // 只保留最外层，避免抓到面板内部的子块
-      var roots = byClass.filter(function (n) {
-        return !byClass.some(function (m) { return m !== n && m.contains(n); });
-      });
-      var list = roots.length ? roots : byClass;
-      return expandToActionableHost(list[list.length - 1]);
-    }
-    // 兜底 1：没有 class 线索时，找可见的日历网格（星期表头或可用日格）
-    var grids = [];
-    try {
-      Array.prototype.forEach.call(document.querySelectorAll('table'), function (t) {
-        if (!isVisibleEl(t)) return;
-        var txt = String(t.textContent || '');
-        var isGrid = looksLikeWeekHeader(txt) ||
-          !!t.querySelector('td[class*="available"], td[class*="prev-month"], td[class*="next-month"]');
-        if (!isGrid) return;
-        var host = t.closest('[class*="picker"], [class*="panel"], [class*="popup"], [class*="dropdown"], [class*="calendar"], [class*="date"]') || t;
-        // 翻页箭头常在表格外的 header 里：往上找带按钮的容器
-        for (var up = 0; up < 3 && host && host.parentElement &&
-             host.querySelectorAll('button, [class*="arrow"]').length === 0; up++) {
-          host = host.parentElement;
-        }
-        if (isVisibleEl(host)) grids.push(host);
-      });
-    } catch (_) { /* ignore */ }
-    if (grids.length) {
-      var gridRoots = grids.filter(function (n) {
-        return !grids.some(function (m) { return m !== n && m.contains(n); });
-      });
-      var gl = gridRoots.length ? gridRoots : grids;
-      return expandToActionableHost(gl[gl.length - 1]);
-    }
-    // 兜底 0：滚轮/分栏（div + ul 列），找同时含 年/月/日 三组数字的最内层容器
-    var numericHost = null;
-    try {
-      var pool = document.querySelectorAll('div, section, dl, table');
-      for (var pi = 0; pi < pool.length && pi < 800; pi++) {
-        var n = pool[pi];
-        if (!isVisibleEl(n)) continue;
-        if (String(n.textContent || '').length > 3000) continue;
-        var leaves = n.querySelectorAll('li, td, dd').length;
-        if (leaves < 6 || leaves > 400) continue;
-        var gs = numericGroups(n);
-        var types = {};
-        gs.forEach(function (g) { types[g.type] = 1; });
-        if (types.year && types.month && types.day) {
-          if (!numericHost || numericHost.contains(n)) numericHost = n;
-        }
-      }
-    } catch (_) { /* ignore */ }
-    if (numericHost) return expandToActionableHost(numericHost);
+    if (!S) return false;
+    return S.findDatePanel(yearText);
 
-    if (!yearText) return null;
-    var generic = [];
-    try {
-      Array.prototype.forEach.call(document.querySelectorAll('table, ul, [class*="list"], [class*="panel"], [class*="popup"], [class*="dropdown"]'), function (n) {
-        if (!isVisibleEl(n)) return;
-        var txt = String(n.textContent || '');
-        if (txt.indexOf(yearText) === -1) return;
-        generic.push(n);
-      });
-    } catch (_) { /* ignore */ }
-    return generic.length ? expandToActionableHost(generic[generic.length - 1]) : null;
   }
 
   /** 在面板里点一个“文本等于目标数字”的叶子项（年/月/日通用） */
   function clickPanelItem(scope, text, hintRe) {
-    if (S) return S.clickPanelItem(scope, text, hintRe);
-    if (!scope) return false;
-    var want = String(text || '').trim();
-    if (!want) return false;
-    var wantNum = parseInt(want, 10);
-    var nodes = scope.querySelectorAll('td, li, dd, span, div, a');
-    var best = null;
-    for (var i = 0; i < nodes.length; i++) {
-      var n = nodes[i];
-      if (n.childElementCount) continue;          // 只点叶子，避免点到容器
-      var t = String(n.textContent || '').replace(/\s+/g, ' ').trim();
-      if (!t) continue;
-      var same = (t === want) || (!isNaN(wantNum) && !isNaN(parseInt(t, 10)) && String(parseInt(t, 10)) === String(wantNum));
-      if (!same) continue;
-      if (!isVisibleEl(n)) continue;
-      var bonus = 0;
-      var p = n;
-      for (var u = 0; u < 4 && p; u++, p = p.parentElement) {
-        var cls = String((p.className || ''));
-        if (hintRe && hintRe.test(cls)) { bonus = 1; break; }
-      }
-      if (!best || bonus > best.bonus) best = { el: n, bonus: bonus };
-      if (bonus) break;
-    }
-    if (!best) return false;
-    simulateClick(best.el);
-    return true;
+    if (!S) return false;
+    return S.clickPanelItem(scope, text, hintRe);
+
   }
 
   /** 面板里的确认按钮（确定/确认/完成/OK）——有些日期面板点完还要确认 */
   function clickPanelConfirm(scope) {
-    if (S) return S.clickPanelConfirm(scope);
-    var root = scope || document;
-    var nodes = root.querySelectorAll('button, a, span, div, input[type=button]');
-    for (var i = 0; i < nodes.length; i++) {
-      var n = nodes[i];
-      var t = String(n.textContent || n.value || '').replace(/\s+/g, ' ').trim();
-      if (!/^(确定|确认|完成|ok|OK|Ok)$/.test(t)) continue;
-      if (n.disabled) continue;
-      if (!isVisibleEl(n)) continue;
-      simulateClick(n);
-      return true;
-    }
-    return false;
+    if (!S) return false;
+    return S.clickPanelConfirm(scope);
+
   }
 
   // ————— v1.3.5：年 / 月 / 日 三件套（原生 select 或只读框混合）—————
@@ -2877,180 +2806,50 @@
 
   // ————— v1.3.4：日历网格型日期面板（‹‹ ‹ 十月 2026 › ›› + 星期表头 + 单月网格）—————
 
-  var CN_MONTH = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12 };
-  var EN_MONTH = ['january', 'february', 'march', 'april', 'may', 'june',
-    'july', 'august', 'september', 'october', 'november', 'december'];
 
   function looksLikeWeekHeader(txt) {
-    if (S) return S.looksLikeWeekHeader(txt);
-    var t = String(txt || '');
-    if (/日\s*一\s*二\s*三\s*四\s*五\s*六/.test(t)) return true;
-    var m = t.match(/sun|mon|tue|wed|thu|fri|sat|su|mo|tu|we|th|fr|sa/gi) || [];
-    var uniq = {};
-    m.forEach(function (x) { uniq[x.toLowerCase()] = 1; });
-    return Object.keys(uniq).length >= 5;
+    if (!S) return false;
+    return S.looksLikeWeekHeader(txt);
+
   }
 
   function isCalendarGrid(panel) {
-    if (S) return S.isCalendarGrid(panel);
-    if (!panel) return false;
-    if (panel.querySelector('td.prev-month, td.next-month, td.current, .el-date-table, .laydate-theme-grid')) return true;
-    var dayBtn = panel.querySelector('td[class*="available"], td[class*="disabled"]');
-    if (dayBtn) return true;
-    var t = String(panel.textContent || '');
-    if (looksLikeWeekHeader(t)) return true;
-    // 7 列、≥28 个 1~31 的数字格也当网格
-    var tables = panel.querySelectorAll('table');
-    for (var i = 0; i < tables.length; i++) {
-      var rows = tables[i].querySelectorAll('tr');
-      if (rows.length < 4) continue;
-      var wideRows = 0;
-      Array.prototype.forEach.call(rows, function (tr) {
-        if (tr.querySelectorAll('td').length >= 5) wideRows += 1;
-      });
-      if (wideRows < 4) continue;   // 单列列表（年表/月表）不算网格
-      var nums = 0;
-      Array.prototype.forEach.call(tables[i].querySelectorAll('td'), function (td) {
-        var v = parseInt(String(td.textContent || '').trim(), 10);
-        if (!isNaN(v) && v >= 1 && v <= 31) nums += 1;
-      });
-      if (nums >= 28) return true;
-    }
-    return false;
+    if (!S) return false;
+    return S.isCalendarGrid(panel);
+
   }
 
   function gridHeader(panel) {
-    if (S) return S.gridHeader(panel);
-    var txt = '';
-    var heads = panel.querySelectorAll('[class*="header"], [class*="title"], .laydate-header');
-    for (var i = 0; i < heads.length; i++) txt += ' ' + String(heads[i].textContent || '');
-    if (!txt.replace(/\s+/g, '')) txt = String(panel.textContent || '').slice(0, 160);
-    txt = txt.replace(/\s+/g, ' ');
-    var ym = txt.match(/(19|20)\d{2}/);
-    var year = ym ? parseInt(ym[0], 10) : null;
-    var month = null;
-    var zh = txt.match(/(十一|十二|十|[一二三四五六七八九])月/);
-    if (zh && CN_MONTH[zh[1]]) month = CN_MONTH[zh[1]];
-    if (!month) {
-      var lower = txt.toLowerCase();
-      for (var k = 0; k < EN_MONTH.length; k++) {
-        if (lower.indexOf(EN_MONTH[k]) !== -1) { month = k + 1; break; }
-      }
-    }
-    if (!month) {
-      var num = txt.match(/(\d{1,2})\s*月/);
-      if (num) month = parseInt(num[1], 10);
-    }
-    if (!month) {
-      var iso = txt.match(/(19|20)\d{2}\s*[-/.年]\s*(\d{1,2})/) || txt.match(/(\d{1,2})\s*[-/.]\s*(19|20)\d{2}/);
-      if (iso) month = parseInt(iso[2], 10);
-    }
-    return { year: year, month: month };
+    if (!S) return false;
+    return S.gridHeader(panel);
+
   }
 
   /** 找翻页箭头：unit=year 用双箭头(d-arrow-*)，unit=month 用单箭头(arrow-*) */
   function pickArrow(panel, dir, unit) {
-    if (S) return S.pickArrow(panel, dir, unit);
-    var suffix = dir < 0 ? 'left' : 'right';
-    var cls = unit === 'year' ? '.d-arrow-' + suffix : '.arrow-' + suffix;
-    var byCls = panel.querySelector(cls);
-    if (byCls && isVisibleEl(byCls)) return byCls;
-    // 兜底：按方向 + 文本/属性猜
-    var nodes = Array.prototype.slice.call(panel.querySelectorAll('button, i, span, div'));
-    var hits = [];
-    nodes.forEach(function (n) {
-      if (!isVisibleEl(n)) return;
-      var m = (String(n.className || '') + ' ' + (n.getAttribute('title') || '') + ' ' +
-        (n.getAttribute('aria-label') || '') + ' ' + String(n.textContent || '')).toLowerCase();
-      var dirOk = dir < 0 ? /left|prev|上|‹|«/.test(m) : /right|next|下|›|»/.test(m);
-      if (!dirOk) return;
-      if (String(n.textContent || '').trim().length > 6) return;
-      hits.push(n);
-    });
-    if (!hits.length) return null;
-    if (unit === 'year') return dir < 0 ? hits[0] : hits[hits.length - 1];
-    return dir < 0 ? hits[hits.length - 1] : hits[0];
+    if (!S) return false;
+    return S.pickArrow(panel, dir, unit);
+
   }
 
   /** 面板自带「年 / 月」下拉或年份输入框时直接设值（flatpickr / laydate 风格） */
   function setPanelPeriod(panel, y, m) {
-    if (S) return S.setPanelPeriod(panel, y, m);
-    var changed = false;
-    try {
-      Array.prototype.forEach.call(panel.querySelectorAll('select'), function (sel) {
-        var nums = [];
-        for (var i = 0; i < sel.options.length; i++) {
-          var v = parseInt(String(sel.options[i].value !== '' ? sel.options[i].value : sel.options[i].text || '').replace(/\D/g, ''), 10);
-          if (!isNaN(v)) nums.push(v);
-        }
-        if (!nums.length) return;
-        var mx = Math.max.apply(null, nums);
-        if (mx >= 1900) { if (setSelectByNumber(sel, y)) changed = true; }
-        else if (mx <= 12 && sel.options.length >= 2) { if (setSelectByNumber(sel, m)) changed = true; }
-      });
-      var yin = panel.querySelector('input.cur-year, input[class*="year"], input[class*="Year"]');
-      if (yin && /^\d{4}$/.test(String(yin.value || '').trim())) {
-        if (setNativeValue(yin, String(y))) changed = true;
-      }
-    } catch (_) { /* ignore */ }
-    return changed;
+    if (!S) return false;
+    return S.setPanelPeriod(panel, y, m);
+
   }
 
   /** 翻到目标年月：大差距用“十年”箭头，接近后逐月推进；12 秒硬预算防卡死 */
   async function gridNavigate(panel, y, m) {
-    if (setPanelPeriod(panel, y, m)) await sleep(180);
-    var deadline = Date.now() + 12000;
-    var superUsable = true;
-    for (var guard = 0; guard < 420; guard++) {
-      if (Date.now() > deadline) return false;
-      var cur = gridHeader(panel);
-      if (!cur.year || !cur.month) return false;
-      var d = (y * 12 + m) - (cur.year * 12 + cur.month);
-      if (d === 0) return true;
-      var dir = d < 0 ? -1 : 1;
-      if (superUsable && Math.abs(d) >= 120) {
-        var superBtn = pickArrow(panel, dir, 'year');
-        if (superBtn) {
-          var before = cur;
-          simulateClick(superBtn);
-          await sleep(150);
-          var after = gridHeader(panel);
-          var movedMonths = (after.year && before.year)
-            ? Math.abs((before.year * 12 + before.month) - (after.year * 12 + after.month)) : 0;
-          if (movedMonths < 12) superUsable = false;   // 那个箭头只走一个月/一年，别再当十年用
-          continue;
-        }
-        superUsable = false;
-      }
-      var monthBtn = pickArrow(panel, dir, 'month');
-      if (!monthBtn) return false;
-      var step = Math.min(Math.abs(d), 12);
-      for (var k = 0; k < step; k++) {
-        if (Date.now() > deadline) return false;
-        simulateClick(monthBtn);
-        await sleep(30);
-      }
-      await sleep(80);
-    }
-    return false;
+    if (!S) return Promise.resolve(false);
+    return S.gridNavigate(panel, y, m);
+
   }
 
   function gridClickDay(panel, day) {
-    if (S) return S.gridClickDay(panel, day);
-    var cells = panel.querySelectorAll('td');
-    var fallback = null;
-    for (var i = 0; i < cells.length; i++) {
-      var td = cells[i];
-      var cls = String(td.className || '');
-      if (/prev-month|next-month|disabled|not-current/.test(cls)) continue;
-      var txt = String(td.textContent || '').replace(/\s+/g, ' ').trim();
-      if (parseInt(txt, 10) !== day) continue;
-      if (!isVisibleEl(td)) continue;
-      if (/\bavailable\b|\bcurrent\b/.test(cls)) { simulateClick(td); return true; }
-      if (!fallback) fallback = td;
-    }
-    if (fallback) { simulateClick(fallback); return true; }
-    return false;
+    if (!S) return false;
+    return S.gridClickDay(panel, day);
+
   }
 
   async function tryCalendarGrid(el, desired) {
@@ -3059,26 +2858,9 @@
 
   /** 把面板里的数字列表分组：年份组(>=1900) / 月份组(<=12) / 日期组(<=31) */
   function numericGroups(root) {
-    if (S) return S.numericGroups(root);
-    var groups = [];
-    if (!root || !root.querySelectorAll) return groups;
-    var sel = 'table, ul, ol, dl, [class*="list"], [role="listbox"], [class*="column"], [class*="col"]';
-    Array.prototype.forEach.call(root.querySelectorAll(sel), function (n) {
-      if (!isVisibleEl(n)) return;
-      var cells = n.querySelectorAll('td, li, dd, span, div, a');
-      var vals = [];
-      Array.prototype.forEach.call(cells, function (c) {
-        if (c.childElementCount) return;
-        var t = String(c.textContent || '').trim();
-        if (!/^\d{1,4}$/.test(t)) return;
-        vals.push(parseInt(t, 10));
-      });
-      if (vals.length < 2) return;
-      var max = Math.max.apply(null, vals);
-      var type = max >= 1900 ? 'year' : (max <= 12 ? 'month' : (max <= 31 ? 'day' : null));
-      if (type) groups.push({ el: n, type: type, count: vals.length });
-    });
-    return groups;
+    if (!S) return false;
+    return S.numericGroups(root);
+
   }
 
   /** 依次点 年 → 月 → 日；每步按“分组类型”重新定位（面板常被整体重渲染） */
@@ -3986,6 +3768,8 @@
       try { filled += await fillYearMonthPairs(profile, filledKeys); } catch (_) { /* ignore */ }
       // antd 弹窗选择器（专业 / 学校）：点输入框弹 modal，常规写值写不进去
       try { filled += await fillModalPickers(profile, handled, filledKeys); } catch (_) { /* ignore */ }
+      // 联动下拉（语种 → 语言等级）：第二级选项由第一级决定，必须按顺序写
+      try { filled += await fillLinkedSelectChains(profile, filledKeys); } catch (_) { /* ignore */ }
     }
     var els = iterFillableFields();
     for (var idx = 0; idx < els.length; idx++) {

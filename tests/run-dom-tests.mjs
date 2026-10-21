@@ -311,6 +311,7 @@ const CASES = [
 const CAP_SCRIPT = path.join(__dirname, '..', 'shared', 'date-capability.js');
 const STRAT_SCRIPT = path.join(__dirname, '..', 'shared', 'date-strategies.js');
 const AUDIT_SCRIPT = path.join(__dirname, '..', 'shared', 'audit.js');
+const CHAIN_SCRIPT = path.join(__dirname, '..', 'shared', 'select-chain.js');
 
 const CAP_CASES = [
   {
@@ -546,6 +547,64 @@ const AUDIT_CASES = [
   },
 ];
 
+// ── 联动下拉用例：语种 → 语言等级 ──
+const CHAIN_CASES = [
+  {
+    name: 'chain:r17 直接写第二级无效（选项还没生成）',
+    file: 'r17-lang-linked.html',
+    async run(page) {
+      const r = await page.evaluate(async () => {
+        const C = window.ResumeAutofillSelectChain;
+        const out = await C.fillOne(document.querySelector('#level'), 'CET-6');
+        return { ok: out, shown: C.readShown(document.querySelector('#level')) };
+      });
+      eq(r.ok, false, '语种没选时写等级必然失败');
+      eq(r.shown, '', '等级仍为空（不乱填）');
+    },
+  },
+  {
+    name: 'chain:r17 按「语种 → 等级」顺序填就成',
+    file: 'r17-lang-linked.html',
+    async run(page) {
+      const r = await page.evaluate(async () => {
+        const C = window.ResumeAutofillSelectChain;
+        const res = await C.fillChain([
+          { host: document.querySelector('#lang'), value: '英语', label: '语种' },
+          { host: document.querySelector('#level'), value: 'CET-6', label: '语言等级' }
+        ]);
+        return { res, lang: C.readShown(document.querySelector('#lang')), level: C.readShown(document.querySelector('#level')) };
+      });
+      eq(r.lang, '英语', '语种');
+      eq(r.level, 'CET-6', '等级（选项在语种之后才生成）');
+      eq(r.res.ok, true, '链条整体成功');
+      eq(r.res.steps.length, 2, '两步都记录');
+    },
+  },
+  {
+    name: 'chain:r17 换语种后等级选项跟着换（不能沿用旧值）',
+    file: 'r17-lang-linked.html',
+    async run(page) {
+      const r = await page.evaluate(async () => {
+        const C = window.ResumeAutofillSelectChain;
+        await C.fillChain([
+          { host: document.querySelector('#lang'), value: '英语' },
+          { host: document.querySelector('#level'), value: 'CET-4' }
+        ]);
+        const first = C.readShown(document.querySelector('#level'));
+        const second = await C.fillChain([
+          { host: document.querySelector('#lang'), value: '日语' },
+          { host: document.querySelector('#level'), value: 'N1' }
+        ]);
+        return { first, second, lang: C.readShown(document.querySelector('#lang')), level: C.readShown(document.querySelector('#level')) };
+      });
+      eq(r.first, 'CET-4', '先填英语等级');
+      eq(r.lang, '日语', '改选日语');
+      eq(r.level, 'N1', '等级跟着换成日语选项里的 N1');
+      eq(r.second.ok, true, '第二次链条也成功');
+    },
+  },
+];
+
 // ── 运行 ──────────────────────────────────────────────────
 (async function main() {
   const filter = process.argv[2] || '';
@@ -554,7 +613,7 @@ const AUDIT_CASES = [
   let passed = 0;
   const failed = [];
 
-  for (const c of CASES.concat(CAP_CASES).concat(FILL_CASES).concat(AUDIT_CASES)) {
+  for (const c of CASES.concat(CAP_CASES).concat(FILL_CASES).concat(AUDIT_CASES).concat(CHAIN_CASES)) {
     if (filter && !c.name.includes(filter) && !c.file.includes(filter)) continue;
     const page = await browser.newPage();
     const pageErrors = [];
@@ -564,6 +623,7 @@ const AUDIT_CASES = [
       await page.addScriptTag({ path: CAP_SCRIPT });
       await page.addScriptTag({ path: STRAT_SCRIPT });
       await page.addScriptTag({ path: AUDIT_SCRIPT });
+      await page.addScriptTag({ path: CHAIN_SCRIPT });
       await c.run(page);
       if (pageErrors.length) throw new Fail('页面 JS 报错: ' + pageErrors.join('; '));
       passed++;

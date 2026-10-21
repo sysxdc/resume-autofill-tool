@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.5.19**
+当前版本：**1.5.20**
 
 ## 功能概览
 
@@ -293,6 +293,21 @@ Date.STRATEGY_ORDER            // native-input → native-selects → fiber-prop
 （`#__ra_panel_host__.dataset.lastResult`），降级不再静默。
 
 ## Changelog
+
+### 1.5.20
+
+- **单源化**：`autofill.js` 里 `findDatePanel / numericGroups / clickPanelItem / clickPanelConfirm /
+  gridHeader / pickArrow / setPanelPeriod / gridNavigate / gridClickDay / isCalendarGrid /
+  expandToActionableHost / looksLikeWeekHeader` 的兜底副本全部删除，只留一行委托 +
+  `DATE_PANEL_SEL / CN_MONTH / EN_MONTH` 三个已搬走的常量也清掉（真实现只在 `shared/date-strategies.js`）。
+- **联动下拉** 新增 `shared/select-chain.js`：`fillChain([{host,value}…])` 按顺序填，
+  每级回读通过才继续，下一级以「选项集合发生变化」为就绪信号（不是死等固定 sleep）。
+  `fillFromProfile` 用它填「语种 → 语言等级」（`langName → langLevel`）。
+  直接写第二级必然失败——因为选项还没生成，这条现在有 fixture 和用例守着。
+- 三个旧用例的断言目标从 `content/autofill.js` 改到 `shared/date-strategies.js`（实现已搬家）。
+- 测试：主套件 189、DOM 基线 **26**（新增 `r17-lang-linked` 三条：直接写第二级失败 /
+  按顺序成功 / 换语种后等级选项跟着换）、解析 20 全绿。
+- 真实 wecruit 回归：18 项、`wrong=0` 不变；该页语种/等级由站点预置（档案无 `langName`），链条自动跳过。
 
 ### 1.5.19
 

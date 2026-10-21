@@ -1272,7 +1272,8 @@ test('v1.3.3: 日期比较按年月日（容忍分隔符差异）', () => {
 console.log('v1.3.4 日历网格日期面板');
 
 test('v1.3.4: 网格面板翻月 + 点日 + 面板取最外层', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  // v1.5.20：网格/面板实现在 shared/date-strategies.js（页面侧只剩委托），断言跟着实现走
+  const src = fs.readFileSync(path.join(root, 'shared/date-strategies.js'), 'utf8');
   assert.ok(/function isCalendarGrid/.test(src), '应识别日历网格');
   assert.ok(/function gridHeader/.test(src), '应解析表头年月');
   assert.ok(/function gridNavigate/.test(src), '应能翻月/翻年');
@@ -1285,7 +1286,7 @@ test('v1.3.4: 网格面板翻月 + 点日 + 面板取最外层', () => {
 });
 
 test('v1.3.4: 表头支持 2026年10月 / 十月 2026 / 2026-10 三种写法', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = fs.readFileSync(path.join(root, 'shared/date-strategies.js'), 'utf8');
   assert.ok(/CN_MONTH/.test(src), '应有中文月份映射');
   assert.ok(/EN_MONTH/.test(src), '应有英文月份映射');
   assert.ok(/\(19\|20\)\\d\{2\}\\s\*\[-\/\.年\]/.test(src), '应支持 2026-10 / 2026.10 / 2026年10');
@@ -1305,14 +1306,17 @@ test('v1.3.5: 年/月/日 三件套（原生 select 组）', () => {
 });
 
 test('v1.3.5: 分页下拉 / 滚轮 / 英文表头', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
-  assert.ok(/function findPagerNext/.test(src), '应找“下一页”');
-  assert.ok(/function pageUntilFound/.test(src), '应翻页找目标项');
-  assert.ok(/function looksLikeWeekHeader/.test(src), '应识别中英文星期表头');
-  assert.ok(/function expandToActionableHost/.test(src), '应把列表容器上溯到带确定/箭头的容器');
-  assert.ok(/function setPanelPeriod/.test(src), '应支持面板内 年/月 下拉（flatpickr 风格）');
-  assert.ok(/Date\.now\(\) \+ 12000/.test(src), '日期翻页要有硬超时预算');
-  assert.ok(/superUsable/.test(src), '十年箭头不能死循环，需降级判定');
+  const page = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const strat = fs.readFileSync(path.join(root, 'shared/date-strategies.js'), 'utf8');
+  assert.ok(/function findPagerNext/.test(page), '应找“下一页”');
+  assert.ok(/function pageUntilFound/.test(page), '应翻页找目标项');
+  assert.ok(/function looksLikeWeekHeader/.test(strat), '应识别中英文星期表头');
+  assert.ok(/function expandToActionableHost/.test(strat), '应把列表容器上溯到带确定/箭头的容器');
+  assert.ok(/function setPanelPeriod/.test(strat), '应支持面板内 年/月 下拉（flatpickr 风格）');
+  // 翻页预算：v1.5.18 起改成「模块活动预算 + 12s 双保险」
+  assert.ok(/Date\.now\(\) \+ 12000/.test(strat), '日期翻页要有硬超时预算');
+  assert.ok(/activeDeadline/.test(strat), '还要尊重 fillDate 的活动预算');
+  assert.ok(/superUsable/.test(strat), '十年箭头不能死循环，需降级判定');
 });
 
 
@@ -2304,6 +2308,24 @@ test('v1.5.19 诊断字段必须透传（否则悬浮窗永远看不到）', () 
   const js = manifest.content_scripts[0].js;
   assert.ok(js.indexOf('shared/audit.js') !== -1, 'audit 已注入');
   assert.ok(js.indexOf('shared/audit.js') < js.indexOf('content/autofill.js'), 'audit 先于 autofill');
+});
+
+test('v1.5.20 联动下拉：语种 → 语言等级', () => {
+  const Chain = require(path.join(root, 'shared/select-chain.js'));
+  assert.equal(typeof Chain.fillChain, 'function', '有链条填充');
+  assert.equal(typeof Chain.fillOne, 'function', '单级填充');
+  // 挑选项：精确 > 前缀 > 包含；不认识的返回 null（宁可留空也不乱填）
+  const pick = Chain.pickBest([{ text: 'CET-4' }, { text: 'CET-6' }, { text: '雅思' }], 'CET-6');
+  assert.equal(pick.text, 'CET-6');
+  assert.equal(Chain.pickBest([{ text: 'CET-4' }], 'N1'), null, '没有匹配项就不选');
+  assert.equal(Chain.pickBest([{ text: '英语' }], '英语').text, '英语');
+  // 页面侧已接入
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(src.includes('fillLinkedSelectChains'), 'fillFromProfile 里要调链条');
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  const js = manifest.content_scripts[0].js;
+  assert.ok(js.indexOf('shared/select-chain.js') !== -1, 'select-chain 已注入');
+  assert.ok(js.indexOf('shared/select-chain.js') < js.indexOf('content/autofill.js'), 'select-chain 先于 autofill');
 });
 
 console.log('');
