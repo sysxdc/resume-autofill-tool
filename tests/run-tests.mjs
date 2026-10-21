@@ -1260,7 +1260,9 @@ test('v1.3.3: 日期面板分段选择 + 确认按钮', () => {
 test('v1.3.3: 日期比较按年月日（容忍分隔符差异）', () => {
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
   assert.ok(/function dateValueMatches/.test(src));
-  assert.ok(/parseInt\(a\.m, 10\) === parseInt\(w\.m, 10\)/.test(src), '月日应按数值比较');
+  assert.ok(/parseInt\(a\.m, 10\) !== parseInt\(w\.m, 10\)/.test(src), '月应按数值比较');
+  assert.ok(/parseInt\(a\.d, 10\) === parseInt\(w\.d, 10\)/.test(src), '日应按数值比较');
+  assert.ok(/!w\.d \|\| !a\.d/.test(src), '只到年月的字段应只比年月');
 });
 
 
@@ -1306,7 +1308,8 @@ test('v1.3.5: 分页下拉 / 滚轮 / 英文表头', () => {
   assert.ok(/function looksLikeWeekHeader/.test(src), '应识别中英文星期表头');
   assert.ok(/function expandToActionableHost/.test(src), '应把列表容器上溯到带确定/箭头的容器');
   assert.ok(/function setPanelPeriod/.test(src), '应支持面板内 年/月 下拉（flatpickr 风格）');
-  assert.ok(/monthOnly/.test(src), '只按月翻的日历应放宽迭代上限');
+  assert.ok(/Date\.now\(\) \+ 12000/.test(src), '日期翻页要有硬超时预算');
+  assert.ok(/superUsable/.test(src), '十年箭头不能死循环，需降级判定');
 });
 
 
@@ -1329,6 +1332,23 @@ test('v1.3.6: 只读框按 data-fmt 直写兜底', () => {
   assert.ok(/getOwnPropertyDescriptor\(Object\.getPrototypeOf\(el\), 'value'\)/.test(src), '应用原生 setter 以触达框架');
   assert.ok(/resolve\(forceSetReadonly\(el, desired\) \? 'forced' : false\)/.test(src), '失败时返回 forced 标记');
   assert.ok(/forced: result\.forced \|\| \[\]/.test(src), '应答应透传 forced');
+});
+
+console.log('v1.3.7 Ant Design DatePicker');
+test('v1.3.7: antd 年/月/日面板 + 年月字段', () => {
+  const html = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function tryAntdPanel/.test(html), '应有 antd 面板专用分支');
+  assert.ok(/\.ant-picker-dropdown/.test(html), '应认得 antd 弹层');
+  assert.ok(/ant-picker-header-super-prev-btn/.test(html), '应认得十年箭头');
+  assert.ok(/ant-picker-header-view/.test(html), '应读 antd 头部年月');
+  assert.ok(/ant-picker-cell-inner/.test(html), '应按 antd 单元格取文本');
+  assert.ok(/monthMode/.test(html) && /yearMode/.test(html), '应区分年面板/月面板');
+  assert.ok(/ym/.test(html), '应支持“出生年月”这类年月字段');
+
+  // 年月值解析：2016-09 不能被拆成 月=0 日=9
+  const matcher = fs.readFileSync(path.join(root, 'shared/match.js'), 'utf8');
+  assert.ok(/年月/.test(matcher) && matcher.indexOf("return 'ym'") !== -1, 'detectDatePartRole 应识别 ym');
+  assert.ok(/ymParts/.test(matcher), 'maybeExtractDatePartValue 应输出 YYYY-MM');
 });
 
 console.log('');

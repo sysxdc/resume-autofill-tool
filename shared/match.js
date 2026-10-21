@@ -1832,6 +1832,9 @@
     var adj = opts.adjacentPairRole || '';
     if (!h && !raw && adj !== 'year' && adj !== 'month') return null;
 
+    // 「出生年月 / 入学年月 / 毕业年月」是年月字段（YYYY-MM），必须早于“年”规则
+    if (/年月/.test(h) && h.indexOf('年月日') === -1) return 'ym';
+
     // Explicit name/id patterns
     if (/(?:^|[^a-z])(birth|start|end|edu|grad|enroll|hire|avail|earliest)[_\-]?year(?:[^a-z]|$)/i.test(rawLower) ||
         /(?:^|[^a-z])year(?:of)?(?:birth|grad|start|end)(?:[^a-z]|$)/i.test(rawLower) ||
@@ -1989,6 +1992,17 @@
     // 无明确 role 时已返回；有 role 时允许对日期键或 hints 含日期上下文拆分
     if (key && !isDatePartProfileKey(key) && !detectDatePartRole(hints, opts)) {
       return String(value == null ? '' : value);
+    }
+    if (role === 'ym') {
+      var ymParts = extractDatePart(value, 'year') || '';
+      var ymMonth = extractDatePart(value, 'month') || '';
+      if (!ymParts || !ymMonth) {
+        var mv = String(value == null ? '' : value).match(/^\s*(\d{4})\D{1,3}(\d{1,2})\s*$/);
+        if (mv) { ymParts = mv[1]; ymMonth = mv[2]; }
+      }
+      if (!ymParts || !ymMonth) return '';
+      var mm2 = parseInt(ymMonth, 10);
+      return ymParts + '-' + (mm2 < 10 ? '0' : '') + mm2;
     }
     var part = extractDatePart(value, role);
     if (!part) {
