@@ -1520,6 +1520,45 @@ test('v1.5.4: 获奖名次不再被单字“名”抢成姓名', () => {
   assert.equal(Match.matchFieldKeyScored('竞赛/奖项名称', {}).key, 'awardName');
 });
 
+test('v1.5.5: 教育块「毕业院校」是学校名，不是毕业时间', () => {
+  const mp = (label, context) => {
+    const r = Match.matchFieldKeyScored(label, { context });
+    return r ? r.key : null;
+  };
+  assert.equal(mp('毕业院校 / School / University', 'edu'), 'school');
+  assert.equal(mp('毕业学校', 'edu'), 'school');
+  assert.equal(mp('毕业时间', 'edu'), 'eduEnd');
+  assert.equal(mp('入学时间', 'edu'), 'eduStart');
+  assert.equal(mp('学校所在城市', 'edu'), 'schoolCity');
+});
+
+test('v1.5.5: 工作描述类标签命中 workDescription', () => {
+  const mp = (label) => {
+    const r = Match.matchFieldKeyScored(label, {});
+    return r ? r.key : null;
+  };
+  for (const label of ['工作描述', '工作内容', '岗位职责', '工作职责', '主要职责', '职责描述', '工作经历描述', '主要工作内容']) {
+    assert.equal(mp(label), 'workDescription', label + ' 应命中 workDescription');
+  }
+  assert.equal(mp('项目内容'), 'projectDesc');
+});
+
+test('v1.5.5: 需要点「添加」才有输入框时自动展开', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/async function expandAddSections/.test(src), '应有 expandAddSections');
+  assert.ok(/添加\|新增\|增加/.test(src) || src.indexOf('添加') !== -1, '应识别添加按钮文案');
+  assert.ok(/isUnsafeAddButton/.test(src), '附件/上传类按钮必须排除');
+  assert.ok(/附件\|文件\|上传/.test(src), '危险按钮过滤规则');
+  assert.ok(/round < 4/.test(src), '展开循环要有上限');
+  assert.ok(/expanded: own\.expanded/.test(src), '多 frame 应答需要透传 expanded');
+});
+
+test('v1.5.5: 「请选择 / Select」这类占位 option 不算已填', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/请选择\|选择\|select\|choose/.test(src), '占位文案识别');
+  assert.ok(/function fieldLooksFilled/.test(src));
+});
+
 test('v1.5.0: normalizeProfile + merge 多段 roundtrip', () => {
   const raw = {
     name: '张三',
@@ -1654,9 +1693,9 @@ test('v1.5.0: demo/dropdowns.html 存在且含四类组件', () => {
   assert.ok(/活体验证|手动/.test(html));
 });
 
-test('v1.5.4: manifest 1.5.4', () => {
+test('v1.5.5: manifest 1.5.5', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(pkg.version, '1.5.4');
+  assert.equal(pkg.version, '1.5.5');
 });
 
 

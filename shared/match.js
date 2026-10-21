@@ -365,7 +365,9 @@
       '工作业绩', '主要成就', '业绩亮点', '工作成果'
     ],
     workDescription: [
-      'workdescription', 'work_description', '工作描述', '工作内容', '工作职责描述', '职责描述'
+      'workdescription', 'work_description', '工作描述', '工作内容', '工作职责描述', '职责描述',
+      '岗位职责', '工作职责', '主要职责', '职责说明', '主要工作内容', '具体工作内容',
+      '工作经历描述', '工作任务', '工作事项', '主要工作', '工作说明', '工作简述'
     ],
     projectName: [
       'projectname', 'project_name', 'projecttitle', '项目名称', '项目名'
@@ -385,7 +387,8 @@
     projectRefereeTitle: ['projectrefereetitle', '项目证明人职位'],
     projectDesc: [
       'projectdesc', 'project_desc', 'projectdescription', 'project_description',
-      'projectexperience', 'project_experience', '项目经历', '项目描述', '项目介绍', '项目说明'
+      'projectexperience', 'project_experience', '项目经历', '项目描述', '项目介绍', '项目说明',
+      '项目内容', '项目详情', '项目背景', '项目简介', '项目工作内容'
     ],
     projectResponsibilities: ['projectresponsibilities', '项目职责', '项目责任'],
     projectOutcome: ['projectoutcome', '项目成果', '项目结果', '项目产出'],
@@ -910,9 +913,10 @@
     edu: [
       { re: /院系|系别|所在系|department|faculty/i, key: 'department' },
       { re: /城市|所在地|地点|city|location/i, key: 'schoolCity' },
+      // 「毕业院校」是学校名，不是毕业时间 → 学校规则排在入学/毕业之前
+      { re: /学校|院校|校名|university|college|school/i, key: 'school' },
       { re: /入学|开始|起始|就读起|start/i, key: 'eduStart' },
       { re: /毕业|结束|截止|graduat|\bend\b/i, key: 'eduEnd' },
-      { re: /学校|院校|校名|university|college|school/i, key: 'school' },
       { re: /班级排名|班排名/, key: 'classRank' },
       { re: /专业排名|年级排名|综合排名|排名|\brank\b/i, key: 'majorRank' },
       { re: /专业|major/i, key: 'major' },

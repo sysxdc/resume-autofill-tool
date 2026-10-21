@@ -127,8 +127,8 @@
       if (!opt) return false;
       var v = String(opt.value || '').trim();
       var t = String(opt.text || '').trim();
-      // 「年 / 月 / 日 / 请选择 / --」这类占位 option 不算已填（否则年月下拉会被整组跳过）
-      if (!v && (!t || /^(?:select|choose|请选择|选择|--+|--\s*请选择|年|月|日|年\/月\/日|年月日|yyyy|yyyy-mm-dd|yyyy\/mm\/dd|mm|dd)$/i.test(t))) return false;
+      // 占位 option 不算已填：请选择 / Select / 年 / 月 / 日 / --（中英混排如「请选择 / Select」也要覆盖）
+      if (!v && (!t || /^(?:-+)?\s*(?:请选择|选择|select|choose|年|月|日|year|month|day|yyyy|mm|dd)(?![a-z])/i.test(t))) return false;
       return true;
     }
     return String(el.value || '').trim() !== '';
@@ -240,7 +240,9 @@
       mentor: { field: 'mentor', key: 'advisorName' },
       laboratory: { field: 'laboratory', key: 'labName' },
       researchdirection: { field: 'research', key: 'researchDirection' },
-      gpa: { field: 'gpa', key: 'gpa' }
+      gpa: { field: 'gpa', key: 'gpa' },
+      description: { field: 'description', key: 'eduDescription' },
+      remark: { field: 'description', key: 'eduDescription' }
     },
     work: {
       companyname: { field: 'company', key: 'company' },
@@ -251,7 +253,12 @@
       startdate: { field: 'start', key: 'startDate' },
       enddate: { field: 'end', key: 'workEnd' },
       city: { field: 'city', key: 'workCity' },
-      worktype: { field: 'nature', key: 'workType' }
+      worktype: { field: 'nature', key: 'workType' },
+      description: { field: 'description', key: 'workDescription' },
+      workdescription: { field: 'description', key: 'workDescription' },
+      workcontent: { field: 'description', key: 'workDescription' },
+      jobdescription: { field: 'description', key: 'workDescription' },
+      remark: { field: 'description', key: 'workDescription' }
     },
     paper: {
       name: { field: 'name', key: 'awardName' },
@@ -307,6 +314,121 @@
     }
     if (struct.index === 0) return M.profileValue(profile, struct.key) || '';
     return '';
+  }
+
+
+  // —————— v1.5.5：有的网申要先把「添加教育经历 / 添加上一段工作」点出来才有输入框 ——————
+  var ADD_BUTTON_RE = /(?:^|[+＋\s])(?:添加|新增|增加|继续添加|再加一?段|新增一?条|添加一?条|add\b)/i;
+  var ADD_SECTION_RULES = [
+    { listKey: 'eduList', key: 'edu', re: /教育|学历|院校|学校/ },
+    { listKey: 'workList', key: 'work', re: /工作|任职|职业|履历|雇主/ },
+    { listKey: 'internList', key: 'intern', re: /实习/ },
+    { listKey: 'projectList', key: 'project', re: /项目|科研/ },
+    { listKey: 'awardList', key: 'award', re: /奖项|竞赛|荣誉|获奖|奖励/ },
+    { listKey: 'campusList', key: 'campus', re: /校园|社团|学生工作|组织经历/ }
+  ];
+
+  /** 按钮不可点的情形：附件 / 上传 / 视频 / 图片 这类点了会弹文件选择框 */
+  function isUnsafeAddButton(text) {
+    return /附件|文件|上传|视频|图片|照片|logo|简历|扫描|二维码|关注|反馈|删除|清空|移除|取消/i.test(String(text || ''));
+  }
+
+  function addButtonCandidates() {
+    var nodes = document.querySelectorAll('button, a, [role="button"], .ant-btn, .el-button, span, div, i');
+    var out = [];
+    Array.prototype.forEach.call(nodes, function (n) {
+      if (n.disabled || /disabled/i.test(String(n.className || ''))) return;
+      if (n.children && n.childElementCount > 1) return;
+      var t = String(n.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!t || t.length > 16) return;
+      if (!ADD_BUTTON_RE.test(t)) return;
+      if (isUnsafeAddButton(t)) return;
+      if (!isVisibleEl(n)) return;
+      out.push({ el: n, text: t });
+    });
+    return out;
+  }
+
+  /** 这段按钮属于哪个分区：先看按钮文案，再看最近的区块标题 */
+  function addButtonSection(text, el) {
+    for (var i = 0; i < ADD_SECTION_RULES.length; i++) {
+      if (ADD_SECTION_RULES[i].re.test(text)) return ADD_SECTION_RULES[i];
+    }
+    var node = el;
+    for (var up = 0; up < 6 && node && node.parentElement; up++) {
+      var head = node.querySelector ? node.querySelector(':scope > legend, :scope > h2, :scope > h3, :scope > h4, :scope > summary, :scope > .section-title, :scope > .ant-card-head-title, :scope > .panel-heading') : null;
+      var htxt = head ? String(head.textContent || '').replace(/\s+/g, ' ').trim() : '';
+      if (htxt && htxt.length <= 24) {
+        for (var j = 0; j < ADD_SECTION_RULES.length; j++) {
+          if (ADD_SECTION_RULES[j].re.test(htxt)) return ADD_SECTION_RULES[j];
+        }
+      }
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  /** 该分区当前已有多少条记录（按行级 id 或列表容器判断） */
+  function countSectionRows(rule) {
+    var idx = {};
+    var ids = document.querySelectorAll('[id*="Info_"]');
+    Array.prototype.forEach.call(ids, function (n) {
+      var m = String(n.id || '').match(/(education|work|intern|project|paper|campus)info_(\d+)_/i);
+      if (!m) return;
+      idx[m[1].toLowerCase() + ':' + m[2]] = 1;
+    });
+    var sectionName = { edu: 'education', work: 'work', intern: 'intern', project: 'project', award: 'paper', campus: 'campus' }[rule.key];
+    var n = 0;
+    for (var k in idx) {
+      if (!Object.prototype.hasOwnProperty.call(idx, k)) continue;
+      if (k.indexOf(sectionName + ':') === 0) n += 1;
+    }
+    if (n) return n;
+    // 退路：按常见列表容器估算
+    var box = document.querySelector('[class*="' + rule.key + '"][class*="list"], [data-section*="' + rule.key + '"]');
+    if (box) {
+      var rows = box.querySelectorAll('[class*="item"], [class*="row"], li');
+      return rows ? rows.length : 0;
+    }
+    return 0;
+  }
+
+  function desiredRowsFor(profile, rule) {
+    var list = profile && Array.isArray(profile[rule.listKey]) ? profile[rule.listKey] : [];
+    if (list.length) return list.length;
+    // 没有多段数据时，若扁平字段有值就展开 1 条
+    var flatBySection = { edu: 'school', work: 'company', intern: 'internCompany', project: 'projectName', award: 'awardName', campus: 'campusOrg' };
+    var flat = profile ? profile[flatBySection[rule.key]] : '';
+    return flat && String(flat).trim() ? 1 : 0;
+  }
+
+  /**
+   * 点「添加」把分区展开到目标条数。
+   * @returns {{section:string, clicks:number}[]}
+   */
+  async function expandAddSections(profile) {
+    var report = [];
+    for (var round = 0; round < 4; round++) {
+      var progressed = false;
+      var cands = addButtonCandidates();
+      for (var i = 0; i < cands.length; i++) {
+        var cand = cands[i];
+        if (!cand.el.isConnected) continue;
+        var rule = addButtonSection(cand.text, cand.el);
+        if (!rule) continue;
+        var want = desiredRowsFor(profile, rule);
+        if (!want) continue;
+        var have = countSectionRows(rule);
+        if (have >= want) continue;
+        simulateClick(cand.el);
+        await sleep(280);
+        var after = countSectionRows(rule);
+        report.push({ section: rule.key, clicks: 1, before: have, after: after });
+        if (after > have) progressed = true;
+      }
+      if (!progressed) break;
+    }
+    return report;
   }
 
   function matchKeyForElement(el) {
@@ -1801,6 +1923,11 @@
     var groupHandled = typeof WeakSet === 'function' ? new WeakSet() : null;
     // 站点会在填入后重建 DOM：第二遍重新扫描，把被替换过的新节点补填上
     var handled = typeof WeakSet === 'function' ? new WeakSet() : null;
+    // 有的网申要先点「添加」才有输入框：先按档案里的条数把分区展开
+    var expanded = [];
+    if (opts.allowAddSections !== false) {
+      try { expanded = await expandAddSections(profile); } catch (e) { expanded = []; }
+    }
 
     for (var pass = 0; pass < 2; pass++) {
     var els = iterFillableFields();
@@ -1992,7 +2119,7 @@
       }
     }
 
-    return { filled: filled, filledKeys: filledKeys, skipped: skipped, forced: forced };
+    return { filled: filled, expanded: expanded, filledKeys: filledKeys, skipped: skipped, forced: forced };
   }
 
   /**
@@ -2073,6 +2200,7 @@
     return {
       ok: true,
       filled: result.filled,
+      expanded: result.expanded || [],
       filledKeys: result.filledKeys,
       skipped: result.skipped || [],
       forced: result.forced || []
@@ -2144,6 +2272,7 @@
     if (!agg.frames) return own;
     return {
       ok: own.ok !== false,
+      expanded: own.expanded || [],
       filled: own.filled + agg.filled,
       filledKeys: own.filledKeys.concat(agg.filledKeys.filter(function (k) {
         return own.filledKeys.indexOf(k) === -1;

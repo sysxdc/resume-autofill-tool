@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.5.1**
+当前版本：**1.5.5**
 
 ## 功能概览
 
@@ -184,6 +184,20 @@ resume-autofill-tool/
 - 证件号等敏感字段为选填；公共电脑请勿保存。
 
 ## Changelog
+
+### 1.5.5
+
+- **自动点「添加」展开分区**：教育 / 工作 / 实习 / 项目 / 奖项 / 校园等分区如果初始是空的，先按档案里
+  `eduList/workList/projectList/awardList` 的条数点「+ 添加 xx」把输入框展开再填；附件 / 上传 / 视频类
+  按钮一律不点（会弹文件框）。返回结果带 `expanded: [{section, clicks, before, after}]`。
+- **结构字段按 id 路径映射**：`resumeEducationInfo_0_collegeName` / `resumeWorkInfo_0_description` 这类
+  ATS 行级 id 直接映射到「第几段」的数据，同 id 的两个日期框用 placeholder（入学/毕业、入职/离职）区分。
+- **工作描述类语义补齐**：岗位职责 / 工作职责 / 主要职责 / 职责说明 / 主要工作内容 / 工作经历描述 → `workDescription`；
+  项目内容 / 项目背景 / 项目简介 → `projectDesc`；工作段 `description` 直连 textarea。
+- **教育块规则顺序修正**：「毕业院校 / School / University」曾被「毕业」规则抢成毕业时间，导致学校框被写成 `2027-06`；
+  学校规则现排在入学/毕业之前。
+- **占位 option 识别放宽**：`请选择 / Select`、`Select`、`-- 请选择 --` 等不再被当成「已填」而整组跳过。
+- antd 月面板年份导航补齐（月面板只有 super-prev/super-next = ±1 年）+ 面板隔离，避免多点开到别的日期框。
 
 ### 1.5.3
 - **区块上下文匹配**：`matchFieldKeyScored(hints, {context})` 新增 `CONTEXT_RULES`（edu / intern / work / project / campus）。「城市」在教育块 → `schoolCity`，在工作块 → `workCity`；「学院/院系」→ `department`；「入学年月 / 就读起止」→ `eduStart`；「毕业时间」→ `eduEnd`。
