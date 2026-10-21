@@ -1741,9 +1741,9 @@ test('v1.5.6: 工作性质按该段职位推断', () => {
   assert.equal(Match.profileValue({ workList: [{ title: '工程师', nature: '兼职' }] }, 'workNature'), '兼职');
 });
 
-test('v1.5.10: manifest 1.5.10', () => {
+test('v1.5.11: manifest 1.5.11', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(pkg.version, '1.5.10');
+  assert.equal(pkg.version, '1.5.11');
 });
 
 console.log('v1.5.7 加行按钮 / 起止时间合体控件');
