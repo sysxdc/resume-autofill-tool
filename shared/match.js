@@ -124,7 +124,7 @@
     ],
     phoneCountryCode: [
       'phonecountrycode', 'phone_code', 'dialcode', 'dial_code', 'countrycode',
-      '电话所在区域', '手机区号', '电话区号', '国家区号', '国际区号', '区号'
+      '电话所在区域', '手机区号', '电话区号', '国家区号', '国际区号'
     ],
     phone: [
       'phone', 'mobile', 'tel', 'telephone', 'cellphone', 'cell', 'phonenumber',
@@ -160,7 +160,8 @@
     ],
     currentCity: [
       'currentcity', 'current_city', 'current-city', 'livingcity', 'presentcity',
-      '现居城市', '目前城市', '当前城市', '现所在城市'
+      '现居城市', '目前城市', '当前城市', '现所在城市', '现居住城市',
+      '现居地', '现居住地', '居住地', '常住地'
     ],
     currentAddress: [
       'currentaddress', 'current_address', '现居住地址', '现住址', '目前住址'
@@ -365,6 +366,10 @@
       'enddate', 'end_date', '结束日期', '结束时间'
     ],
     workCity: ['workcity', 'work_city', '工作城市', '工作地点'],
+    workDepartment: [
+      'workdepartment', 'work_department', 'dept', 'departmentname',
+      '部门', '所在部门', '所属部门', '任职部门', '工作部门', '部门名称'
+    ],
     industry: [
       'industry', 'sector', '所属行业', '行业', '从事行业', '工作行业'
     ],
@@ -394,7 +399,9 @@
     workDescription: [
       'workdescription', 'work_description', '工作描述', '工作内容', '工作职责描述', '职责描述',
       '岗位职责', '工作职责', '主要职责', '职责说明', '主要工作内容', '具体工作内容',
-      '工作经历描述', '工作任务', '工作事项', '主要工作', '工作说明', '工作简述'
+      '工作经历描述', '工作任务', '工作事项', '主要工作', '工作说明', '工作简述',
+      'roledescription', 'jobdescription', 'responsibilities', 'duties',
+      '职位描述', '工作职责与业绩'
     ],
     projectName: [
       'projectname', 'project_name', 'projecttitle', '项目名称', '项目名'
@@ -480,13 +487,15 @@
       'jobtarget', 'job_target', 'desiredposition', 'desired_position', 'targetrole',
       'jobobjective', 'job_objective', 'positionapplied', 'appliedposition', 'applyposition',
       '求职意向', '目标职位', '目标岗位', '期望职位', '意向岗位', '应聘职位', '应聘岗位',
+      '投递志愿', '志愿岗位', '志愿',
       '申请职位', '意向职位', '应征职位', '应聘岗位名称', '意向工作', '期望岗位', '申请岗位'
     ],
     hasRelativeAtCompany: [
       'hasrelativeatcompany', '是否有亲属在本公司', '是否有亲属在公司', '公司亲属'
     ],
     acceptAdjustment: [
-      'acceptadjustment', 'accept_adjustment', '是否接受调剂', '接受调剂'
+      'acceptadjustment', 'accept_adjustment', '是否接受调剂', '接受调剂',
+      '是否服从调剂', '服从调剂', '是否服从分配', '服从分配', '是否接受岗位调剂'
     ],
     availability: [
       'availability', 'availabledate', '到岗', '可到岗', '到岗时间', '可到岗时间', '入职时间安排'
@@ -620,7 +629,7 @@
     'socialOrg', 'socialRole', 'socialStart', 'socialEnd', 'socialContent',
     'refereeName', 'refereeContact', 'refereeTitle',
     'leaveReason', 'achievements', 'workDescription', 'companySize', 'workOverseas',
-    'workCity', 'industry', 'workNature', 'employmentType', 'jobType',
+    'workCity', 'workDepartment', 'industry', 'workNature', 'employmentType', 'jobType',
     'monthlySalary', 'annualSalary', 'workEnd', 'endDate',
     'company', 'title', 'years', 'startDate',
     'noticePeriod', 'earliestStart', 'availability', 'workAuth', 'referralSource',
@@ -664,7 +673,11 @@
     // 上司/他人联系人（避免把申请人微信/电话填进「直接上司…」）
     '直接上司', '直属上级', '直属领导', '上级领导', '汇报对象',
     'supervisor', 'reportingto', 'linemanager', 'managername',
-    'managerphone', 'managercontact', 'reportingmanager'
+    'managerphone', 'managercontact', 'reportingmanager',
+    // v1.5.11：不该自动填的表单（附件/视频/授权声明/验证码/推荐码）
+    '自我介绍视频', '视频', '上传附件', '附件简历', '附件', '上传简历', '作品集',
+    'legallyauthorized', 'authorizedtowork', 'workauthorization', 'righttowork',
+    '验证码', 'captcha', '推荐码'
   ];
 
   /** 学历中英同义，便于 select 模糊匹配 */
@@ -951,7 +964,8 @@
       { re: /绩点排名|gpa排名|学分绩排名|gpa\s*rank/i, key: 'gpaRank' },
       { re: /专业排名|年级排名|综合排名|成绩排名|排名|rank/i, key: 'majorRank' },
       { re: /专业|major/i, key: 'major' },
-      { re: /学历|学位|degree/i, key: 'eduDegree' },
+      { re: /学位|学位$|degree|bachelor|master|phd/i, key: 'degree' },
+      { re: /学历|educationlevel|education_level/i, key: 'eduDegree' },
       { re: /学院/, key: 'department' },
       { re: /绩点|gpa/i, key: 'gpa' }
     ],
@@ -963,6 +977,11 @@
       { re: /(离职|结束|截止|end)/i, key: 'internEnd' }
     ],
     work: [
+      { re: /部门|dept|department/i, key: 'workDepartment' },
+      { re: /离职原因|离职理由|离开原因|leavingreason|reasonforleaving/i, key: 'leaveReason' },
+      { re: /证明人职位|证明人职务|referee\s*title/i, key: 'refereeTitle' },
+      { re: /证明人联系方式|证明人电话|referee\s*contact/i, key: 'refereeContact' },
+      { re: /证明人(姓名|名字)?$|referee/i, key: 'refereeName' },
       { re: /单位|公司|企业|雇主|employer|company|organi[sz]ation/i, key: 'company' },
       { re: /职位|岗位|职务|头衔|title|position/i, key: 'title' },
       { re: /城市|地点|city|location/i, key: 'workCity' },
@@ -1246,6 +1265,7 @@
     workEnd: ['workList', 'end'],
     endDate: ['workList', 'end'],
     workCity: ['workList', 'city'],
+    workDepartment: ['workList', 'department'],
     workNature: ['workList', 'nature'],
     workDescription: ['workList', 'description'],
     projectName: ['projectList', 'name'],
