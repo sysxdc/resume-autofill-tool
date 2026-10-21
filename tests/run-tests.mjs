@@ -1286,6 +1286,29 @@ test('v1.3.4: 表头支持 2026年10月 / 十月 2026 / 2026-10 三种写法', (
   assert.ok(/\(19\|20\)\\d\{2\}\\s\*\[-\/\.年\]/.test(src), '应支持 2026-10 / 2026.10 / 2026年10');
 });
 
+
+console.log('v1.3.5 六类日期组件');
+
+test('v1.3.5: 年/月/日 三件套（原生 select 组）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function collectDateGroup/.test(src), '应识别日期组');
+  assert.ok(/function maxOptionNumber/.test(src), '应按选项范围判断年/月/日');
+  assert.ok(/function setSelectByNumber/.test(src), '应能按数字选中 select 选项');
+  assert.ok(/function fillDateGroup/.test(src), '应整组填写');
+  assert.ok(/yearSelect/.test(src), '应要求存在年份 select 或显式三标签，避免误判');
+  assert.ok(/groupHandled/.test(src), '组内控件填完后应跳过逐个填充');
+});
+
+test('v1.3.5: 分页下拉 / 滚轮 / 英文表头', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function findPagerNext/.test(src), '应找“下一页”');
+  assert.ok(/function pageUntilFound/.test(src), '应翻页找目标项');
+  assert.ok(/function looksLikeWeekHeader/.test(src), '应识别中英文星期表头');
+  assert.ok(/function expandToActionableHost/.test(src), '应把列表容器上溯到带确定/箭头的容器');
+  assert.ok(/function setPanelPeriod/.test(src), '应支持面板内 年/月 下拉（flatpickr 风格）');
+  assert.ok(/monthOnly/.test(src), '只按月翻的日历应放宽迭代上限');
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
