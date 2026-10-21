@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.5.21**
+当前版本：**1.5.22**
 
 ## 功能概览
 
@@ -163,16 +163,22 @@ bash scripts/repo-state.sh
 ## 自动化测试
 
 ```bash
-node tests/run-tests.mjs        # 三套一起跑
-node tests/run-dom-tests.mjs    # 只跑真实浏览器里的控件行为基线
+npm test                        # 等价 node tests/run-tests.mjs（串联 unit + DOM + parser）
+npm run test:dom                # 只跑真实浏览器里的控件行为基线（需 playwright）
+npm run test:benchmark          # 网申字段匹配基准
+# 或零依赖直接：
+node tests/run-tests.mjs
+node tests/run-dom-tests.mjs
 ```
+
+DOM 基线依赖可选的 `playwright`（见 `package.json` `devDependencies`）。未安装时 `run-dom-tests.mjs` 会尝试 `npm root -g` 与 `~/.local/lib/node_modules/playwright`；仍找不到则跳过并提示，不阻塞主套件。
 
 三套分层，各管一件事，别再混着看：
 
 | 套件 | 断言什么 | 能不能证明「填得对」 |
 |---|---|---|
-| `tests/run-tests.mjs`（186 项） | 关键词/模糊评分、denylist、`profileValue`、select 匹配、AI merge 纯函数、manifest 结构 | **不能**，只做 smoke：防手滑删类名/常量 |
-| `tests/run-dom-tests.mjs`（20 项 + `fixtures/dom/*.html`） | 真实 Chromium 里「怎么打开 / 怎么写进去 / 回读是什么 / 有什么坑」 | 能，这是唯一的行为证据 |
+| `tests/run-tests.mjs`（≈190+ 项） | 关键词/模糊评分、denylist、`profileValue`、select 匹配、AI merge 纯函数、manifest 结构 | **不能**，只做 smoke：防手滑删类名/常量 |
+| `tests/run-dom-tests.mjs`（26 项 + `fixtures/dom/*.html`） | 真实 Chromium 里「怎么打开 / 怎么写进去 / 回读是什么 / 有什么坑」 | 能，这是唯一的行为证据 |
 | `tests/resume-parser.test.mjs`（20 项） | 简历文本 → 结构化 profile | 能（解析域） |
 
 ### 为什么要有 DOM 基线
@@ -313,6 +319,20 @@ Date.STRATEGY_ORDER            // native-input → native-selects → fiber-prop
 （`#__ra_panel_host__.dataset.lastResult`），降级不再静默。
 
 ## Changelog
+
+### 1.5.22
+
+- **真 bug**：v1.5.16 的 `EXTRA_LABEL_KEYS` 把「工作经验 / 语种 / 语言等级 / 服从城市分配」别名到
+  `workYears` / `languageType` / `languageLevel` / `cityAdjustment`——这些键**不在** `PROFILE_FIELDS`，
+  `profileValue` 永远空 → 相关字段静默不填。改为真实键 `years` / `langName` / `langLevel` /
+  `acceptAdjustment`。
+- **匹配**：`语种` 从 `languages`（自由文本）改到 `langName`（联动下拉一级）；`语言等级` /
+  `掌握程度` 等归 `langLevel`（不再误落 `englishLevel`）；`工作经验` → `years`；
+  `是否服从城市分配` 等归 `acceptAdjustment`，并加 guard 防止短词「城市」抢走。
+- **联动下拉**：`fillLinkedSelectChains` 按标签文本再兜底识别「语种 / 语言等级」。
+- **DX**：补最小 `package.json`（`npm test` / `test:dom` / `test:benchmark`）+ 可选
+  `playwright`；`run-dom-tests` 的 `loadPlaywright` 额外尝试 `~/.local/...`。
+- 回归单测覆盖上述标签；勿把幽灵键写回别名表。
 
 ### 1.5.21
 

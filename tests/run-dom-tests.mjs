@@ -22,14 +22,23 @@ const __dirname = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A
 function loadPlaywright() {
   const tried = [];
   try { return require('playwright'); } catch (e) { tried.push(e.message); }
+  const candidates = [];
   try {
     // playwright 可能只装在全局（npx playwright 能用，但项目里没有 node_modules）
-    const root = execSync('npm root -g', { encoding: 'utf8' }).trim();
-    const p = path.join(root, 'playwright');
-    if (fs.existsSync(p)) return require(p);
-    tried.push('no ' + p);
+    candidates.push(path.join(execSync('npm root -g', { encoding: 'utf8' }).trim(), 'playwright'));
   } catch (e) { tried.push(e.message); }
-  throw new Error('找不到 playwright：' + tried.join(' | '));
+  // 部分环境 npm root -g 不可用：常见用户级路径再试一次
+  if (process.env.HOME) {
+    candidates.push(path.join(process.env.HOME, '.local/lib/node_modules/playwright'));
+  }
+  candidates.push('/home/box/.local/lib/node_modules/playwright');
+  for (const p of candidates) {
+    try {
+      if (p && fs.existsSync(p)) return require(p);
+      tried.push('no ' + p);
+    } catch (e) { tried.push(e.message); }
+  }
+  throw new Error('找不到 playwright：' + tried.join(' | ') + '（可 npm i -D playwright 或 npm i -g playwright）');
 }
 
 const FIXTURES = path.join(__dirname, 'fixtures', 'dom');

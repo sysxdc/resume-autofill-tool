@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "简历填写工具",
-  "version": "1.5.21",
+  "version": "1.5.22",
   "description": "本地存储简历资料，模糊匹配 + 可选 AI 巡查/填写求职表单。数据默认仅本机；启用 AI 时才发送非空字段到你配置的接口。提交前由您确认。",
   "permissions": [
     "storage",

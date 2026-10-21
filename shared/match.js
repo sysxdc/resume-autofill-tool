@@ -161,7 +161,7 @@
     currentCity: [
       'currentcity', 'current_city', 'current-city', 'livingcity', 'presentcity',
       '现居城市', '目前城市', '当前城市', '现所在城市', '现居住城市',
-      '现居地', '现居住地', '居住地', '常住地'
+      '现居地', '现居住地', '居住地', '常住地', '所在地'
     ],
     currentAddress: [
       'currentaddress', 'current_address', '现居住地址', '现住址', '目前住址'
@@ -225,8 +225,8 @@
     isColorWeak: ['iscolorweak', '是否色弱', '色弱', '色盲'],
     hasOverseasIdentity: ['hasoverseasidentity', '是否具有境外身份', '境外身份'],
     englishLevel: [
-      'englishlevel', 'english_level', '英语等级', '英语水平', '语言等级', '外语等级',
-      '语言级别', '外语水平等级'
+      'englishlevel', 'english_level', '英语等级', '英语水平', '外语等级',
+      '外语水平等级', 'cet等级', 'ielts', 'toefl'
     ],
     englishScore: [
       'englishscore', 'english_score', '英语成绩', '外语成绩', '语言成绩', '英语分数',
@@ -353,7 +353,7 @@
     ],
     years: [
       'yearsofexperience', 'years_of_experience', 'yoe', 'workyears', 'work_years',
-      'experienceyears', '工作年限', '经验年限', '工龄', '从业年限', '年限'
+      'experienceyears', '工作年限', '工作经验', '经验年限', '工龄', '从业年限', '年限'
     ],
     startDate: [
       'startdate', 'start_date', 'start-date', 'availablefrom', 'dateavailable',
@@ -495,7 +495,8 @@
     ],
     acceptAdjustment: [
       'acceptadjustment', 'accept_adjustment', '是否接受调剂', '接受调剂',
-      '是否服从调剂', '服从调剂', '是否服从分配', '服从分配', '是否接受岗位调剂'
+      '是否服从调剂', '服从调剂', '是否服从分配', '服从分配', '是否接受岗位调剂',
+      '是否服从城市分配', '服从城市分配', '能否服从城市分配', '城市选择能否服从分配', '能否服从分配'
     ],
     availability: [
       'availability', 'availabledate', '到岗', '可到岗', '到岗时间', '可到岗时间', '入职时间安排'
@@ -511,7 +512,7 @@
       'eligibletowork', '工作许可', '签证', '工作签证', '合法工作', '用工资格'
     ],
     languages: [
-      'languages', 'language', 'languageskills', '语言能力', '外语水平', '掌握语言', '语种'
+      'languages', 'language', 'languageskills', '语言能力', '外语水平', '掌握语言', '会说的语言'
     ],
     certificates: [
       'certificates', 'certifications', 'certificate', 'license', '资质证书',
@@ -525,11 +526,14 @@
     certScore: ['certscore', 'cert_score', '证书成绩'],
     certExpiry: ['certexpiry', 'cert_expiry', '证书有效期', '有效期'],
     certDescription: ['certdescription', 'cert_description', '证书描述'],
-    langName: ['langname', 'lang_name', '语言种类', '语种名称'],
+    langName: ['langname', 'lang_name', '语言种类', '语种名称', '语种', '语言类型'],
     langDate: ['langdate', 'lang_date', '语言证书获得时间', '外语获得时间'],
     langCertName: ['langcertname', 'lang_cert_name', '语言证书名称'],
     langScore: ['langscore', 'lang_score', '语言成绩'],
-    langLevel: ['langlevel', 'lang_level', '语言掌握程度', '外语掌握程度'],
+    langLevel: [
+      'langlevel', 'lang_level', '语言掌握程度', '外语掌握程度',
+      '掌握程度', '熟练程度', '语言水平', '语言等级', '语言级别'
+    ],
     langListenSpeak: ['langlistenspeak', '听说能力', '外语听说'],
     langReadWrite: ['langreadwrite', '读写能力', '外语读写'],
     familyName: ['familyname', 'family_name_member', '家庭成员姓名', '家人姓名'],
@@ -1031,6 +1035,8 @@
         if (!strongAddr) return false;
       }
     }
+    // 「是否服从城市分配」含「城市」字样，但不能落到 city
+    if (key === 'city' && /服从|调剂|分配/.test(rawLower)) return false;
     return true;
   }
 

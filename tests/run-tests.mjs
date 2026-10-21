@@ -1834,11 +1834,13 @@ test('v1.5.1: radio 组标题支持行首 span / 前兄弟文本', () => {
 
 console.log('v1.5.8 语言技能栏位 / 加行候选 / 下拉轮询');
 
-test('v1.5.8: 语言等级映射到 englishLevel', () => {
-  assert.equal(Match.matchFieldKey('语言等级'), 'englishLevel');
+test('v1.5.8/1.5.22: 语言等级 → langLevel；英语专属仍走 englishLevel', () => {
+  // v1.5.22：泛「语言等级」是联动下拉二级（langLevel），不再误落 englishLevel
+  assert.equal(Match.matchFieldKey('语言等级'), 'langLevel');
+  assert.equal(Match.matchFieldKey('语言级别'), 'langLevel');
   assert.equal(Match.matchFieldKey('外语等级'), 'englishLevel');
-  assert.equal(Match.matchFieldKey('语言级别'), 'englishLevel');
-  assert.equal(Match.matchFieldKey('语种'), 'languages');
+  assert.equal(Match.matchFieldKey('英语等级'), 'englishLevel');
+  assert.equal(Match.matchFieldKey('语种'), 'langName');
   assert.equal(Match.matchFieldKey('获得时间'), 'certDate');
 });
 
@@ -2110,9 +2112,12 @@ test('v1.5.16: 「必填项未填写」校验提示不算已选值', () => {
 test('v1.5.16: 标签别名（所在地/工作经验/职责/语言/期望城市）', () => {
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
   assert.ok(/function aliasKeyForLabel/.test(src), '要有别名表');
-  ['currentCity', 'workYears', 'projectRole', 'languageType', 'languageLevel', 'expectedCity', 'cityAdjustment', 'acceptAdjustment'].forEach((k) => {
+  // v1.5.22: 别名必须落到真实 PROFILE_FIELDS（曾误写成 workYears/languageType 等幽灵键）
+  ['currentCity', 'years', 'projectRole', 'langName', 'langLevel', 'expectedCity', 'acceptAdjustment'].forEach((k) => {
     assert.ok(src.indexOf("'" + k + "'") !== -1, '别名要覆盖 ' + k);
   });
+  const extra = src.match(/var EXTRA_LABEL_KEYS = \[[\s\S]*?\];/)[0];
+  assert.ok(!/workYears|languageType|languageLevel|cityAdjustment/.test(extra), '别名表不得含幽灵键');
   assert.ok(/aliasKeyForLabel\(getLabelText\(el\), null\)/.test(src), 'key 为空时用别名');
 });
 
@@ -2326,6 +2331,56 @@ test('v1.5.20 联动下拉：语种 → 语言等级', () => {
   const js = manifest.content_scripts[0].js;
   assert.ok(js.indexOf('shared/select-chain.js') !== -1, 'select-chain 已注入');
   assert.ok(js.indexOf('shared/select-chain.js') < js.indexOf('content/autofill.js'), 'select-chain 先于 autofill');
+});
+
+console.log('v1.5.22: 标签匹配/别名幽灵键');
+
+test('v1.5.22: 工作经验 → years（非幽灵 workYears）', () => {
+  assert.equal(Match.matchFieldKey('工作经验'), 'years');
+  assert.equal(Match.matchFieldKey('工作年限'), 'years');
+  assert.equal(Match.profileValue(Profile.SAMPLE_PROFILE, 'years'), '4');
+  assert.equal(Match.profileValue(Profile.SAMPLE_PROFILE, 'workYears'), '');
+});
+
+test('v1.5.22: 语种/语言类型 → langName（联动下拉一级）', () => {
+  assert.equal(Match.matchFieldKey('语种'), 'langName');
+  assert.equal(Match.matchFieldKey('语言类型'), 'langName');
+  assert.equal(Match.matchFieldKey('语言种类'), 'langName');
+  assert.equal(Match.profileValue(Profile.SAMPLE_PROFILE, 'langName'), '英语');
+  assert.notEqual(Match.matchFieldKey('语种'), 'languages');
+});
+
+test('v1.5.22: 掌握程度/语言等级 → langLevel（非 englishLevel）', () => {
+  assert.equal(Match.matchFieldKey('掌握程度'), 'langLevel');
+  assert.equal(Match.matchFieldKey('熟练程度'), 'langLevel');
+  assert.equal(Match.matchFieldKey('语言水平'), 'langLevel');
+  assert.equal(Match.matchFieldKey('语言等级'), 'langLevel');
+  assert.equal(Match.matchFieldKey('英语等级'), 'englishLevel');
+  assert.equal(Match.profileValue(Profile.SAMPLE_PROFILE, 'langLevel'), '熟练');
+});
+
+test('v1.5.22: 是否服从城市分配 → acceptAdjustment（不被「城市」抢走）', () => {
+  assert.equal(Match.matchFieldKey('是否服从城市分配'), 'acceptAdjustment');
+  assert.equal(Match.matchFieldKey('服从城市分配'), 'acceptAdjustment');
+  assert.equal(Match.matchFieldKey('城市选择能否服从分配'), 'acceptAdjustment');
+  assert.equal(Match.matchFieldKey('能否服从分配'), 'acceptAdjustment');
+  assert.notEqual(Match.matchFieldKey('是否服从城市分配'), 'city');
+  assert.equal(Match.matchFieldKey('城市'), 'city');
+  assert.equal(Match.matchFieldKey('所在城市'), 'city');
+});
+
+test('v1.5.22: 所在地 → currentCity', () => {
+  assert.equal(Match.matchFieldKey('所在地'), 'currentCity');
+});
+
+test('v1.5.22: EXTRA_LABEL_KEYS 目标键都在 PROFILE_FIELDS', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const block = src.match(/var EXTRA_LABEL_KEYS = \[[\s\S]*?\];/)[0];
+  const keys = [...block.matchAll(/'([a-zA-Z]+)'/g)].map((m) => m[1]);
+  const set = new Set(Profile.PROFILE_FIELDS);
+  keys.forEach((k) => {
+    assert.ok(set.has(k), '别名目标 ' + k + ' 必须是 PROFILE_FIELDS 成员');
+  });
 });
 
 console.log('');

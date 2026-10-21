@@ -1812,8 +1812,9 @@
       var label = lab ? String(lab.textContent || '').replace(/\s+/g, '').replace(/\*/g, '') : '';
       if (!label) return;
       var key = M.matchFieldKey(label, {});
-      if (key === 'langName') langs.push({ host: host, label: label });
-      else if (key === 'langLevel' || key === 'englishLevel') levels.push({ host: host, label: label });
+      // 网申常用「语种/语言类型」作一级；旧关键词曾误落到 languages，这里再按标签兜底
+      if (key === 'langName' || /^(语言类型|语种|语言种类)/.test(label)) langs.push({ host: host, label: label });
+      else if (key === 'langLevel' || key === 'englishLevel' || /^(掌握程度|熟练程度|语言水平|语言等级|语言级别)/.test(label)) levels.push({ host: host, label: label });
     });
 
     var filled = 0;
@@ -3686,13 +3687,13 @@
    */
   var EXTRA_LABEL_KEYS = [
     [/^(所在地|现居地|当前所在地|当前城市|现居住地)$/, 'currentCity'],
-    [/^(工作经验|工作年限)$/, 'workYears'],
+    [/^(工作经验|工作年限)$/, 'years'],
     [/^职责$/, 'projectRole'],
-    [/^(语言类型|语种|语言种类)$/, 'languageType'],
-    [/^(掌握程度|熟练程度|语言水平|语言等级)$/, 'languageLevel'],
+    [/^(语言类型|语种|语言种类)$/, 'langName'],
+    [/^(掌握程度|熟练程度|语言水平|语言等级)$/, 'langLevel'],
     [/^(期望城市|意向城市|期望工作城市)$/, 'expectedCity'],
     [/^(是否服从调剂|是否接受调剂.*|是否服从.*调配)$/, 'acceptAdjustment'],
-    [/^(城市选择能否服从分配|能否服从分配|是否服从城市分配)$/, 'cityAdjustment']
+    [/^(城市选择能否服从分配|能否服从分配|是否服从城市分配)$/, 'acceptAdjustment']
   ];
 
   function aliasKeyForLabel(label, currentKey) {
