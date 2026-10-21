@@ -1549,7 +1549,7 @@ test('v1.5.5: 需要点「添加」才有输入框时自动展开', () => {
   assert.ok(/添加\|新增\|增加/.test(src) || src.indexOf('添加') !== -1, '应识别添加按钮文案');
   assert.ok(/isUnsafeAddButton/.test(src), '附件/上传类按钮必须排除');
   assert.ok(/附件\|文件\|上传/.test(src), '危险按钮过滤规则');
-  assert.ok(/round < 4/.test(src), '展开循环要有上限');
+  assert.ok(/round < \d+/.test(src), '展开循环要有上限');
   assert.ok(/expanded: own\.expanded/.test(src), '多 frame 应答需要透传 expanded');
 });
 
@@ -1741,9 +1741,9 @@ test('v1.5.6: 工作性质按该段职位推断', () => {
   assert.equal(Match.profileValue({ workList: [{ title: '工程师', nature: '兼职' }] }, 'workNature'), '兼职');
 });
 
-test('v1.5.7: manifest 1.5.7', () => {
+test('v1.5.8: manifest 1.5.8', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(pkg.version, '1.5.7');
+  assert.equal(pkg.version, '1.5.8');
 });
 
 console.log('v1.5.7 加行按钮 / 起止时间合体控件');
@@ -1753,7 +1753,7 @@ test('v1.5.7: 加行按钮解析到真正的可点元素', () => {
   assert.ok(/closest\('button, a, \[role="button"\], \.ant-btn, \.el-button'\)/.test(src), '应上溯到 button/a/[role=button]');
   assert.ok(/seen\.indexOf\(target\) !== -1/.test(src), '应按可点元素去重');
   assert.ok(/countListFormRows/.test(src), '应能数 .list-form-container 行数');
-  assert.ok(/countSectionRows\(rule\) > have/.test(src), '点完要等行数真的涨上去');
+  assert.ok(/countSectionRows\(jobs\[j\]\.rule\) <= jobs\[j\]\.before/.test(src), '点完要等行数真的涨上去');
 });
 
 test('v1.5.7: 起止时间合体控件按分区/段序填', () => {
@@ -1820,6 +1820,44 @@ test('v1.5.1: radio 组标题支持行首 span / 前兄弟文本', () => {
   assert.ok(/previousElementSibling/.test(src), '应尝试前一个兄弟节点的文本');
   assert.ok(/radio-group/.test(src), '克隆父容器时应剔除 .radio-group');
   assert.ok(/for \(var hi = 0; hi < hints\.length/.test(src), '应逐个候选标题做匹配');
+});
+
+console.log('v1.5.8 语言技能栏位 / 加行候选 / 下拉轮询');
+
+test('v1.5.8: 语言等级映射到 englishLevel', () => {
+  assert.equal(Match.matchFieldKey('语言等级'), 'englishLevel');
+  assert.equal(Match.matchFieldKey('外语等级'), 'englishLevel');
+  assert.equal(Match.matchFieldKey('语言级别'), 'englishLevel');
+  assert.equal(Match.matchFieldKey('语种'), 'languages');
+  assert.equal(Match.matchFieldKey('获得时间'), 'certDate');
+});
+
+test('v1.5.8: 泛化「成绩」不直接映射（避免抢高考成绩/绩点）', () => {
+  assert.notEqual(Match.matchFieldKey('成绩'), 'certScore');
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function sectionFallbackKey/.test(src), '应有分区兜底');
+  assert.ok(/\/语言\|外语\//.test(src), '只在语言/外语分区兜底');
+  assert.ok(/return 'certScore'/.test(src), '语言分区里成绩 → certScore');
+});
+
+test('v1.5.8: 电话所在区域 → phoneCountryCode，手机号码仍是 phone', () => {
+  assert.equal(Match.matchFieldKey('电话所在区域'), 'phoneCountryCode');
+  assert.equal(Match.matchFieldKey('手机号码'), 'phone');
+  assert.equal(Match.matchFieldKey('联系电话'), 'phone');
+});
+
+test('v1.5.8: 加行候选只留最内层可点元素', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/\.el\.contains\(out\[j\]\.el\)/.test(src), '祖先容器要剔除');
+});
+
+test('v1.5.8: 下拉改轮询 + 组件实例提交', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/waited >= 2600/.test(src), '下拉要轮询到选项出现');
+  assert.ok(/function hostDropdownOptions/.test(src), '优先读宿主自己的下拉节点');
+  assert.ok(/function commitFrameworkWidget/.test(src), 'el-input-number / el-date-editor 走组件提交');
+  assert.ok(/\$emit\('input', n\)/.test(src), '数字框传 Number');
+  assert.ok(/valueFormat/.test(src), '日期按 valueFormat 决定 Date / 字符串');
 });
 
 console.log('');
