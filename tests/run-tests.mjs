@@ -16,6 +16,8 @@ const root = path.resolve(__dirname, '..');
 const Match = require(path.join(root, 'shared/match.js'));
 const Profile = require(path.join(root, 'shared/profile.js'));
 const AI = require(path.join(root, 'shared/ai.js'));
+const DateCap = require(path.join(root, 'shared/date-capability.js'));
+const Audit = require(path.join(root, 'shared/audit.js'));
 
 let passed = 0;
 let failed = 0;
@@ -1270,7 +1272,8 @@ test('v1.3.3: 日期比较按年月日（容忍分隔符差异）', () => {
 console.log('v1.3.4 日历网格日期面板');
 
 test('v1.3.4: 网格面板翻月 + 点日 + 面板取最外层', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  // v1.5.20：网格/面板实现在 shared/date-strategies.js（页面侧只剩委托），断言跟着实现走
+  const src = fs.readFileSync(path.join(root, 'shared/date-strategies.js'), 'utf8');
   assert.ok(/function isCalendarGrid/.test(src), '应识别日历网格');
   assert.ok(/function gridHeader/.test(src), '应解析表头年月');
   assert.ok(/function gridNavigate/.test(src), '应能翻月/翻年');
@@ -1283,7 +1286,7 @@ test('v1.3.4: 网格面板翻月 + 点日 + 面板取最外层', () => {
 });
 
 test('v1.3.4: 表头支持 2026年10月 / 十月 2026 / 2026-10 三种写法', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = fs.readFileSync(path.join(root, 'shared/date-strategies.js'), 'utf8');
   assert.ok(/CN_MONTH/.test(src), '应有中文月份映射');
   assert.ok(/EN_MONTH/.test(src), '应有英文月份映射');
   assert.ok(/\(19\|20\)\\d\{2\}\\s\*\[-\/\.年\]/.test(src), '应支持 2026-10 / 2026.10 / 2026年10');
@@ -1303,14 +1306,17 @@ test('v1.3.5: 年/月/日 三件套（原生 select 组）', () => {
 });
 
 test('v1.3.5: 分页下拉 / 滚轮 / 英文表头', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
-  assert.ok(/function findPagerNext/.test(src), '应找“下一页”');
-  assert.ok(/function pageUntilFound/.test(src), '应翻页找目标项');
-  assert.ok(/function looksLikeWeekHeader/.test(src), '应识别中英文星期表头');
-  assert.ok(/function expandToActionableHost/.test(src), '应把列表容器上溯到带确定/箭头的容器');
-  assert.ok(/function setPanelPeriod/.test(src), '应支持面板内 年/月 下拉（flatpickr 风格）');
-  assert.ok(/Date\.now\(\) \+ 12000/.test(src), '日期翻页要有硬超时预算');
-  assert.ok(/superUsable/.test(src), '十年箭头不能死循环，需降级判定');
+  const page = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const strat = fs.readFileSync(path.join(root, 'shared/date-strategies.js'), 'utf8');
+  assert.ok(/function findPagerNext/.test(page), '应找“下一页”');
+  assert.ok(/function pageUntilFound/.test(page), '应翻页找目标项');
+  assert.ok(/function looksLikeWeekHeader/.test(strat), '应识别中英文星期表头');
+  assert.ok(/function expandToActionableHost/.test(strat), '应把列表容器上溯到带确定/箭头的容器');
+  assert.ok(/function setPanelPeriod/.test(strat), '应支持面板内 年/月 下拉（flatpickr 风格）');
+  // 翻页预算：v1.5.18 起改成「模块活动预算 + 12s 双保险」
+  assert.ok(/Date\.now\(\) \+ 12000/.test(strat), '日期翻页要有硬超时预算');
+  assert.ok(/activeDeadline/.test(strat), '还要尊重 fillDate 的活动预算');
+  assert.ok(/superUsable/.test(strat), '十年箭头不能死循环，需降级判定');
 });
 
 
@@ -2134,9 +2140,213 @@ test('v1.5.16: 填写前等表单稳定（懒挂载）', () => {
   assert.ok(/await waitForFormSettle\(/.test(src), '接进 fillFromProfile');
 });
 
+test('v1.5.17 日期能力层：统一模型', () => {
+  const cases = [
+    ['2023-09-21', { y: '2023', m: '9', d: '21', precision: 'day' }],
+    ['2023/9/21', { y: '2023', m: '9', d: '21', precision: 'day' }],
+    ['2023年9月21日', { y: '2023', m: '9', d: '21', precision: 'day' }],
+    ['2023-09-01T00:00:00', { y: '2023', m: '9', d: '1', precision: 'day' }],
+    ['2023-09', { y: '2023', m: '9', d: null, precision: 'month' }],
+    ['2023年9月', { y: '2023', m: '9', d: null, precision: 'month' }],
+    ['2023', { y: '2023', m: null, precision: 'month' }],
+    ['至今', { precision: 'open', open: true }],
+    ['Present', { precision: 'open', open: true }],
+    ['', { precision: 'unknown' }]
+  ];
+  for (const [input, want] of cases) {
+    const got = DateCap.parseModel(input);
+    for (const k of Object.keys(want)) {
+      assert.equal(got[k], want[k], `${input} 的 ${k}`);
+    }
+  }
+});
+
+test('v1.5.17 日期能力层：精度判级（降级要能看见）', () => {
+  const L = (a, b) => DateCap.matchLevel(a, b).level;
+  // 精确
+  assert.equal(L('2023-09-21', '2023-09-21'), 'exact');
+  assert.equal(L('2023-09', '2023-09'), 'exact');
+  // 允许的降级：期望只有年月，控件只能选到某天
+  assert.equal(L('2023-09-01', '2023-09'), 'day-approx');
+  // 不可接受：控件把日丢了
+  assert.equal(L('2023-09', '2023-09-21'), 'month-only');
+  // 红线：年月不一致
+  assert.equal(L('2023-08-21', '2023-09-21'), 'mismatch');
+  assert.equal(L('2022-09-21', '2023-09-21'), 'mismatch');
+  assert.equal(L('', '2023-09'), 'mismatch');
+  // 只到年
+  assert.equal(L('2023-01', '2023'), 'month-only');
+  // 可接受集合
+  assert.equal(DateCap.isAcceptable('exact'), true);
+  assert.equal(DateCap.isAcceptable('day-approx'), true);
+  assert.equal(DateCap.isAcceptable('month-only'), false);
+  assert.equal(DateCap.isAcceptable('mismatch'), false);
+});
+
+test('v1.5.17 日期能力层：模型折成写值格式', () => {
+  assert.equal(DateCap.toYmd(DateCap.parseModel('2023-09')), '2023-09-01');
+  assert.equal(DateCap.toYmd(DateCap.parseModel('2023-09-21')), '2023-09-21');
+  assert.equal(DateCap.toYm(DateCap.parseModel('2023-09-21')), '2023-09');
+  assert.equal(DateCap.toParts(DateCap.parseModel('2023')) , null, '只有年不产出可写 parts');
+});
+
+test('v1.5.17 日期能力层：策略顺序固定（先精确后降级）', () => {
+  const order = DateCap.STRATEGY_ORDER;
+  assert.equal(order[0], 'native-input');
+  assert.ok(order.indexOf('fiber-props') < order.indexOf('panel-nav'), 'fiber 直写先于面板导航');
+  assert.ok(order.indexOf('panel-input') < order.indexOf('grid-click'), '面板输入框先于点格子');
+  assert.equal(order[order.length - 1], 'give-up');
+  assert.ok(order.indexOf('confirm') === order.length - 2, '确认按钮在放弃之前');
+});
+
+test('v1.5.17 autofill 已接入能力层（不是各写一份）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(src.includes('ResumeAutofillDate'), '拿到能力层句柄');
+  assert.ok(/function dateMatchLevel[\s\S]{0,200}D\.matchLevel/.test(src), 'dateMatchLevel 委托能力层');
+  assert.ok(/function parseDateParts[\s\S]{0,160}D\.parseModel/.test(src), 'parseDateParts 委托能力层');
+  assert.ok(src.includes('degradedDates'), '降级项要能带出来');
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  const js = manifest.content_scripts[0].js;
+  assert.ok(js.indexOf('shared/date-capability.js') !== -1, '能力层已进 content_scripts');
+  assert.ok(js.indexOf('shared/date-capability.js') < js.indexOf('content/autofill.js'), '能力层先于 autofill 注入');
+});
+
+test('v1.5.18 日期策略层：顺序 / 注册 / 判别', () => {
+  const S = require(path.join(root, 'shared/date-strategies.js'));
+  assert.equal(typeof S.fillDate, 'function');
+  assert.equal(typeof S.register, 'function');
+  // 顺序表来自能力层，两层不能各存一份
+  assert.deepEqual(S.STRATEGY_ORDER, DateCap.STRATEGY_ORDER);
+  // 内置四类通用策略必须在册
+  const avail = S.available();
+  ['native-input', 'native-selects', 'panel-nav', 'grid-click'].forEach((id) => {
+    assert.ok(avail[id] && avail[id].length >= 1, '内置策略 ' + id);
+  });
+  // 注册：合法槽位可叠加，非法 id 拒收
+  assert.equal(S.register('panel-nav', async () => true), true);
+  assert.equal(S.available()['panel-nav'].length, 2, '同槽位可叠加（内置在前）');
+  assert.equal(S.register('not-a-slot', async () => true), false, '顺序表外的 id 不收');
+});
+
+test('v1.5.19 AI 白名单：简历值不出本机', () => {
+  const prof = {
+    name: '戴运升', email: 'secret@example.com', phone: '18998683413',
+    idNumber: '441701200409210032', birthday: '2004-09-21', currentCity: '',
+    eduList: [{ school: '广东工业大学' }]
+  };
+  const fields = [
+    { index: 0, label: '电子邮箱', controlType: 'text' },
+    { index: 1, label: '学历', controlType: 'select', options: [{ text: '本科' }, { text: '硕士' }] }
+  ];
+  const body = AI.buildAiRequestBody({ enabled: true }, prof, fields);
+  const raw = JSON.stringify(body);
+  // 红线：整份请求里不许出现任何简历值
+  ['戴运升', 'secret@example.com', '18998683413', '441701200409210032', '2004-09-21', '广东工业大学'].forEach((v) => {
+    assert.equal(raw.indexOf(v), -1, '请求里不该出现值：' + v);
+  });
+  // 但要有键目录（只有键名）+ 字段标签 + 选项文本（payload 是嵌在 message 里的 JSON 字符串）
+  const payload = JSON.parse(body.messages[1].content);
+  assert.ok(Array.isArray(payload.keys) && payload.keys.length > 0, '带键目录');
+  const keyNames = payload.keys.map((k) => k.key);
+  assert.ok(keyNames.includes('name') && keyNames.includes('email'), '键名可见');
+  assert.ok(keyNames.includes('eduList'), '多段经历以列表键出现');
+  assert.equal(keyNames.includes('currentCity'), false, '空值键不进目录');
+  assert.equal(payload.fields[0].label, '电子邮箱', '字段标签可见');
+  assert.deepEqual(payload.fields[1].options, ['本科', '硕士'], '选项文本可见');
+  // 默认就是白名单
+  assert.equal(AI.normalizeAiSettings({}).mode, 'whitelist');
+  // full 模式仍保留（用户显式选择），用于开放题
+  const full = JSON.stringify(AI.buildAiRequestBody({ mode: 'full' }, prof, fields));
+  assert.ok(full.includes('secret@example.com'), 'full 模式才发值');
+});
+
+test('v1.5.19 填写审计：能区分「一致 / 近似 / 读不回 / 错填」', () => {
+  const R = (e) => Audit.compareEntry(e);
+  assert.equal(R({ key: 'email', expected: 'a@b.c', actual: 'a@b.c' }).status, 'ok');
+  // 日期：月精度被补日 → 近似（合法降级）
+  assert.equal(R({ key: 'eduStart', expected: '2023-09', actual: '2023-09-01' }).status, 'approx');
+  // 日期：跨月 → 错填
+  assert.equal(R({ key: 'eduStart', expected: '2023-09', actual: '2023-08-01' }).status, 'mismatch');
+  // 值没进去 → 读不回
+  assert.equal(R({ key: 'phone', expected: '189', actual: '' }).status, 'empty');
+  // 学校名多出来的后缀是另一所学校 → 必须判错填（这条以前被「包含即近似」放过）
+  assert.equal(R({ key: 'school', expected: '广东工业大学', actual: '广东工业大学华立学院' }).status, 'mismatch');
+  // 专业被页面加了「(类别)(层次)(地区)」消歧后缀 → 近似（wecruit 实测）
+  assert.equal(R({ key: 'major', expected: '自动化', actual: '自动化(自动化类)(普通本科)(中国大陆)' }).status, 'approx');
+  // 但「后缀」不是括号时仍然算另一所学校/另一个值 → 错填
+  assert.equal(R({ key: 'school', expected: '广东工业大学', actual: '广东工业大学华立学院' }).status, 'mismatch');
+  // 枚举字段的页面长标签 → 近似
+  assert.equal(R({ key: 'eduDegree', expected: '本科', actual: '本科（学士）' }).status, 'approx');
+  // 行政区截断 → 近似
+  assert.equal(R({ key: 'province', expected: '广东省阳江市', actual: '阳江市' }).status, 'approx');
+
+  const sum = Audit.auditEntries([
+    { key: 'email', expected: 'a@b.c', actual: 'a@b.c' },
+    { key: 'phone', expected: '189', actual: '' },
+    { key: 'school', expected: '广东工业大学', actual: '华立学院' }
+  ]);
+  assert.equal(sum.checked, 3);
+  assert.equal(sum.ok, 1);
+  assert.equal(sum.empty, 1);
+  assert.equal(sum.mismatch, 1);
+  assert.equal(sum.wrongFill, 1);
+  assert.equal(sum.okAll, false);
+  assert.ok(sum.problems.length >= 2, '问题项要列出来');
+});
+
+test('v1.5.19 诊断字段必须透传（否则悬浮窗永远看不到）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  // handleFill 是白名单式重组，漏一个字段 = 该字段永远 undefined（degradedDates 就这么丢过）
+  const handle = src.slice(src.indexOf('async function handleFill'), src.indexOf('async function handleFill') + 1200);
+  ['degradedDates', 'dateTries', 'audit', 'auditRecords'].forEach((k) => {
+    assert.ok(handle.indexOf(k) !== -1, 'handleFill 透传 ' + k);
+  });
+  // 审计在册点：至少覆盖 日期组 / 弹窗选择器 / 单选 / 起止合体
+  const calls = (src.match(/recordFill\(/g) || []).length;
+  assert.ok(calls >= 8, 'recordFill 调用点 ' + calls + ' 个（至少覆盖 8 个成功路径）');
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  const js = manifest.content_scripts[0].js;
+  assert.ok(js.indexOf('shared/audit.js') !== -1, 'audit 已注入');
+  assert.ok(js.indexOf('shared/audit.js') < js.indexOf('content/autofill.js'), 'audit 先于 autofill');
+});
+
+test('v1.5.20 联动下拉：语种 → 语言等级', () => {
+  const Chain = require(path.join(root, 'shared/select-chain.js'));
+  assert.equal(typeof Chain.fillChain, 'function', '有链条填充');
+  assert.equal(typeof Chain.fillOne, 'function', '单级填充');
+  // 挑选项：精确 > 前缀 > 包含；不认识的返回 null（宁可留空也不乱填）
+  const pick = Chain.pickBest([{ text: 'CET-4' }, { text: 'CET-6' }, { text: '雅思' }], 'CET-6');
+  assert.equal(pick.text, 'CET-6');
+  assert.equal(Chain.pickBest([{ text: 'CET-4' }], 'N1'), null, '没有匹配项就不选');
+  assert.equal(Chain.pickBest([{ text: '英语' }], '英语').text, '英语');
+  // 页面侧已接入
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(src.includes('fillLinkedSelectChains'), 'fillFromProfile 里要调链条');
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  const js = manifest.content_scripts[0].js;
+  assert.ok(js.indexOf('shared/select-chain.js') !== -1, 'select-chain 已注入');
+  assert.ok(js.indexOf('shared/select-chain.js') < js.indexOf('content/autofill.js'), 'select-chain 先于 autofill');
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
+
+// 串联 DOM 行为基线（Playwright；没装 playwright 只警告不阻塞）
+{
+  console.log('');
+  console.log('—— run-dom-tests.mjs（真实浏览器行为基线）——');
+  const child = spawnSync(process.execPath, [path.join(__dirname, 'run-dom-tests.mjs')], {
+    encoding: 'utf8',
+    cwd: root
+  });
+  if (child.stdout) process.stdout.write(child.stdout);
+  if (child.stderr) process.stderr.write(child.stderr);
+  if (child.status && !/找不到 playwright/.test(String(child.stderr || '') + String(child.stdout || ''))) {
+    process.exit(child.status);
+  }
+  if (child.status) console.log('（跳过：本机没装 playwright）');
+}
 
 // 串联简历解析套件（独立计数，失败则整体非零退出）
 {

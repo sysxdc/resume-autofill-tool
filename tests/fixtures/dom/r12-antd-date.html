@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><title>R12 Ant Design 日面板（2020年 3月 + 一二三四五六日）</title>
+<style>
+ body{font-family:system-ui;padding:24px;background:#1b1d21;color:#d7dbe0}
+ .ant-form-item{margin-bottom:16px}
+ .ant-form-item-label{font-size:13px;color:#a0a8b3;margin-bottom:6px}
+ .ant-picker{display:inline-flex;align-items:center;width:320px;padding:6px 11px;border:1px solid #3a3f47;border-radius:6px;background:#24272c}
+ .ant-picker input{border:0;background:transparent;color:#e8ecf1;outline:none;width:100%}
+ .ant-picker-dropdown{display:none;position:absolute;z-index:50;width:320px;background:#23262b;border:1px solid #3a3f47;border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:8px}
+ .ant-picker-header{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 8px}
+ .ant-picker-header button{border:0;background:none;color:#aab2bd;cursor:pointer;font-size:13px;padding:2px 6px}
+ .ant-picker-content{width:100%;border-collapse:collapse}
+ .ant-picker-content th{font-size:12px;color:#8d96a1;padding:5px 0;font-weight:500}
+ .ant-picker-content td{text-align:center;padding:6px 0;font-size:13px;cursor:pointer;border-radius:50%}
+ .ant-picker-content td:hover{background:#33383f}
+ .ant-picker-cell-out{color:#5a616b}
+ .ant-picker-cell-selected{background:#2f6fed;color:#fff}
+</style></head>
+<body>
+<div class="ant-form-item">
+  <div class="ant-form-item-label">出生日期</div>
+  <div class="ant-picker" id="p1"><input id="birth" readonly placeholder="请选择日期" /></div>
+</div>
+<div class="ant-form-item">
+  <div class="ant-form-item-label">应聘职位</div>
+  <input name="JOB_OBJECTIVE" style="width:320px;padding:7px;border:1px solid #3a3f47;border-radius:6px;background:#24272c;color:#e8ecf1" />
+</div>
+
+<div class="ant-picker-dropdown" id="dd">
+  <div class="ant-picker-panel">
+    <div class="ant-picker-header">
+      <button type="button" class="ant-picker-header-super-prev-btn">«</button>
+      <button type="button" class="ant-picker-header-prev-btn">‹</button>
+      <div class="ant-picker-header-view"><span id="hy">2020</span>年 <span id="hm">3</span>月</div>
+      <button type="button" class="ant-picker-header-next-btn">›</button>
+      <button type="button" class="ant-picker-header-super-next-btn">»</button>
+    </div>
+    <table class="ant-picker-content">
+      <thead><tr><th>日</th><th>一</th><th>二</th><th>三</th><th>四</th><th>五</th><th>六</th></tr></thead>
+      <tbody id="tb"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  var view = { y: 2020, m: 3 };
+  var target = null;
+  var dd = document.getElementById('dd');
+
+  function render() {
+    document.getElementById('hy').textContent = view.y;
+    document.getElementById('hm').textContent = view.m;
+    var first = new Date(view.y, view.m - 1, 1).getDay();
+    var dim = new Date(view.y, view.m, 0).getDate();
+    var pdim = new Date(view.y, view.m - 1, 0).getDate();
+    var cells = [];
+    for (var i = first - 1; i >= 0; i--) cells.push({ d: pdim - i, out: 1 });
+    for (var d = 1; d <= dim; d++) cells.push({ d: d, out: 0 });
+    while (cells.length % 7) cells.push({ d: cells.length - first - dim + 1, out: 1 });
+    while (cells.length < 42) cells.push({ d: cells.length - first - dim + 1, out: 1 });
+    var tb = document.getElementById('tb');
+    tb.innerHTML = '';
+    for (var r = 0; r < 6; r++) {
+      var tr = document.createElement('tr');
+      for (var c = 0; c < 7; c++) {
+        var cell = cells[r * 7 + c];
+        var td = document.createElement('td');
+        td.className = 'ant-picker-cell ' + (cell.out ? 'ant-picker-cell-out' : 'ant-picker-cell-in-view');
+        var inner = document.createElement('div');
+        inner.className = 'ant-picker-cell-inner';
+        inner.textContent = String(cell.d);
+        td.appendChild(inner);
+        (function (day, out) {
+          td.addEventListener('click', function () {
+            if (out || !target) return;
+            target.value = view.y + '-' + ('0' + view.m).slice(-2) + '-' + ('0' + day).slice(-2);
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+            target.dispatchEvent(new Event('change', { bubbles: true }));
+            dd.style.display = 'none';
+          });
+        })(cell.d, cell.out);
+        tr.appendChild(td);
+      }
+      tb.appendChild(tr);
+    }
+  }
+
+  function openFor(input) {
+    target = input;
+    var r = input.closest('.ant-picker').getBoundingClientRect();
+    dd.style.left = r.left + 'px';
+    dd.style.top = (r.bottom + scrollY + 4) + 'px';
+    dd.style.display = 'block';
+    render();
+  }
+  document.getElementById('birth').addEventListener('focus', function () { openFor(this); });
+
+  document.querySelector('.ant-picker-header-super-prev-btn').addEventListener('click', function () { view.y -= 10; render(); });
+  document.querySelector('.ant-picker-header-super-next-btn').addEventListener('click', function () { view.y += 10; render(); });
+  document.querySelector('.ant-picker-header-prev-btn').addEventListener('click', function () { view.m--; if (view.m < 1) { view.m = 12; view.y--; } render(); });
+  document.querySelector('.ant-picker-header-next-btn').addEventListener('click', function () { view.m++; if (view.m > 12) { view.m = 1; view.y++; } render(); });
+  render();
+</script>
+</body></html>

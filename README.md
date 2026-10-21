@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.5.16**
+当前版本：**1.5.20**
 
 ## 功能概览
 
@@ -140,13 +140,40 @@ python3 -m http.server 8765
 # 浏览器打开 http://localhost:8765/demo/job-application.html
 ```
 
-## 自动化测试（无需 Chrome）
+## 自动化测试
 
 ```bash
-node tests/run-tests.mjs
+node tests/run-tests.mjs        # 三套一起跑
+node tests/run-dom-tests.mjs    # 只跑真实浏览器里的控件行为基线
 ```
 
-覆盖：关键词与同义模糊、denylist、姓名拆分、`profileValue`、select 匹配、**AI merge 纯函数（无网络）**、manifest / 选项页 / 弹窗结构等。零第三方依赖。
+三套分层，各管一件事，别再混着看：
+
+| 套件 | 断言什么 | 能不能证明「填得对」 |
+|---|---|---|
+| `tests/run-tests.mjs`（186 项） | 关键词/模糊评分、denylist、`profileValue`、select 匹配、AI merge 纯函数、manifest 结构 | **不能**，只做 smoke：防手滑删类名/常量 |
+| `tests/run-dom-tests.mjs`（20 项 + `fixtures/dom/*.html`） | 真实 Chromium 里「怎么打开 / 怎么写进去 / 回读是什么 / 有什么坑」 | 能，这是唯一的行为证据 |
+| `tests/resume-parser.test.mjs`（20 项） | 简历文本 → 结构化 profile | 能（解析域） |
+
+### 为什么要有 DOM 基线
+
+历史上 174 条单测全是对源码字符串断言（`assert.ok(src.includes('.ant-calendar-picker'))`），改一行类名就绿，真实站点照样填不上——「改好了 → 实测还是不行」的重演根因就在这。
+
+`fixtures/dom/` 里是自包含的控件复刻页（无 CDN、无真实个人信息），每个包住一类组件和一个真实的坑：
+
+| fixture | 组件 | 锁住的坑 |
+|---|---|---|
+| `wecruit-antd3-select.html` | antd v3 远程搜索下拉 | 隐藏 input 存 `0/20000/20001` 编码值 → 「是否已填」不能看它；**点 li 不提交**，只有键盘 `ArrowDown`+`Enter` 才提交 |
+| `r11-antd-month.html` | antd 风格「只有年月」面板 | 绑的是 `focus` 不是 `click`，合成 click 打不开；年视图有「±1 年 / ±10 年」两种箭头 |
+| `r12-antd-date.html` | antd 风格年月日面板 | 表里混着非当月格子，点错会串月 |
+| `r1-en-datepicker.html` | 英文日历 + 上/下月导航 | 没有年视图，只能逐月点；42 格里有相邻月 |
+| `datepanel-replica.html` | 年表/月表/日表 | 不点「确定」不回写 |
+| `r5-wheel-picker.html` | 滚动轮 | 点选后还要「确定」才提交 |
+| `r4-paginated-select.html` | 分页下拉 | 点选项立即提交，无需确认 |
+| `r3-ymd-selects.html` | 年/月/日 三个原生 select | 年、月 value 不补零，日补零——统一补零写不进去 |
+| `calendargrid-replica.html` | 日历网格 | 年箭头与月箭头语义不同，不能混用 |
+
+**新增控件的规矩**：先写 fixture（复刻出那个坑），再写策略；策略合并时必须让对应用例从红转绿。只有源码字符串断言的改动不算修好。
 
 ## 目录结构
 
@@ -194,7 +221,143 @@ resume-autofill-tool/
 - **北森「面试站点」不会硬填**：选项常是「XX 大学（线下站）」这类宣讲站点，档案里没有对应数据，
   宁可不填也不猜；提交前手动选一下。
 
+## 填写审计（`shared/audit.js`）
+
+填完之后把「我们以为填进去的值」和「页面真实显示的值」逐项对一遍，纯本地比较、不发网络：
+
+```
+已填 18 项；校验 6/15 一致，29 处空着
+AUDIT { ok: 6, approx: 9, empty: 0, wrong: 0 }   ← wrong 必须永远是 0
+```
+
+| 状态 | 含义 | 处理 |
+|---|---|---|
+| `ok` | 页面值与档案一致 | 通过 |
+| `approx` | `day-approx`（月精度补日）、`code-suffix`（专业被加「(自动化类)(普通本科)」）、`truncated`、`option-longer` | 通过但标注 |
+| `empty` | 写了但读不回值（值进了搜索框 / 点 li 不提交 / 受控组件把值吞了） | 列进「没填上」，**不是**已填 |
+| `mismatch` | 页面显示的是另一个值 | **红线**，列进 `skipped` 并要求人工处理 |
+
+判断收紧过两次，都是为了不放过"看起来像"：
+
+- 「包含即近似」会把 `广东工业大学` vs `广东工业大学华立学院`（另一所学校）判成通过 → 现在只有**括号后缀**才算消歧后缀
+- 日期判级复用 `date-capability`，所以 `2023-09 → 2023-09-01` 是 `approx`，`2023-08 → 2023-09` 是 `mismatch`
+
+审计的在册点：主输入框、自定义下拉、只读日期控件、日期组、弹窗选择器（专业/学校）、单选组、起止时间合体控件。
+
+## 日期策略层（`shared/date-strategies.js`）
+
+能力层回答「期望值/回读值差到什么程度」，策略层回答「按什么顺序试、每步怎么验、失败了记什么」：
+
+```js
+S.fillDate(input, '2024-03-15', { perStrategyMs: 4000 })
+// → { ok, level:'exact'|'day-approx'|'month-only'|'mismatch', strategy:'grid-click',
+//     attempts:[{id:'native-input',level:'n/a'}, {id:'panel-nav',level:'exact'}], value }
+```
+
+- **顺序固定**：`native-input → native-selects → fiber-props → panel-input → panel-nav → keyboard-pick → grid-click → confirm`
+- **每步写完立刻回读判级**：`exact` 立即停；可接受但非 `exact` 记 best 后继续找更精确的；全失败 → `ok:false` **留空**
+- **同槽位可叠加**：内置实现先跑，返回 `false` 才跑注册进来的 → antd 的 `panel-nav` 不会顶掉通用「年/月/日表格」，反之亦然
+- **站点扩展只写策略，不改顺序**：`autofill.js` 里 `S.register('panel-nav', tryAntdPanel)` 这样一行即可
+- **预算护栏**：`perStrategyMs` 上限 + 模块活动预算，翻月/翻年这类长循环必须尊重它
+  （曾因为一个难缠控件吃掉全部预算，把 7 个日期字段拖到整轮超时）
+
+`content/autofill.js` 里原先 20 多个并列 `tryXxx` 的顺序判断已收敛到这一处：
+`fillReadonlyPickerAntd` 现在是「打开面板 → `S.fillDate(4 个槽位)` → 不行再走候选路径」。
+
+## 日期能力层（`shared/date-capability.js`）
+
+日期控件是网申里最花的一类：同一个「2023-09」，有的站点要选年月、有的必须选到某天、
+有的只给三个原生 select、有的要翻年视图再翻月。历史上每个站点都加一个 `tryXxx`，
+`content/autofill.js` 里堆了 20 多个并列分支。能力层把与站点无关的四件事固定下来：
+
+```js
+Date.parseModel('2023-09')     // → { y:'2023', m:'9', d:null, precision:'month' }
+Date.parseModel('至今')         // → { precision:'open', open:true }
+Date.matchLevel('2023-09-01', '2023-09')  // → 'day-approx'（允许的降级）
+Date.matchLevel('2023-08-01', '2023-09')  // → 'mismatch'（红线：错填）
+Date.probeControl(inputEl)     // → { kind:'antd-picker'|'antd-v3-calendar'|'native-select-group'|…, hints }
+Date.STRATEGY_ORDER            // native-input → native-selects → fiber-props → panel-input
+                               // → panel-nav → keyboard-pick → grid-click → confirm → give-up
+```
+
+**精度判级就是「零错填」红线的落地方式**：
+
+| 等级 | 含义 | 处理 |
+|---|---|---|
+| `exact` | 年月日都对上（或都只有年月） | 算成功 |
+| `day-approx` | 期望只有年月，控件只能选到某天，补了 1 号 | 算成功，但进 `degradedDates` 标注 |
+| `month-only` | 期望有日，控件只给年月，日被吃掉 | 算成功但标注（日粒度信息丢失） |
+| `mismatch` | 年或月不一致 | **红线**，回滚/留空 |
+
+填完结果里 `degradedDates: [{ key, actual, want, level }]` 会一路带到悬浮窗
+（`#__ra_panel_host__.dataset.lastResult`），降级不再静默。
+
 ## Changelog
+
+### 1.5.20
+
+- **单源化**：`autofill.js` 里 `findDatePanel / numericGroups / clickPanelItem / clickPanelConfirm /
+  gridHeader / pickArrow / setPanelPeriod / gridNavigate / gridClickDay / isCalendarGrid /
+  expandToActionableHost / looksLikeWeekHeader` 的兜底副本全部删除，只留一行委托 +
+  `DATE_PANEL_SEL / CN_MONTH / EN_MONTH` 三个已搬走的常量也清掉（真实现只在 `shared/date-strategies.js`）。
+- **联动下拉** 新增 `shared/select-chain.js`：`fillChain([{host,value}…])` 按顺序填，
+  每级回读通过才继续，下一级以「选项集合发生变化」为就绪信号（不是死等固定 sleep）。
+  `fillFromProfile` 用它填「语种 → 语言等级」（`langName → langLevel`）。
+  直接写第二级必然失败——因为选项还没生成，这条现在有 fixture 和用例守着。
+- 三个旧用例的断言目标从 `content/autofill.js` 改到 `shared/date-strategies.js`（实现已搬家）。
+- 测试：主套件 189、DOM 基线 **26**（新增 `r17-lang-linked` 三条：直接写第二级失败 /
+  按顺序成功 / 换语种后等级选项跟着换）、解析 20 全绿。
+- 真实 wecruit 回归：18 项、`wrong=0` 不变；该页语种/等级由站点预置（档案无 `langName`），链条自动跳过。
+
+### 1.5.19
+
+- **AI 请求改成白名单** `shared/ai.js`：默认 `mode: 'whitelist'`，请求里只有
+  「页面字段标签 + 控件类型 + 选项文本 + 你填过的键名」，**简历值一律不出本机**；
+  模型只回 `profileKey`，值由本地 `mergeAiMappingWithProfile` 按 key 取。
+  旧行为（发整份 profile，含证件号/手机/住址）保留为 `mode: 'full'`，需在选项页显式选择。
+  选项页新增「发送内容」选择器。
+- **新增填写审计** `shared/audit.js`：填完逐项比对「期望值 vs 页面真实值」，输出
+  `ok / approx / empty / mismatch`；`mismatch` 会追加进 `skipped` 并在悬浮窗状态行报数。
+  审计在册点：主输入框、自定义下拉、只读日期控件、日期组、弹窗选择器、单选组、起止合体控件。
+- **修掉一个让诊断永远失效的缺陷**：`handleFill` 是白名单式重组结果，`degradedDates` /
+  `dateTries` / `audit` 这些字段没被透传 → 悬浮窗永远看不到（1.5.17 写的 `degraded` 其实一直没生效）。
+  现在显式透传，并在注释里写清「漏一个 = 该字段永远 undefined」。
+- 审计判据收紧：`广东工业大学` vs `广东工业大学华立学院` 判错填（另一所学校）；
+  只有括号消歧后缀（`自动化(自动化类)(普通本科)(中国大陆)`）才算近似。
+- 测试：主套件 188、DOM 基线 23（新增 3 条审计用例，含「只输入不提交 → 判读不回」）、解析 20 全绿。
+- 真实 wecruit 实测：`已填 18 项；校验 6/15 一致`，`wrong: 0`，9 条 approx 全部标注
+  （6 条专业消歧后缀 + 3 条月精度补日）。
+
+### 1.5.18
+
+- **新增日期策略层** `shared/date-strategies.js`：`fillDate()` 按 `STRATEGY_ORDER` 依次试、
+  每步回读判级、`exact` 即停、可接受非精确记 best、全失败留空；`register()` 让站点特有实现
+  （antd v3 面板 / fiber 直写 / antd 面板 / 日格）挂到固定槽位，同槽位内置在前、注册在后。
+- **收编原 `autofill.js` 里的日期工具**：`findDatePanel` / `numericGroups` / `clickPanelItem` /
+  `clickPanelConfirm` / `gridHeader` / `pickArrow` / `setPanelPeriod` / `gridNavigate` /
+  `gridClickDay` / `isCalendarGrid` / `expandToActionableHost` / `looksLikeWeekHeader` 统一搬进策略层，
+  页面侧改为委托（保留旧函数名，调用点不动）。
+- `fillReadonlyPickerAntd` 的 4 段 if 链换成一次 `S.fillDate(['fiber-props','panel-input','panel-nav','grid-click'])`。
+- **修掉一个会挂死整轮填充的缺陷**：只读控件的异步策略链里如果抛异常，`resolve` 永远不会被调用，
+  悬浮窗就停在「正在填写…」。现在整段包了 try/catch，异常时记录 `dateTries` 并 `resolve(false)`。
+- 预算护栏：`perStrategyMs`（默认 4000ms）+ 模块活动预算，翻月/翻年循环必须提前退出。
+- DOM 基线 14 → **20 条**：新增 6 条直接跑 `fillDate` 的用例——三个原生 select 合起来判级、
+  年/月/日表格、英文日历翻月、网格年+月箭头、**只有年月的面板搞不定就留空（零错填）**、
+  **注册一个站点策略后同一个控件就能填**。
+- 真实 wecruit 回归：17–18 项照旧填上（页面自带值的字段会被跳过，计数会浮动），`degradedDates` 为空。
+
+### 1.5.17
+
+- **新增日期能力层** `shared/date-capability.js`（manifest content_scripts 里排在 `autofill.js` 之前）：
+  统一模型 `parseModel`（年月日 / 只有年月 / 至今 / ISO 时间尾巴）、精度判级 `matchLevel`
+  （`exact` / `day-approx` / `month-only` / `mismatch`）、控件探测 `probeControl`（纯观察不点击）、
+  固定策略顺序 `STRATEGY_ORDER`。
+- `autofill.js` 的 `parseDateParts` / `dateValueMatches` 改为委托能力层；新增 `dateMatchLevel`。
+  **`mismatch` 一律不算填上**（零错填红线），`day-approx` / `month-only` 照旧填但记进 `degradedDates`。
+- 悬浮窗诊断数据新增 `degraded` 字段，降级精度可见。
+- DOM 基线扩到 **14 条**：新增 5 条能力层用例，直接在真实控件上验证
+  `probeControl`（antd v4/v5 / 三个原生 select / 下拉）与 `matchLevel`（月精度 exact、日精度 month-only、跨月 mismatch、补日 day-approx）。
+- 真实站点回归（wecruit）：仍为**已填 18 项**，`degradedDates` 为空（该页日期都是精确匹配），无回归。
 
 ### 1.5.16
 

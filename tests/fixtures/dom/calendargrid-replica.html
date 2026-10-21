@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>日历网格日期面板复刻（‹‹ ‹ 十月 2026 › ››）</title>
+<style>
+  body { font-family: system-ui, sans-serif; padding: 24px; background: #1b1d21; color: #d7dbe0; }
+  .field { margin-bottom: 16px; }
+  .field > label { display: block; font-size: 13px; color: #98a0aa; margin-bottom: 5px; }
+  input[readonly] { width: 300px; padding: 9px; border: 1px solid #3a3f47; border-radius: 6px;
+                    background: #24272c; color: #e8ecf1; }
+  .el-picker-panel { display: none; position: absolute; z-index: 30; width: 322px; background: #23262b;
+                     border: 1px solid #3a3f47; border-radius: 8px; padding: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+  .el-date-picker__header { display: flex; align-items: center; justify-content: center; gap: 8px; position: relative;
+                            padding: 4px 0 10px; }
+  .el-picker-panel__icon-btn { background: none; border: 0; color: #aab2bd; cursor: pointer; font-size: 14px; padding: 2px 4px; }
+  .el-date-picker__header-label { display: flex; gap: 14px; background: #2f333a; padding: 5px 26px; border-radius: 4px;
+                                  font-weight: 600; letter-spacing: 1px; }
+  .el-date-table { width: 100%; border-collapse: collapse; }
+  .el-date-table th { font-size: 12px; color: #9aa3ad; padding: 7px 0; font-weight: 500; }
+  .el-date-table td { text-align: center; padding: 7px 0; font-size: 13px; cursor: pointer; border-radius: 50%; }
+  .el-date-table td.prev-month, .el-date-table td.next-month { color: #5a616b; }
+  .el-date-table td.available:hover { background: #33383f; }
+  .el-date-table td.current { background: #2f6fed; color: #fff; }
+  .el-picker-panel__footer { display: flex; justify-content: flex-end; gap: 10px; padding-top: 12px; border-top: 1px solid #34383f; margin-top: 8px; }
+  .el-picker-panel__footer button { padding: 6px 16px; border-radius: 4px; border: 1px solid #454b54;
+                                    background: #2b2f35; color: #cfd6de; cursor: pointer; }
+  .el-picker-panel__footer button.primary { background: #2f6fed; border-color: #2f6fed; color: #fff; }
+</style>
+</head>
+<body>
+<div class="field"><label>出生日期*</label>
+  <input id="bd" type="text" readonly placeholder="请选择" />
+</div>
+<div class="field"><label>应聘职位*</label>
+  <input type="text" name="JOB_OBJECTIVE" />
+</div>
+
+<div class="el-picker-panel el-date-picker" id="picker">
+  <div class="el-date-picker__header">
+    <button type="button" class="el-picker-panel__icon-btn d-arrow-left" title="上一年">‹‹</button>
+    <button type="button" class="el-picker-panel__icon-btn arrow-left" title="上个月">‹</button>
+    <div class="el-date-picker__header-label"><span id="hMonth">十月</span><span id="hYear">2026</span></div>
+    <button type="button" class="el-picker-panel__icon-btn arrow-right" title="下个月">›</button>
+    <button type="button" class="el-picker-panel__icon-btn d-arrow-right" title="下一年">››</button>
+  </div>
+  <table class="el-date-table">
+    <thead><tr><th>日</th><th>一</th><th>二</th><th>三</th><th>四</th><th>五</th><th>六</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <div class="el-picker-panel__footer">
+    <button type="button" id="clearBtn">清空</button>
+    <button type="button" id="todayBtn">今天</button>
+    <button type="button" id="okBtn" class="primary">确定</button>
+  </div>
+</div>
+
+<script>
+  var CN = ["一月","二月","三月","四月","五月","六月","七月","八月","九月","十月","十一月","十二月"];
+  var view = { y: 2026, m: 10 };   // 视图年月
+  var picked = null;               // 已点中的日期 {y,m,d}
+  var input = document.getElementById('bd');
+  var panel = document.getElementById('picker');
+
+  function pad(n) { return ('0' + n).slice(-2); }
+
+  function render() {
+    document.getElementById('hMonth').textContent = CN[view.m - 1];
+    document.getElementById('hYear').textContent = String(view.y);
+
+    var first = new Date(view.y, view.m - 1, 1);
+    var startDow = first.getDay();
+    var daysInMonth = new Date(view.y, view.m, 0).getDate();
+    var prevDays = new Date(view.y, view.m - 1, 0).getDate();
+
+    var cells = [];
+    for (var i = startDow - 1; i >= 0; i--) cells.push({ d: prevDays - i, cls: 'prev-month' });
+    for (var d = 1; d <= daysInMonth; d++) cells.push({ d: d, cls: 'available' });
+    while (cells.length % 7 !== 0) cells.push({ d: cells.length - startDow - daysInMonth + 1, cls: 'next-month' });
+    while (cells.length < 42) cells.push({ d: cells.length - startDow - daysInMonth + 1, cls: 'next-month' });
+
+    var tb = document.getElementById('tbody');
+    tb.innerHTML = '';
+    for (var r = 0; r < cells.length / 7; r++) {
+      var tr = document.createElement('tr');
+      for (var c = 0; c < 7; c++) {
+        var cell = cells[r * 7 + c];
+        var td = document.createElement('td');
+        td.textContent = String(cell.d);
+        td.className = cell.cls;
+        if (picked && picked.y === view.y && picked.m === view.m && picked.d === cell.d && /available/.test(cell.cls)) {
+          td.className += ' current';
+        }
+        tr.appendChild(td);
+      }
+      tb.appendChild(tr);
+    }
+  }
+
+  input.addEventListener('click', function () {
+    var r = input.getBoundingClientRect();
+    panel.style.left = r.left + 'px';
+    panel.style.top = (r.bottom + scrollY + 4) + 'px';
+    panel.style.display = 'block';
+    render();
+  });
+
+  document.querySelector('.d-arrow-left').addEventListener('click', function () { view.y -= 1; render(); });
+  document.querySelector('.d-arrow-right').addEventListener('click', function () { view.y += 1; render(); });
+  document.querySelector('.arrow-left').addEventListener('click', function () {
+    view.m -= 1; if (view.m < 1) { view.m = 12; view.y -= 1; } render();
+  });
+  document.querySelector('.arrow-right').addEventListener('click', function () {
+    view.m += 1; if (view.m > 12) { view.m = 1; view.y += 1; } render();
+  });
+
+  document.getElementById('tbody').addEventListener('click', function (e) {
+    var td = e.target.closest('td');
+    if (!td || !/available/.test(td.className)) return;
+    picked = { y: view.y, m: view.m, d: parseInt(td.textContent, 10) };
+    render();
+  });
+
+  document.getElementById('okBtn').addEventListener('click', function () {
+    if (!picked) { panel.style.display = 'none'; return; }
+    input.value = picked.y + '-' + pad(picked.m) + '-' + pad(picked.d);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    panel.style.display = 'none';
+  });
+  document.getElementById('todayBtn').addEventListener('click', function () {
+    var t = new Date();
+    view = { y: t.getFullYear(), m: t.getMonth() + 1 };
+    render();
+  });
+  document.getElementById('clearBtn').addEventListener('click', function () {
+    picked = null; input.value = ''; render();
+  });
+
+  render();
+</script>
+</body>
+</html>

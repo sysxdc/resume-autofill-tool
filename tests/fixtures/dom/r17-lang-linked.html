@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><title>语种 → 语言等级 联动下拉</title>
+<style>
+ body{font-family:system-ui;padding:24px}
+ .ant-form-item{display:flex;gap:12px;align-items:center;margin-bottom:14px}
+ .ant-form-item-label{width:120px;color:#666}
+ .ant-select{position:relative;width:260px;border:1px solid #d9d9d9;border-radius:4px;padding:6px 10px;min-height:32px;cursor:pointer}
+ .ant-select-selection__placeholder{color:#bfbfbf}
+ .ant-select-selection-selected-value{color:#333}
+ .ant-select-dropdown{position:absolute;width:260px;border:1px solid #e8e8e8;background:#fff;
+   box-shadow:0 2px 8px rgba(0,0,0,.15);display:none;z-index:9}
+ .ant-select-dropdown-menu{margin:0;padding:4px 0;list-style:none;max-height:200px;overflow:auto}
+ .ant-select-dropdown-menu-item{padding:6px 12px;cursor:pointer}
+ .ant-select-dropdown-menu-item:hover{background:#e6f7ff}
+ .disabled{opacity:.5;pointer-events:none}
+</style></head>
+<body>
+
+<!-- 复刻「语种 → 语言等级」两级联动：
+     1) 语种没选之前，语言等级是 disabled、选项为空
+     2) 选了语种，等级选项才会生成（英语 → CET-4/CET-6/雅思/托福；日语 → N1/N2/N3）
+     3) 直接写第二级无效：选项列表还没生成，点了也没用 -->
+<div class="ant-form-item">
+  <div class="ant-form-item-label"><label>语种*</label></div>
+  <div class="ant-select" id="lang">
+    <span class="ant-select-selection">
+      <span class="ant-select-selection__placeholder" id="lang-ph">请选择语种</span>
+      <span class="ant-select-selection-selected-value" id="lang-val" style="display:none"></span>
+    </span>
+  </div>
+</div>
+<div class="ant-form-item">
+  <div class="ant-form-item-label"><label>语言等级*</label></div>
+  <div class="ant-select disabled" id="level">
+    <span class="ant-select-selection">
+      <span class="ant-select-selection__placeholder" id="level-ph">请先选择语种</span>
+      <span class="ant-select-selection-selected-value" id="level-val" style="display:none"></span>
+    </span>
+  </div>
+</div>
+<ul class="ant-select-dropdown-menu" id="dd" style="position:fixed;display:none"></ul>
+
+<script>
+  var LEVELS = { '英语': ['CET-4', 'CET-6', '雅思', '托福'], '日语': ['N1', 'N2', 'N3'] };
+  var dd = document.getElementById('dd');
+  var lang = document.getElementById('lang');
+  var level = document.getElementById('level');
+  var state = { lang: '', level: '' };
+  var openFor = null;
+
+  function renderDropdown(items) {
+    dd.innerHTML = '';
+    items.forEach(function (t) {
+      var li = document.createElement('li');
+      li.className = 'ant-select-dropdown-menu-item';
+      li.textContent = t;
+      li.addEventListener('click', function () {
+        choose(openFor, t);
+      });
+      dd.appendChild(li);
+    });
+    var rect = (openFor === 'lang' ? lang : level).getBoundingClientRect();
+    dd.style.left = rect.left + 'px';
+    dd.style.top = (rect.bottom + 2) + 'px';
+    dd.style.display = items.length ? 'block' : 'none';
+  }
+
+  function close() { dd.style.display = 'none'; openFor = null; }
+
+  function choose(which, text) {
+    if (which === 'lang') {
+      state.lang = text;
+      document.getElementById('lang-val').textContent = text;
+      document.getElementById('lang-val').style.display = '';
+      document.getElementById('lang-ph').style.display = 'none';
+      // 选了语种，等级控件才可用、选项才生成
+      level.classList.remove('disabled');
+      document.getElementById('level-ph').textContent = '请选择语言等级';
+    } else {
+      state.level = text;
+      document.getElementById('level-val').textContent = text;
+      document.getElementById('level-val').style.display = '';
+      document.getElementById('level-ph').style.display = 'none';
+    }
+    close();
+  }
+
+  lang.addEventListener('click', function (e) {
+    e.stopPropagation();
+    openFor = 'lang';
+    renderDropdown(Object.keys(LEVELS));
+  });
+
+  level.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (level.classList.contains('disabled')) return;
+    openFor = 'level';
+    renderDropdown(LEVELS[state.lang] || []);   // 选项由上一级决定
+  });
+
+  document.addEventListener('click', function () { close(); });
+</script>
+</body></html>

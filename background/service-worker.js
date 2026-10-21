@@ -56,15 +56,9 @@ async function callLlmMap(settings, profile, fields) {
   var s = AI.normalizeAiSettings(settings);
   var base = s.apiBaseUrl.replace(/\/+$/, '');
   var url = base + '/chat/completions';
-  var profileObj = P && P.profileNonEmpty ? P.profileNonEmpty(profile) : profile;
-  var body = {
-    model: s.model,
-    temperature: 0.1,
-    messages: [
-      { role: 'system', content: AI.buildSystemPrompt() },
-      { role: 'user', content: AI.buildUserPrompt(profileObj, fields) }
-    ]
-  };
+  // 请求体统一由 shared/ai.js 组装：默认 whitelist 模式只发字段标签/控件类型/选项文本，
+  // profile 值不出本机（旧行为 'full' 需用户在选项页显式选择）。
+  var body = AI.buildAiRequestBody(s, profile, fields, { ProfileApi: P });
 
   var resp;
   try {

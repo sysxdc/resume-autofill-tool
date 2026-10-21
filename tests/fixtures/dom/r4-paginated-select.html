@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><title>R4 分页下拉（Paginated Select）</title>
+<style>
+ body{font-family:system-ui;padding:20px}
+ input[readonly]{width:280px;padding:8px;border:1px solid #ccc;border-radius:6px;background:#f4f6f8}
+ #panel{display:none;position:absolute;background:#fff;border:1px solid #ddd;border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.15);width:300px}
+ #panel ul{list-style:none;margin:0;padding:6px 0;max-height:150px;overflow:auto}
+ #panel li{padding:6px 12px;font-size:13px;cursor:pointer}
+ #panel li:hover{background:#eef4ff}
+ .pager{display:flex;justify-content:space-between;align-items:center;border-top:1px solid #eee;padding:6px 10px;font-size:12px;color:#666}
+ .pager button{border:1px solid #ddd;background:#fff;border-radius:4px;padding:3px 10px;cursor:pointer}
+</style></head>
+<body>
+<p><label>出生日期*<br /><input id="bd" readonly placeholder="请选择" /></label></p>
+<p>应聘职位* <input name="JOB_OBJECTIVE" /></p>
+
+<div id="panel">
+  <ul id="ul"></ul>
+  <div class="pager">
+    <button type="button" id="prev">上一页</button>
+    <span id="info"></span>
+    <button type="button" id="next">下一页</button>
+  </div>
+</div>
+
+<script>
+var dates=[];
+for(var y=1996;y<=1999;y++)for(var m=1;m<=12;m++)for(var d=1;d<=28;d++)
+  dates.push(y+'-'+('0'+m).slice(-2)+'-'+('0'+d).slice(-2));
+var perPage=40, page=0;
+var input=document.getElementById('bd'), panel=document.getElementById('panel'), ul=document.getElementById('ul');
+
+function render(){
+  ul.innerHTML='';
+  dates.slice(page*perPage,(page+1)*perPage).forEach(function(t){
+    var li=document.createElement('li'); li.textContent=t; ul.appendChild(li);
+  });
+  document.getElementById('info').textContent=(page+1)+'/'+Math.ceil(dates.length/perPage);
+  document.getElementById('prev').disabled = page===0;
+  document.getElementById('next').disabled = (page+1)*perPage>=dates.length;
+}
+input.addEventListener('click',function(){var r=input.getBoundingClientRect();
+  panel.style.left=r.left+'px'; panel.style.top=(r.bottom+scrollY+4)+'px'; panel.style.display='block'; render();});
+document.getElementById('next').addEventListener('click',function(){page=Math.min(page+1,Math.ceil(dates.length/perPage)-1);render();});
+document.getElementById('prev').addEventListener('click',function(){page=Math.max(page-1,0);render();});
+ul.addEventListener('click',function(e){var li=e.target.closest('li'); if(!li)return;
+  input.value=li.textContent; input.dispatchEvent(new Event('input',{bubbles:true}));
+  input.dispatchEvent(new Event('change',{bubbles:true})); panel.style.display='none';});
+</script>
+</body></html>

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><title>R3 年/月/日 三个原生 select</title>
+<style>
+ body{font-family:system-ui;padding:20px}
+ table{border-collapse:collapse}
+ td{border:1px solid #e3e7ee;padding:8px 10px}
+ td.label{background:#fbfcfd;color:#666;width:160px}
+ select{padding:6px 8px;border:1px solid #d9dee5;border-radius:4px}
+</style></head>
+<body>
+<table><tbody>
+  <tr><td class="label">出生日期*</td><td>
+    <select name="birthday_year" id="by"></select>
+    <select name="birthday_month" id="bm"></select>
+    <select name="birthday_day" id="bd"></select>
+  </td></tr>
+  <tr><td class="label">应聘职位*</td><td><input type="text" name="JOB_OBJECTIVE" /></td></tr>
+</tbody></table>
+
+<script>
+function fill(sel, from, to, pad, suffix){
+  var s=document.getElementById(sel);
+  var o=document.createElement('option'); o.value=''; o.textContent='请选择'; s.appendChild(o);
+  for(var v=from;v<=to;v++){
+    var op=document.createElement('option');
+    op.value=pad?('0'+v).slice(-2):String(v);
+    op.textContent=op.value+(suffix||'');
+    s.appendChild(op);
+  }
+}
+fill('by',1970,2010,false,'年');
+fill('bm',1,12,false,'月');
+fill('bd',1,31,true,'日');
+</script>
+</body></html>

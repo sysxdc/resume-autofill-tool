@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><title>R1 English DatePicker (grid, month nav)</title>
+<style>
+ body{font-family:system-ui;padding:20px}
+ input[readonly]{width:280px;padding:8px;border:1px solid #ccc;border-radius:6px;background:#f4f6f8}
+ .dp{display:none;position:absolute;background:#fff;border:1px solid #ddd;border-radius:8px;padding:8px;box-shadow:0 8px 24px rgba(0,0,0,.15);width:280px}
+ .dp header{display:flex;align-items:center;justify-content:space-between;padding:4px 2px 8px}
+ .dp header button{border:0;background:none;font-size:15px;cursor:pointer}
+ .dp .lbl{font-weight:600}
+ .dp table{width:100%;border-collapse:collapse}
+ .dp th{font-size:12px;color:#888;padding:4px 0}
+ .dp td{text-align:center;padding:5px 0;font-size:13px;cursor:pointer}
+ .dp td.other{color:#c9ced6}
+ .dp td.on{background:#2f6fed;color:#fff;border-radius:50%}
+ .dp footer{display:flex;justify-content:flex-end;gap:8px;padding-top:8px}
+ .dp footer button{padding:5px 12px;border:1px solid #ddd;background:#fff;border-radius:4px;cursor:pointer}
+ .dp footer button.primary{background:#2f6fed;color:#fff;border-color:#2f6fed}
+</style></head>
+<body>
+<p><label>Date of Birth*<br /><input id="bd" readonly placeholder="Select date" /></label></p>
+<p>Job Title* <input name="JOB_OBJECTIVE" /></p>
+
+<div class="dp" id="dp">
+  <header>
+    <button type="button" id="prev" aria-label="Previous Month">&#8249;</button>
+    <span class="lbl" id="lbl">March 2000</span>
+    <button type="button" id="next" aria-label="Next Month">&#8250;</button>
+  </header>
+  <table><thead><tr><th>Su</th><th>Mo</th><th>Tu</th><th>We</th><th>Th</th><th>Fr</th><th>Sa</th></tr></thead>
+  <tbody id="tb"></tbody></table>
+  <footer><button type="button" id="ok" class="primary">OK</button></footer>
+</div>
+
+<script>
+var EN=["January","February","March","April","May","June","July","August","September","October","November","December"];
+var view={y:2000,m:3}, picked=null;
+var input=document.getElementById('bd'), dp=document.getElementById('dp');
+function pad(n){return ('0'+n).slice(-2);}
+function render(){
+  document.getElementById('lbl').textContent = EN[view.m-1]+' '+view.y;
+  var first=new Date(view.y,view.m-1,1).getDay();
+  var dim=new Date(view.y,view.m,0).getDate(), pdim=new Date(view.y,view.m-1,0).getDate();
+  var cells=[];
+  for(var i=first-1;i>=0;i--) cells.push({d:pdim-i,other:1});
+  for(var d=1;d<=dim;d++) cells.push({d:d,other:0});
+  while(cells.length%7) cells.push({d:cells.length-first-dim+1,other:1});
+  while(cells.length<42) cells.push({d:cells.length-first-dim+1,other:1});
+  var tb=document.getElementById('tb'); tb.innerHTML='';
+  for(var r=0;r<cells.length/7;r++){var tr=document.createElement('tr');
+    for(var c=0;c<7;c++){var cell=cells[r*7+c],td=document.createElement('td');
+      td.textContent=String(cell.d); if(cell.other) td.className='other';
+      if(picked&&!cell.other&&picked.y===view.y&&picked.m===view.m&&picked.d===cell.d) td.className='on';
+      tr.appendChild(td);} tb.appendChild(tr);}
+}
+input.addEventListener('click',function(){var r=input.getBoundingClientRect();
+  dp.style.left=r.left+'px'; dp.style.top=(r.bottom+scrollY+4)+'px'; dp.style.display='block'; render();});
+document.getElementById('prev').addEventListener('click',function(){view.m--;if(view.m<1){view.m=12;view.y--;}render();});
+document.getElementById('next').addEventListener('click',function(){view.m++;if(view.m>12){view.m=1;view.y++;}render();});
+document.getElementById('tb').addEventListener('click',function(e){var td=e.target.closest('td');
+  if(!td||td.className==='other')return; picked={y:view.y,m:view.m,d:parseInt(td.textContent,10)}; render();});
+document.getElementById('ok').addEventListener('click',function(){
+  if(picked){input.value=picked.y+'-'+pad(picked.m)+'-'+pad(picked.d);
+    input.dispatchEvent(new Event('input',{bubbles:true})); input.dispatchEvent(new Event('change',{bubbles:true}));}
+  dp.style.display='none';});
+render();
+</script>
+</body></html>
