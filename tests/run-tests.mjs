@@ -16,6 +16,7 @@ const root = path.resolve(__dirname, '..');
 const Match = require(path.join(root, 'shared/match.js'));
 const Profile = require(path.join(root, 'shared/profile.js'));
 const AI = require(path.join(root, 'shared/ai.js'));
+const DateCap = require(path.join(root, 'shared/date-capability.js'));
 
 let passed = 0;
 let failed = 0;
@@ -2132,6 +2133,77 @@ test('v1.5.16: 填写前等表单稳定（懒挂载）', () => {
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
   assert.ok(/async function waitForFormSettle/.test(src), '要等输入框数量稳定');
   assert.ok(/await waitForFormSettle\(/.test(src), '接进 fillFromProfile');
+});
+
+test('v1.5.17 日期能力层：统一模型', () => {
+  const cases = [
+    ['2023-09-21', { y: '2023', m: '9', d: '21', precision: 'day' }],
+    ['2023/9/21', { y: '2023', m: '9', d: '21', precision: 'day' }],
+    ['2023年9月21日', { y: '2023', m: '9', d: '21', precision: 'day' }],
+    ['2023-09-01T00:00:00', { y: '2023', m: '9', d: '1', precision: 'day' }],
+    ['2023-09', { y: '2023', m: '9', d: null, precision: 'month' }],
+    ['2023年9月', { y: '2023', m: '9', d: null, precision: 'month' }],
+    ['2023', { y: '2023', m: null, precision: 'month' }],
+    ['至今', { precision: 'open', open: true }],
+    ['Present', { precision: 'open', open: true }],
+    ['', { precision: 'unknown' }]
+  ];
+  for (const [input, want] of cases) {
+    const got = DateCap.parseModel(input);
+    for (const k of Object.keys(want)) {
+      assert.equal(got[k], want[k], `${input} 的 ${k}`);
+    }
+  }
+});
+
+test('v1.5.17 日期能力层：精度判级（降级要能看见）', () => {
+  const L = (a, b) => DateCap.matchLevel(a, b).level;
+  // 精确
+  assert.equal(L('2023-09-21', '2023-09-21'), 'exact');
+  assert.equal(L('2023-09', '2023-09'), 'exact');
+  // 允许的降级：期望只有年月，控件只能选到某天
+  assert.equal(L('2023-09-01', '2023-09'), 'day-approx');
+  // 不可接受：控件把日丢了
+  assert.equal(L('2023-09', '2023-09-21'), 'month-only');
+  // 红线：年月不一致
+  assert.equal(L('2023-08-21', '2023-09-21'), 'mismatch');
+  assert.equal(L('2022-09-21', '2023-09-21'), 'mismatch');
+  assert.equal(L('', '2023-09'), 'mismatch');
+  // 只到年
+  assert.equal(L('2023-01', '2023'), 'month-only');
+  // 可接受集合
+  assert.equal(DateCap.isAcceptable('exact'), true);
+  assert.equal(DateCap.isAcceptable('day-approx'), true);
+  assert.equal(DateCap.isAcceptable('month-only'), false);
+  assert.equal(DateCap.isAcceptable('mismatch'), false);
+});
+
+test('v1.5.17 日期能力层：模型折成写值格式', () => {
+  assert.equal(DateCap.toYmd(DateCap.parseModel('2023-09')), '2023-09-01');
+  assert.equal(DateCap.toYmd(DateCap.parseModel('2023-09-21')), '2023-09-21');
+  assert.equal(DateCap.toYm(DateCap.parseModel('2023-09-21')), '2023-09');
+  assert.equal(DateCap.toParts(DateCap.parseModel('2023')) , null, '只有年不产出可写 parts');
+});
+
+test('v1.5.17 日期能力层：策略顺序固定（先精确后降级）', () => {
+  const order = DateCap.STRATEGY_ORDER;
+  assert.equal(order[0], 'native-input');
+  assert.ok(order.indexOf('fiber-props') < order.indexOf('panel-nav'), 'fiber 直写先于面板导航');
+  assert.ok(order.indexOf('panel-input') < order.indexOf('grid-click'), '面板输入框先于点格子');
+  assert.equal(order[order.length - 1], 'give-up');
+  assert.ok(order.indexOf('confirm') === order.length - 2, '确认按钮在放弃之前');
+});
+
+test('v1.5.17 autofill 已接入能力层（不是各写一份）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(src.includes('ResumeAutofillDate'), '拿到能力层句柄');
+  assert.ok(/function dateMatchLevel[\s\S]{0,200}D\.matchLevel/.test(src), 'dateMatchLevel 委托能力层');
+  assert.ok(/function parseDateParts[\s\S]{0,160}D\.parseModel/.test(src), 'parseDateParts 委托能力层');
+  assert.ok(src.includes('degradedDates'), '降级项要能带出来');
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  const js = manifest.content_scripts[0].js;
+  assert.ok(js.indexOf('shared/date-capability.js') !== -1, '能力层已进 content_scripts');
+  assert.ok(js.indexOf('shared/date-capability.js') < js.indexOf('content/autofill.js'), '能力层先于 autofill 注入');
 });
 
 console.log('');

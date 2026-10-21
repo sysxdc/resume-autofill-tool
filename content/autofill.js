@@ -24,6 +24,8 @@
   'use strict';
 
   var M = globalThis.ResumeAutofillMatch;
+  // 日期能力层：统一模型 / 精度判级 / 控件探测 / 策略顺序（shared/date-capability.js）
+  var D = globalThis.ResumeAutofillDate || null;
   if (!M) {
     console.warn('[简历填写工具] ResumeAutofillMatch 未加载');
     return;
@@ -2483,6 +2485,11 @@
   }
 
   function parseDateParts(value) {
+    if (D && D.parseModel) {
+      var mo = D.parseModel(value);
+      if (!mo || !mo.y) return null;
+      return { y: mo.y, m: mo.m, d: mo.d };
+    }
     var str = String(value || '');
     // 完整日期：必须有分隔符，且月/日数值合法
     var m = str.match(/(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})/);
@@ -3059,7 +3066,25 @@
   }
 
   /** 目标是否已是完整日期（允许 1998-05-20 / 1998/5/20 / 1998年05月20日） */
+  /** 回读值的精度等级：exact / day-approx / month-only / mismatch（能力层缺失时退回布尔） */
+  function dateMatchLevel(actual, desired) {
+    if (D && D.matchLevel) return D.matchLevel(actual, desired).level;
+    var a = parseDateParts(actual);
+    var w = parseDateParts(desired);
+    if (a && w && a.y === w.y && parseInt(a.m, 10) === parseInt(w.m, 10)) {
+      if (!w.d || !a.d) return 'exact';
+      return parseInt(a.d, 10) === parseInt(w.d, 10) ? 'exact' : 'mismatch';
+    }
+    return pickerValueMatches(actual, desired) ? 'exact' : 'mismatch';
+  }
+
   function dateValueMatches(actual, desired) {
+    // 零错填是红线（mismatch）；month-only 属于「日被控件吃掉」的降级，仍算填上但在 degraded 里标注
+    var lv = dateMatchLevel(actual, desired);
+    return lv === 'exact' || lv === 'day-approx' || lv === 'month-only';
+  }
+
+  function _legacyDateValueMatches(actual, desired) {
     var a = parseDateParts(actual);
     var w = parseDateParts(desired);
     if (a && w) {
@@ -3908,6 +3933,7 @@
     var opts = options || {};
     var filled = 0;
     var filledKeys = [];
+    var degradedDates = [];
     var forced = [];
     var skipped = [];
     var keyCounts = {};
@@ -4120,6 +4146,12 @@
           }
         }
         if (ok === 'forced') forced.push(key);
+        if (ok) {
+          var lvl = dateMatchLevel(el.value, value);
+          if (lvl === 'day-approx' || lvl === 'month-only') {
+            degradedDates.push({ key: key, actual: String(el.value || ''), want: String(value || ''), level: lvl });
+          }
+        }
         if (!ok) skipped.push({ key: key, reason: 'readonly_picker_not_found' });
       } else {
         ok = commitFrameworkWidget(el, value) || setNativeValue(el, value);
@@ -4219,7 +4251,7 @@
 
     return {
       filled: filled, expanded: expanded, filledKeys: filledKeys, skipped: skipped,
-      forced: forced, timedOut: timedOut
+      degradedDates: degradedDates, forced: forced, timedOut: timedOut
     };
   }
 

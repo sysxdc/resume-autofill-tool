@@ -307,6 +307,79 @@ const CASES = [
   },
 ];
 
+// ── 能力层用例：在真实控件上验证 probeControl / matchLevel ──
+const CAP_SCRIPT = path.join(__dirname, '..', 'shared', 'date-capability.js');
+
+const CAP_CASES = [
+  {
+    name: 'cap:wecruit-antd3-select 探测为原生 select 组之外的下拉',
+    file: 'wecruit-antd3-select.html',
+    async run(page) {
+      const r = await page.evaluate(() => {
+        const el = document.querySelector('#search');
+        const p = window.ResumeAutofillDate.probeControl(el);
+        return { kind: p.kind, hints: p.hints };
+      });
+      ok(r.kind !== 'native-date', '不是原生 date：' + r.kind);
+    },
+  },
+  {
+    name: 'cap:r11/r12 antd 控件探测',
+    file: 'r11-antd-month.html',
+    async run(page) {
+      const r = await page.evaluate(() => window.ResumeAutofillDate.probeControl(document.querySelector('#enroll')));
+      eq(r.kind, 'antd-picker', 'antd v4/v5 面板');
+      ok(r.hints.ro === true, '识别出 readonly');
+    },
+  },
+  {
+    name: 'cap:r3 三个原生 select 探测为 select 组',
+    file: 'r3-ymd-selects.html',
+    async run(page) {
+      const r = await page.evaluate(() => window.ResumeAutofillDate.probeControl(document.querySelector('#by')));
+      eq(r.kind, 'native-select-group', '年/月/日 select 组');
+      ok(r.hints.selects >= 2, '识别出多个 select：' + r.hints.selects);
+    },
+  },
+  {
+    name: 'cap:回读值与模型的精度判级（r11 只有年月）',
+    file: 'r11-antd-month.html',
+    async run(page) {
+      await page.focus('#enroll');
+      await page.click('.ant-picker-header-next-btn');
+      await page.click('.ant-picker-cell >> nth=8');
+      const v = await value(page, '#enroll');
+      const r = await page.evaluate((val) => {
+        const D = window.ResumeAutofillDate;
+        // 期望 2021-09（月精度）：控件只能到月 → exact
+        const a = D.matchLevel(val, '2021-09');
+        // 期望 2021-09-21（日精度）：控件给不出日 → month-only，不算成功
+        const b = D.matchLevel(val, '2021-09-21');
+        // 期望 2021-08 → mismatch（红线）
+        const c = D.matchLevel(val, '2021-08');
+        return { v: val, a: a.level, b: b.level, c: c.level };
+      }, v);
+      eq(r.a, 'exact', '月精度期望 → exact（' + r.v + '）');
+      eq(r.b, 'month-only', '日精度期望但控件只有年月 → month-only');
+      eq(r.c, 'mismatch', '跨月 → mismatch');
+    },
+  },
+  {
+    name: 'cap:day-approx（r12 控件能到日，但期望只有年月）',
+    file: 'r12-antd-date.html',
+    async run(page) {
+      await page.focus('#birth');
+      await page.evaluate(() => {
+        const td = Array.from(document.querySelectorAll('#tb td.ant-picker-cell-in-view')).find((n) => n.textContent.trim() === '5');
+        td.click();
+      });
+      const v = await value(page, '#birth');
+      const lvl = await page.evaluate((val) => window.ResumeAutofillDate.matchLevel(val, '2020-03').level, v);
+      eq(lvl, 'day-approx', '年月期望 + 控件补了日 → day-approx（' + v + '）');
+    },
+  },
+];
+
 // ── 运行 ──────────────────────────────────────────────────
 (async function main() {
   const filter = process.argv[2] || '';
@@ -315,13 +388,14 @@ const CASES = [
   let passed = 0;
   const failed = [];
 
-  for (const c of CASES) {
+  for (const c of CASES.concat(CAP_CASES)) {
     if (filter && !c.name.includes(filter) && !c.file.includes(filter)) continue;
     const page = await browser.newPage();
     const pageErrors = [];
     page.on('pageerror', (e) => pageErrors.push(e.message));
     try {
       await page.goto(fileUrl(c.file));
+      await page.addScriptTag({ path: CAP_SCRIPT });
       await c.run(page);
       if (pageErrors.length) throw new Fail('页面 JS 报错: ' + pageErrors.join('; '));
       passed++;

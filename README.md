@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.5.16**
+当前版本：**1.5.17**
 
 ## 功能概览
 
@@ -221,7 +221,48 @@ resume-autofill-tool/
 - **北森「面试站点」不会硬填**：选项常是「XX 大学（线下站）」这类宣讲站点，档案里没有对应数据，
   宁可不填也不猜；提交前手动选一下。
 
+## 日期能力层（`shared/date-capability.js`）
+
+日期控件是网申里最花的一类：同一个「2023-09」，有的站点要选年月、有的必须选到某天、
+有的只给三个原生 select、有的要翻年视图再翻月。历史上每个站点都加一个 `tryXxx`，
+`content/autofill.js` 里堆了 20 多个并列分支。能力层把与站点无关的四件事固定下来：
+
+```js
+Date.parseModel('2023-09')     // → { y:'2023', m:'9', d:null, precision:'month' }
+Date.parseModel('至今')         // → { precision:'open', open:true }
+Date.matchLevel('2023-09-01', '2023-09')  // → 'day-approx'（允许的降级）
+Date.matchLevel('2023-08-01', '2023-09')  // → 'mismatch'（红线：错填）
+Date.probeControl(inputEl)     // → { kind:'antd-picker'|'antd-v3-calendar'|'native-select-group'|…, hints }
+Date.STRATEGY_ORDER            // native-input → native-selects → fiber-props → panel-input
+                               // → panel-nav → keyboard-pick → grid-click → confirm → give-up
+```
+
+**精度判级就是「零错填」红线的落地方式**：
+
+| 等级 | 含义 | 处理 |
+|---|---|---|
+| `exact` | 年月日都对上（或都只有年月） | 算成功 |
+| `day-approx` | 期望只有年月，控件只能选到某天，补了 1 号 | 算成功，但进 `degradedDates` 标注 |
+| `month-only` | 期望有日，控件只给年月，日被吃掉 | 算成功但标注（日粒度信息丢失） |
+| `mismatch` | 年或月不一致 | **红线**，回滚/留空 |
+
+填完结果里 `degradedDates: [{ key, actual, want, level }]` 会一路带到悬浮窗
+（`#__ra_panel_host__.dataset.lastResult`），降级不再静默。
+
 ## Changelog
+
+### 1.5.17
+
+- **新增日期能力层** `shared/date-capability.js`（manifest content_scripts 里排在 `autofill.js` 之前）：
+  统一模型 `parseModel`（年月日 / 只有年月 / 至今 / ISO 时间尾巴）、精度判级 `matchLevel`
+  （`exact` / `day-approx` / `month-only` / `mismatch`）、控件探测 `probeControl`（纯观察不点击）、
+  固定策略顺序 `STRATEGY_ORDER`。
+- `autofill.js` 的 `parseDateParts` / `dateValueMatches` 改为委托能力层；新增 `dateMatchLevel`。
+  **`mismatch` 一律不算填上**（零错填红线），`day-approx` / `month-only` 照旧填但记进 `degradedDates`。
+- 悬浮窗诊断数据新增 `degraded` 字段，降级精度可见。
+- DOM 基线扩到 **14 条**：新增 5 条能力层用例，直接在真实控件上验证
+  `probeControl`（antd v4/v5 / 三个原生 select / 下拉）与 `matchLevel`（月精度 exact、日精度 month-only、跨月 mismatch、补日 day-approx）。
+- 真实站点回归（wecruit）：仍为**已填 18 项**，`degradedDates` 为空（该页日期都是精确匹配），无回归。
 
 ### 1.5.16
 

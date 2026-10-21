@@ -224,6 +224,8 @@
           filled: r.filled || 0,
           timedOut: !!r.timedOut,
           keys: (r.filledKeys || []).slice(0, 80),
+          // 降级项：值填上了但精度掉了（2023-09 被写成 2023-09-01 / 日被控件吃掉），必须看得见
+          degraded: (r.degradedDates || []).slice(0, 20),
           skipped: (r.skipped || []).slice(0, 30)
         });
       } catch (_) { /* ignore */ }
