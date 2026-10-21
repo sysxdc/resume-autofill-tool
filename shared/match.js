@@ -122,6 +122,10 @@
       'secondaryemail', 'secondary_email', 'alternateemail', 'alt_email', 'backupemail',
       '备用邮箱', '第二邮箱', '其他邮箱'
     ],
+    phoneCountryCode: [
+      'phonecountrycode', 'phone_code', 'dialcode', 'dial_code', 'countrycode',
+      '电话所在区域', '手机区号', '电话区号', '国家区号', '国际区号', '区号'
+    ],
     phone: [
       'phone', 'mobile', 'tel', 'telephone', 'cellphone', 'cell', 'phonenumber',
       'phone_number', 'phone-number', 'contactnumber', '手机号', '手机号码',
@@ -219,7 +223,10 @@
     isPovertyStudent: ['ispovertystudent', '是否贫困生', '贫困生'],
     isColorWeak: ['iscolorweak', '是否色弱', '色弱', '色盲'],
     hasOverseasIdentity: ['hasoverseasidentity', '是否具有境外身份', '境外身份'],
-    englishLevel: ['englishlevel', 'english_level', '英语等级', '英语水平'],
+    englishLevel: [
+      'englishlevel', 'english_level', '英语等级', '英语水平', '语言等级', '外语等级',
+      '语言级别', '外语水平等级'
+    ],
     gaokaoDate: ['gaokaodate', 'gaokao_date', '高考时间', '高考日期'],
     gaokaoScore: ['gaokaoscore', 'gaokao_score', '高考分数', '高考成绩'],
     gaokaoSubjects: ['gaokaosubjects', 'gaokao_subjects', '高考科目', '高考科类'],
@@ -567,7 +574,7 @@
     // 更具体 / 易冲突优先
     'emergencyContactName', 'emergencyContactRelation', 'emergencyContactPhone', 'emergencyContact',
     'namePinyin', 'englishName', 'preferredName', 'firstName', 'lastName', 'resumeTitle',
-    'secondaryEmail', 'email', 'wechat', 'qq', 'phone',
+    'secondaryEmail', 'email', 'wechat', 'qq', 'phoneCountryCode', 'phone',
     'birthday', 'age', 'idType', 'idNumber', 'gender',
     'nationality', 'ethnicity', 'politicalStatus', 'maritalStatus',
     'linkedin', 'github', 'website',

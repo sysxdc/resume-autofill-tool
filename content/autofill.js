@@ -4,6 +4,8 @@
  * FILL_FORM / SCAN_FIELDS / COLLECT_FIELDS / APPLY_MAPPINGS
  * 不自动提交；不填 password/file；不盲勾 checkbox。
  * v1.5.7: 「增加 XX 经历」按钮解析到真正的可点元素 + 等异步渲染；起止时间合体控件（el daterange）按分区/段序填。
+ * v1.5.8: 语言技能栏位（语言等级/成绩/获得时间）；加行候选只留最内层可点元素；下拉改轮询；
+ *         el-input-number / el-date-editor 走组件实例提交；电话所在区域 → phoneCountryCode。
  * v1.5.6: 北森 Phoenix 补齐（svg 勾选热区、弹层差集判定、年月面板、搜索重渲染等待、计数按 key+标签 分桶）。
  * v1.5.5: 北森 Phoenix 网申（phoenix-select 下拉/日期、字典与地区弹层、div radio）+ 按需点「添加」展开分区。
  * v1.3.7: Ant Design DatePicker（年/月面板 + 年月值 YYYY-MM）。
@@ -373,7 +375,17 @@
       seen.push(target);
       out.push({ el: target, text: t });
     });
-    return out;
+    // 祖先 div 常和按钮同文案（querySelectorAll 先返回祖先）：只留最内层那个，
+    // 否则会点到没有 handler 的外层，按钮看着被“点了”但什么都没发生
+    var inner = [];
+    for (var i = 0; i < out.length; i++) {
+      var ancestor = false;
+      for (var j = 0; j < out.length; j++) {
+        if (i !== j && out[i].el !== out[j].el && out[i].el.contains(out[j].el)) { ancestor = true; break; }
+      }
+      if (!ancestor) inner.push(out[i]);
+    }
+    return inner;
   }
 
   /** 这段按钮属于哪个分区：先看按钮文案，再看最近的区块标题 */
@@ -615,27 +627,45 @@
 
   async function expandAddSections(profile) {
     var report = [];
-    for (var round = 0; round < 4; round++) {
-      var progressed = false;
+    var stall = 0;
+    // 每轮每个分区只点一次（多段档案靠多轮补齐）；连续两轮没有任何分区涨行就收手，
+    // 避免按钮确实点不动时把时间全耗在等待上
+    for (var round = 0; round < 6 && stall < 2; round++) {
       var cands = addButtonCandidates();
+      var jobs = [];
+      var seen = {};
       for (var i = 0; i < cands.length; i++) {
         var cand = cands[i];
         if (!cand.el.isConnected) continue;
         var rule = addButtonSection(cand.text, cand.el);
-        if (!rule) continue;
+        if (!rule || seen[rule.key]) continue;
         var want = desiredRowsFor(profile, rule);
         if (!want) continue;
         var have = countSectionRows(rule);
         if (have >= want) continue;
+        seen[rule.key] = 1;
         simulateClick(cand.el);
-        // 行是异步渲染的（BYD 点完后 ~1s 才出现）：等行数真涨上去，再决定要不要继续点，
-        // 否则会在渲染完成前连点多下，多段档案会被点出额外空行
-        await waitUntil(function () { return countSectionRows(rule) > have; }, 1600, 150);
-        var after = countSectionRows(rule);
-        report.push({ section: rule.key, clicks: 1, before: have, after: after });
-        if (after > have) progressed = true;
+        jobs.push({ rule: rule, before: have });
       }
-      if (!progressed) break;
+      if (!jobs.length) break;
+      // 行是异步渲染的（BYD 前台 ~0.25s，后台标签页要 3s+）：一轮只点一次，统一等落地，
+      // 否则会在渲染完成前连点，既慢又会多出空行
+      var deadline = Date.now() + 3000;
+      while (Date.now() < deadline) {
+        await sleep(200);
+        var settled = true;
+        for (var j = 0; j < jobs.length; j++) {
+          if (countSectionRows(jobs[j].rule) <= jobs[j].before) { settled = false; break; }
+        }
+        if (settled) break;
+      }
+      var moved = 0;
+      for (var r = 0; r < jobs.length; r++) {
+        var after = countSectionRows(jobs[r].rule);
+        if (after > jobs[r].before) moved += 1;
+        report.push({ section: jobs[r].rule.key, clicks: 1, before: jobs[r].before, after: after });
+      }
+      stall = moved ? 0 : stall + 1;
     }
     return report;
   }
@@ -645,6 +675,23 @@
       autocomplete: el.getAttribute('autocomplete') || '',
       context: detectSectionContext(el)
     });
+  }
+
+  /**
+   * v1.5.8：语言技能分区里的泛化标签（「成绩」= 语言考试成绩，不是高考/绩点）。
+   * 只在区块标题是「语言技能 / 外语」时兜底，避免把通用「成绩」映射到 certScore。
+   */
+  function sectionFallbackKey(el) {
+    if (!el || !el.closest) return null;
+    var sec = el.closest('.resume-section');
+    if (!sec) return null;
+    var head = sec.querySelector('.section-title .title') || sec.querySelector('.section-title');
+    var title = String((head && head.textContent) || '').replace(/\s+/g, ' ').trim();
+    if (!/语言|外语/.test(title)) return null;
+    var label = String(getLabelText(el) || '').replace(/\s+/g, '');
+    if (/成绩|分数|得分/.test(label)) return 'certScore';
+    if (/等级|级别/.test(label)) return 'englishLevel';
+    return null;
   }
 
   function hintSnippet(el) {
@@ -684,6 +731,34 @@
       el.disabled ||
       isSearchBox(el)
     );
+  }
+
+  /**
+   * Element 的 input-number / date-editor 是包装组件：直接写 input.value 不会更新 v-model，
+   * 页面一重渲染值就被打回去。这里直接走组件实例的 input 事件（实测有效）。
+   */
+  function commitFrameworkWidget(el, value) {
+    if (!el || !el.closest) return false;
+    var numBox = el.closest('.el-input-number');
+    if (numBox && numBox.__vue__) {
+      var raw = String(value == null ? '' : value).trim();
+      var n = Number(raw.replace(/[^\d.\-]/g, ''));
+      if (raw && isFinite(n)) {
+        try { numBox.__vue__.$emit('input', n); return true; } catch (_) { /* ignore */ }
+      }
+    }
+    var dateBox = el.closest('.el-date-editor');
+    if (dateBox && dateBox.__vue__ && !/el-range-editor/.test(String(dateBox.className))) {
+      var parts = parseDateParts(value);
+      if (!parts) return false;
+      var d = new Date(parseInt(parts.y, 10), parseInt(parts.m, 10) - 1,
+        parts.d ? parseInt(parts.d, 10) : 1);
+      var vf = String(dateBox.__vue__.valueFormat || '');
+      var out = d;
+      if (vf) out = /月/.test(vf) ? (parts.y + '-' + ('0' + parts.m).slice(-2)) : formatDateYmd(d);
+      try { dateBox.__vue__.$emit('input', out); return true; } catch (_) { /* ignore */ }
+    }
+    return false;
   }
 
   function setNativeValue(el, value) {
@@ -898,6 +973,42 @@
     '[role="option"], .el-select-dropdown__item, .el-option, .ant-select-item-option, ' +
     '.ant-select-item, .dictionary-option, .option-item, .select-option, li.el-select-dropdown__item';
 
+  /** 关掉已经展开的下拉，避免它的选项污染下一个字段的匹配 */
+  function closeOpenDropdowns() {
+    var open = Array.prototype.filter.call(
+      document.querySelectorAll('.el-select-dropdown, .ant-select-dropdown'),
+      isVisibleEl
+    );
+    if (!open.length) return;
+    try {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true
+      }));
+    } catch (_) { /* ignore */ }
+  }
+
+  /**
+   * 宿主自己的下拉节点（Element 把 .el-select-dropdown 挂在 .el-select 里）。
+   * 打开瞬间外层可能还在过渡动画里（rect 为 0），但节点已经在，按 style 判断即可，
+   * 不用干等它“看得见”——BYD 这类重页面要 1.5~2s，逐字段等就是卡顿的来源。
+   */
+  function hostDropdownOptions(host) {
+    if (!host || !host.querySelector) return null;
+    var dd = host.querySelector('.el-select-dropdown, .ant-select-dropdown');
+    if (!dd) return null;
+    var st = null;
+    try { st = window.getComputedStyle(dd); } catch (_) { st = null; }
+    if (!st || st.display === 'none' || st.visibility === 'hidden') return null;
+    var items = dd.querySelectorAll('.el-select-dropdown__item, .el-option, .ant-select-item-option');
+    if (!items.length) return null;
+    var out = [];
+    for (var i = 0; i < items.length; i++) {
+      var t = String(items[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (t) out.push({ el: items[i], text: t, value: t });
+    }
+    return out.length ? out : null;
+  }
+
   function findCustomSelectHost(el) {
     if (!el || !el.closest) return null;
     return el.closest(CUSTOM_SELECT_HOST);
@@ -950,20 +1061,27 @@
     return new Promise(function (resolve) {
       if (!host || !value) { resolve(false); return; }
       if (customSelectLooksFilled(host)) { resolve(false); return; }
+      // 单选/多选组不是下拉：别在这里耗 2s 等一个永远不出现的弹层
+      if (host.querySelector('input[type=radio], input[type=checkbox]')) { resolve(false); return; }
       openCustomSelect(host);
-      setTimeout(function () {
+      // 弹层是异步渲染的，慢页面（BYD 实测）要 1.5s 才可见：轮询到选项出现为止，
+      // 固定等 320ms 会让每次下拉都白等一轮、直接失败
+      var waited = 0;
+      var reopened = false;
+      function poll() {
+        var scoped = hostDropdownOptions(host);
+        if (scoped) { finish(scoped); return; }
         var opts = collectOpenDropdownOptions();
-        if (!opts.length) {
-          // 再试一次：部分组件需要第二次点击
+        if (opts.length) { finish(opts); return; }
+        if (waited >= 2600) { closeOpenDropdowns(); resolve(false); return; }
+        if (!reopened && waited >= 900) {
+          reopened = true;
           openCustomSelect(host);
-          setTimeout(function () {
-            opts = collectOpenDropdownOptions();
-            finish(opts);
-          }, 280);
-          return;
         }
-        finish(opts);
-      }, 320);
+        waited += 150;
+        setTimeout(poll, 150);
+      }
+      setTimeout(poll, 180);
 
       function finish(opts) {
         if (!opts || !opts.length) { resolve(false); return; }
@@ -2626,7 +2744,7 @@
       if (el.classList && el.classList.contains('el-range-input')) continue;
       if (el.closest && el.closest(RANGE_EDITOR_SEL)) continue;
       var struct = detectStructuredField(el);
-      var key = struct ? struct.key : matchKeyForElement(el);
+      var key = struct ? struct.key : (matchKeyForElement(el) || sectionFallbackKey(el));
       if (!key) continue;
       var counterKey = occurrenceKey(key, getLabelText(el));
       var count = struct ? 0 : (keyCounts[counterKey] || 0);
@@ -2764,7 +2882,7 @@
         if (ok === 'forced') forced.push(key);
         if (!ok) skipped.push({ key: key, reason: 'readonly_picker_not_found' });
       } else {
-        ok = setNativeValue(el, value);
+        ok = commitFrameworkWidget(el, value) || setNativeValue(el, value);
         if (!ok && el.tagName && el.tagName.toLowerCase() === 'select') {
           // 排名/绩点常常是区间下拉：15/120 要换算成「前20%」才匹配得上
           var alts = valueCandidates(key, value);
