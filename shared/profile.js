@@ -107,7 +107,7 @@
   var LIST_FIELDS = ['eduList', 'workList', 'projectList'];
 
   var LIST_ITEM_FIELDS = {
-    eduList: ['school', 'major', 'degree', 'start', 'end', 'city', 'gpa', 'description'],
+    eduList: ['school', 'department', 'major', 'degree', 'start', 'end', 'city', 'gpa', 'description'],
     workList: ['company', 'title', 'start', 'end', 'city', 'description'],
     projectList: ['name', 'role', 'start', 'end', 'tech', 'description']
   };
@@ -115,8 +115,8 @@
   /** 选项页多段编辑：字段中文标签 */
   var LIST_ITEM_LABELS = {
     eduList: {
-      school: '学校', major: '专业', degree: '学历/学位', start: '开始', end: '结束',
-      city: '城市', gpa: 'GPA', description: '描述'
+      school: '学校', department: '院系', major: '专业', degree: '学历/学位', start: '开始', end: '结束',
+      city: '城市（学校所在）', gpa: 'GPA', description: '描述'
     },
     workList: {
       company: '公司', title: '职位', start: '开始', end: '结束',
@@ -136,7 +136,7 @@
 
   /** 数组第一条 → 扁平主条目字段名映射 */
   var MAIN_ENTRY_MAP = {
-    eduList: { school: 'school', major: 'major', degree: 'eduDegree', start: 'eduStart', end: 'eduEnd', city: 'schoolCity' },
+    eduList: { school: 'school', department: 'department', major: 'major', degree: 'eduDegree', start: 'eduStart', end: 'eduEnd', city: 'schoolCity' },
     workList: { company: 'company', title: 'title', start: 'startDate', end: 'workEnd', city: 'workCity' },
     projectList: { name: 'projectName', role: 'projectRole', start: 'projectStart', end: 'projectEnd', tech: 'techSkills', description: 'projectDesc' }
   };

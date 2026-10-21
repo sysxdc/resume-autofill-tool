@@ -173,6 +173,37 @@ test('工作经历同样支持标题后置日期', () => {
   assert.equal(r.workList[0].end, '2026-09');
 });
 
+console.log('v1.5.3 院系 / 学校城市 / 多段切分');
+const NL2 = String.fromCharCode(10);
+
+test('院系：XX学院 / 院系: X', () => {
+  const r1 = Parser.parseResumeText(['教育背景', '广东工业大学', '自动化学院 自动化专业 | 本科', '2023.09 - 2027.06'].join(NL2)).profile;
+  assert.equal(r1.eduList[0].department, '自动化学院');
+  const r2 = Parser.parseResumeText(['教育背景', '浙江大学', '院系: 计算机学院', '计算机科学与技术', '2020.09 - 2023.06'].join(NL2)).profile;
+  assert.equal(r2.eduList[0].department, '计算机学院');
+});
+
+test('学校城市：校名推断，查不到留空', () => {
+  const a = Parser.parseResumeText(['教育背景', '广东工业大学', '自动化专业 | 本科'].join(NL2)).profile.eduList[0];
+  assert.equal(a.city, '广州');
+  const b = Parser.parseResumeText(['教育背景', '广州大学', '计算机专业 | 本科'].join(NL2)).profile.eduList[0];
+  assert.equal(b.city, '广州');
+  const c = Parser.parseResumeText(['教育背景', '某某职业技术学院', '计算机专业 | 本科'].join(NL2)).profile.eduList[0];
+  assert.equal(c.city, '');
+});
+
+test('两段教育（日期在标题下方）要切成两条', () => {
+  const txt = ['教育背景', '广东工业大学', '自动化学院 自动化专业 | 本科', '2023.09 - 2027.06',
+    '浙江大学 计算机学院', '计算机科学与技术', '硕士', '2020.09 - 2023.06'].join(NL2);
+  const r = Parser.parseResumeText(txt).profile;
+  assert.equal(r.eduList.length, 2);
+  assert.equal(r.eduList[0].school, '广东工业大学');
+  assert.equal(r.eduList[0].start, '2023-09');
+  assert.equal(r.eduList[1].school, '浙江大学');
+  assert.equal(r.eduList[1].department, '计算机学院');
+  assert.equal(r.eduList[1].degree, '硕士');
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

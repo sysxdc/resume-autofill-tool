@@ -185,6 +185,20 @@ resume-autofill-tool/
 
 ## Changelog
 
+### 1.5.3
+- **区块上下文匹配**：`matchFieldKeyScored(hints, {context})` 新增 `CONTEXT_RULES`（edu / intern / work / project / campus）。「城市」在教育块 → `schoolCity`，在工作块 → `workCity`；「学院/院系」→ `department`；「入学年月 / 就读起止」→ `eduStart`；「毕业时间」→ `eduEnd`。
+  - 上下文来自 `detectSectionContext()`：上溯 7 层读 `legend / h2-h4 / summary / .section-title / 卡片头`，命中即用。
+  - 是非题（`是否/有无/有没有…`）、户籍类（`户籍/户口/生源/现居`）、联系方式一律跳过上下文规则，避免「是否有亲属在本公司任职」被当成公司名。
+- **别名补齐**：`学校所在城市 / 院校所在地 / 就读城市 / 院校城市`、`入学年月 / 就读起止时间`、`任职单位 / 就职单位`、`院系名称 / 系别 / 所在学院 / faculty`；`专业排名 / 班级排名` 优先于 `major`。
+- **日期组 fail-closed**（`content/autofill.js`）：
+  - `collectDateGroup` 支持「年 + 月」双下拉（无“日”），hint 命中 `year` 的 select 也计入 `yearSelect`；**没有年份的一律不认**。
+  - `fillDateGroup` 先用完整日期（未拆分前）整组尝试；年份/月份不在选项里时整组放弃并返回 `year_not_available` / `month_not_available` / `date_group_incomplete`，不再写半截日期。
+  - 「是年/月/日部件但组不成完整日期」→ 跳过并报 `date_part_no_group`。
+  - `fieldLooksFilled` 把 `年 / 月 / 日 / 请选择 / --` 这类占位 option 视为未填，年月下拉不再被整组跳过。
+- **数据侧**：`eduList` 新增 `department`（`MAIN_ENTRY_MAP` 与 `LIST_OCCURRENCE_MAP` 同步，多行教育可按行填院系）；解析器抽 `department`（`XX学院`、`院系: X`）与 `city`（校名 → 城市表 + 校名内含城市兜底）；「日期行在标题下方」的排版现在能正确切成多条教育/工作记录。
+- 实测（ego + 本地复现页）：`r14` 教育块 `就读城市` 不再错填成现居城市、日期组 `2016/9/20` 与 `2023/6` 正确；回归 r1–r13 与 demo 两页全部通过（r13 多段 5 键、demo 下拉 8 键含两组 radio、求职页 13 键）。
+- 测试：主套件 126 项、解析器 20 项。
+
 ### 1.5.1
 - **解析器：标题后置日期**：`splitRecords` 支持「学校/公司 → 专业行 → 日期行」这种常见排版（日期不再另起一条），教育/工作起止时间能正确落位。
 - **解析器：专业识别**：新增 `detectMajor`，优先 `专业: X`、其次 `自动化专业` 后缀写法，避免把「专业基础: Python…」误当专业名。

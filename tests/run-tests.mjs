@@ -1469,8 +1469,36 @@ test('v1.5.0: LIST_ITEM_LABELS / SECTION_TITLES 导出', () => {
   assert.ok(Profile.LIST_ITEM_LABELS.eduList.school);
   assert.ok(Profile.LIST_SECTION_TITLES.eduList);
   assert.deepEqual(Profile.LIST_ITEM_FIELDS.eduList, [
-    'school', 'major', 'degree', 'start', 'end', 'city', 'gpa', 'description'
+    'school', 'department', 'major', 'degree', 'start', 'end', 'city', 'gpa', 'description'
   ]);
+});
+
+test('v1.5.2: 区块上下文解决“城市/院系/起止”错键', () => {
+  const mp = (label, context) => {
+    const r = Match.matchFieldKeyScored(label, { context });
+    return r ? r.key : null;
+  };
+  assert.equal(mp('就读城市', 'edu'), 'schoolCity');
+  assert.equal(mp('学校所在城市', 'edu'), 'schoolCity');
+  assert.equal(mp('院系', 'edu'), 'department');
+  assert.equal(mp('学院', 'edu'), 'department');
+  assert.equal(mp('入学年月', 'edu'), 'eduStart');
+  assert.equal(mp('毕业时间', 'edu'), 'eduEnd');
+  assert.equal(mp('城市', 'work'), 'workCity');
+  assert.equal(mp('任职单位', 'work'), 'company');
+  assert.equal(mp('项目名称', 'project'), 'projectName');
+});
+
+test('v1.5.2: 无上下文时别名兜底 + 户籍不被抢成 schoolCity', () => {
+  const mp = (label, context) => {
+    const r = Match.matchFieldKeyScored(label, { context });
+    return r ? r.key : null;
+  };
+  assert.equal(mp('学校所在城市'), 'schoolCity');
+  assert.equal(mp('院校所在地'), 'schoolCity');
+  assert.equal(mp('任职单位'), 'company');
+  assert.notEqual(mp('户口所在城市', 'edu'), 'schoolCity');
+  assert.equal(mp('专业排名', 'edu'), 'majorRank');
 });
 
 test('v1.5.0: normalizeProfile + merge 多段 roundtrip', () => {
@@ -1607,9 +1635,9 @@ test('v1.5.0: demo/dropdowns.html 存在且含四类组件', () => {
   assert.ok(/活体验证|手动/.test(html));
 });
 
-test('v1.5.0: manifest 1.5.0', () => {
+test('v1.5.3: manifest 1.5.3', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(pkg.version, '1.5.1');
+  assert.equal(pkg.version, '1.5.3');
 });
 
 

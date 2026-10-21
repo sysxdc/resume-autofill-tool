@@ -232,6 +232,17 @@
   }
 
   /** 把一段文字按日期区间切成多条记录；没有日期时整段算一条 */
+  /** 纯机构名行（学校/公司），用于“日期在标题下方”排版下的记录切分 */
+  function isPureOrgLine(line) {
+    var t = String(line || '').trim();
+    if (!t || t.length > 24) return false;
+    if (/专业|学历|学位|本科|硕士|博士|专科|在读|GPA|绩点|课程|排名|荣誉|奖项/.test(t)) return false;
+    // “院系: 计算机学院”这类标签行不是机构名行
+    if (/院系|所在系|系别|部门|[:：]/.test(t)) return false;
+    return /(大学|学院|学校|研究院|有限公司|有限责任公司|集团|公司)$/.test(t) ||
+      /^(?:.+)?(?:大学|学院|学校|研究院|有限公司|有限责任公司|集团)$/.test(t);
+  }
+
   function splitRecords(lines) {
     var records = [];
     var cur = null;
@@ -254,6 +265,10 @@
         if ((hasSchool && !SCHOOL_RE.test(curKeyLine)) || (hasCompany && !/(?:有限公司|有限责任公司|集团|科技|公司|Inc\.?|Ltd\.?|Corp\.?)/i.test(curKeyLine))) {
           startsNew = true;
         }
+      }
+      // 日期行被挂到上一条之后，下一条「纯学校/公司名」不会再有日期触发切分 → 显式判一次
+      if (!startsNew && cur && cur.lines.length && cur.lines.some(isPureOrgLine) && isPureOrgLine(line)) {
+        startsNew = true;
       }
       if (startsNew || !cur) {
         cur = { range: range, lines: [] };
@@ -288,7 +303,67 @@
     if (m && m[1]) return m[1].trim();
     var m2 = String(blob || '').match(/([\u4e00-\u9fa5]{2,12})专业(?![\u4e00-\u9fa5])/);
     if (m2 && m2[1] && !/^(基础|课程|知识|技能|能力)$/.test(m2[1])) return m2[1].trim();
+    // 逐行再试：像“计算机科学与技术”这种裸专业名，通常单独占一行
+    var lines = String(blob || '').split(/[\n|｜]/).map(function (x) { return x.trim(); }).filter(Boolean);
+
+    for (var i = 0; i < lines.length; i++) {
+      var picked = guessMajor(lines[i], school, degree);
+      if (picked && !/学院|大学|学校/.test(picked)) return picked;
+    }
     return guessMajor(firstLine || '', school, degree);
+  }
+
+
+  /** 常见高校所在地（覆盖样本里出现的校名；查不到就留空，不猜） */
+  var SCHOOL_CITY_MAP = [
+    [/广东工业大学|华南理工|中山大学|暨南大学|华南师范|广州大学|广东财经/, '广州'],
+    [/深圳大学|南方科技|香港中文大学（深圳）/, '深圳'],
+    [/浙江大学|杭州电子|浙江工业大学/, '杭州'],
+    [/清华大学|北京大学|北京邮电|北京航空航天|中国人民大学/, '北京'],
+    [/复旦大学|上海交通大学|同济大学|华东师范/, '上海'],
+    [/南京大学|东南大学|南京航空航天|南京理工/, '南京'],
+    [/武汉大学|华中科技|武汉理工/, '武汉'],
+    [/四川大学|电子科技大学|西南交通/, '成都'],
+    [/西安交通大学|西北工业大学|西安电子科技/, '西安'],
+    [/哈尔滨工业大学/, '哈尔滨'],
+    [/厦门大学/, '厦门'],
+    [/山东大学/, '济南'],
+    [/中南大学|湖南大学/, '长沙'],
+    [/天津大学|南开大学/, '天津'],
+    [/重庆大学/, '重庆'],
+    [/吉林大学/, '长春'],
+    [/大连理工/, '大连']
+  ];
+
+  var KNOWN_CITIES = ['广州', '深圳', '杭州', '南京', '苏州', '武汉', '成都', '西安', '重庆', '天津',
+    '长沙', '郑州', '济南', '青岛', '大连', '沈阳', '哈尔滨', '长春', '合肥', '福州', '厦门',
+    '南昌', '昆明', '贵阳', '南宁', '海口', '兰州', '太原', '石家庄', '呼和浩特', '乌鲁木齐',
+    '银川', '西宁', '拉萨', '北京', '上海', '宁波', '无锡', '东莞', '佛山', '珠海', '中山', '汕头'];
+
+  function guessSchoolCity(school) {
+    var name = String(school || '');
+    if (!name) return '';
+    for (var i = 0; i < SCHOOL_CITY_MAP.length; i++) {
+      if (SCHOOL_CITY_MAP[i][0].test(name)) return SCHOOL_CITY_MAP[i][1];
+    }
+    // 校名里直接带城市（广州大学 / 深圳技术大学 / 北京理工大学…）
+    for (var c = 0; c < KNOWN_CITIES.length; c++) {
+      if (name.indexOf(KNOWN_CITIES[c]) !== -1) return KNOWN_CITIES[c];
+    }
+    return '';
+  }
+
+  /** 院系：优先“院系: X / XX学院 / XX系”，排除“学校/学院名称”这类整体校名 */
+  function detectDepartment(blob, school) {
+    var text = String(blob || '');
+    var m = text.match(/(?:院系|所在系|系别)\s*[:：]\s*([^\s|,，;；]{2,20})/);
+    if (m && m[1] && m[1] !== school) return m[1].trim();
+    var m2 = text.match(/([\u4e00-\u9fa5]{2,12}(?:学院|系))(?![\u4e00-\u9fa5])/);
+    if (m2 && m2[1]) {
+      var dep = m2[1].trim();
+      if (dep !== school && !/^(学校|大学|院校|本校)$/.test(dep)) return dep;
+    }
+    return '';
   }
 
   function parseEducation(sections) {
@@ -302,13 +377,16 @@
       var degree = detectDegree(blob);
       var major = detectMajor(blob, rec.lines[0] || '', school, degree);
       if (!school && !major && !degree) continue;
+      var department = detectDepartment(blob, school);
+      var cityMatch = blob.match(/([\u4e00-\u9fa5]{2,8}市)/);
       out.push({
         school: school,
+        department: department,
         major: String(major || '').replace(/^专业[:：]?/, '').trim(),
         degree: degree,
         start: rec.range ? rec.range.start : '',
         end: rec.range ? rec.range.end : '',
-        city: '',
+        city: (cityMatch && cityMatch[1] !== (school || '')) ? cityMatch[1].replace(/市$/, '') : guessSchoolCity(school),
         gpa: (blob.match(/(?:GPA|绩点)\s*[:：]?\s*([\d.]+\s*\/?\s*[\d.]*)/i) || [])[1] || '',
         description: rec.lines.slice(1).join(' ').slice(0, 200)
       });

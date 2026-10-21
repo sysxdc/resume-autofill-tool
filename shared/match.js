@@ -244,14 +244,18 @@
     ],
     isUpgradeFromCollege: ['isupgradefromcollege', '是否专升本', '专升本'],
     department: [
-      'department', 'dept', '所在部门', '部门', '科室', '院系', '所在院系'
+      'department', 'dept', '所在部门', '部门', '科室', '院系', '所在院系',
+      '院系名称', '系别', '所在系', '院系/专业', '学院名称', '所在学院', '就读院系', 'faculty'
     ],
     major: [
       'major', 'fieldofstudy', 'field_of_study', 'discipline', 'studyfield',
       '所学专业', '毕业专业', '专业', '主修'
     ],
     majorCategory: ['majorcategory', 'major_category', '专业类别', '学科门类'],
-    schoolCity: ['schoolcity', 'school_city', '学校城市', '院校所在城市'],
+    schoolCity: [
+      'schoolcity', 'school_city', '学校城市', '院校所在城市', '学校所在城市', '院校所在地',
+      '院校城市', '就读城市', '学校所在地', '所属城市', 'school city', 'campus city'
+    ],
     schoolType: ['schooltype', 'school_type', '院校类型', '学校类型'],
     eduStatus: ['edustatus', 'edu_status', '学历状态', '就读状态'],
     eduYears: ['eduyears', 'edu_years', '学制'],
@@ -318,7 +322,7 @@
     company: [
       'company', 'employer', 'organization', 'org', 'currentcompany', 'current_company',
       'companyname', '工作单位', '现任公司', '就职公司', '公司', '雇主', '单位名称'
-    ],
+    , '任职单位', '就职单位', '工作单位', '所在单位'],
     companySize: ['companysize', 'company_size', '公司规模', '企业规模'],
     workOverseas: ['workoverseas', 'work_overseas', '是否海外工作', '工作是否海外'],
     title: [
@@ -897,6 +901,71 @@
     return score;
   }
 
+
+  /**
+   * v1.5.2：区块上下文规则。
+   * 同一个「城市」在教育区块里是学校所在城市，在工作区块里是工作城市 ——
+   * 仅靠标签无法区分，必须带上最近区块标题（教育经历 / 工作经历 / 项目经历）。
+   */
+  var CONTEXT_RULES = {
+    edu: [
+      { re: /院系|系别|所在系|department|faculty/i, key: 'department' },
+      { re: /城市|所在地|地点|city|location/i, key: 'schoolCity' },
+      { re: /入学|开始|起始|就读起|start/i, key: 'eduStart' },
+      { re: /毕业|结束|截止|graduat|\bend\b/i, key: 'eduEnd' },
+      { re: /学校|院校|校名|university|college|school/i, key: 'school' },
+      { re: /班级排名|班排名/, key: 'classRank' },
+      { re: /专业排名|年级排名|综合排名|排名|\brank\b/i, key: 'majorRank' },
+      { re: /专业|major/i, key: 'major' },
+      { re: /学历|学位|degree/i, key: 'eduDegree' },
+      { re: /学院/, key: 'department' },
+      { re: /绩点|gpa/i, key: 'gpa' }
+    ],
+    intern: [
+      { re: /单位|公司|企业|employer|company/i, key: 'internCompany' },
+      { re: /职位|岗位|职务|title|position/i, key: 'internTitle' },
+      { re: /城市|地点|city|location/i, key: 'internCity' },
+      { re: /(入职|开始|起始|start)/i, key: 'internStart' },
+      { re: /(离职|结束|截止|end)/i, key: 'internEnd' }
+    ],
+    work: [
+      { re: /单位|公司|企业|雇主|employer|company|organi[sz]ation/i, key: 'company' },
+      { re: /职位|岗位|职务|头衔|title|position/i, key: 'title' },
+      { re: /城市|地点|city|location/i, key: 'workCity' },
+      { re: /(入职|开始|起始|start)/i, key: 'startDate' },
+      { re: /(离职|结束|截止|end)/i, key: 'workEnd' }
+    ],
+    project: [
+      { re: /名称|项目名|project\s*name/i, key: 'projectName' },
+      { re: /角色|担任|role/i, key: 'projectRole' },
+      { re: /(开始|起始|start)/i, key: 'projectStart' },
+      { re: /(结束|截止|end)/i, key: 'projectEnd' },
+      { re: /技术|栈|tech/i, key: 'techSkills' },
+      { re: /(描述|职责|内容|desc)/i, key: 'projectDesc' }
+    ],
+    campus: [
+      { re: /组织|社团|机构|organi[sz]ation/i, key: 'campusOrg' },
+      { re: /角色|职务|担任|role/i, key: 'campusRole' },
+      { re: /(开始|起始|start)/i, key: 'campusStart' },
+      { re: /(结束|截止|end)/i, key: 'campusEnd' }
+    ]
+  };
+
+  /** 命中区块规则时返回 key（不信但可用：confidence 0.95） */
+  function contextKeyFor(rawLower, normalizedHints, context) {
+    var rules = CONTEXT_RULES[context];
+    if (!rules || (!rawLower && !normalizedHints)) return null;
+    // 联系方式 / 户籍类不受区块影响，先让位（避免“户口所在城市”被判成 schoolCity）
+    if (/邮箱|email|手机|电话|phone|wechat|微信|身份证|idcard/i.test(rawLower)) return null;
+    // 是非题（“是否有亲属在本公司任职”）里的“公司”不是 company 字段，交给正常匹配
+    if (/是否|有无|有没有|曾否|能否|有没有过/.test(rawLower)) return null;
+    if (/户籍|户口|生源|籍贯|现居|现住|居住|家庭住址|邮编|邮政编码/.test(rawLower)) return null;
+    for (var i = 0; i < rules.length; i++) {
+      if (rules[i].re.test(rawLower) || rules[i].re.test(normalizedHints)) return rules[i].key;
+    }
+    return null;
+  }
+
   function addressCityGuard(key, nk, rawLower, h) {
     if (key === 'address' && nk === 'address') {
       if (keywordOccurs(rawLower, h, 'city') || /\bcity\b/i.test(rawLower)) {
@@ -937,6 +1006,8 @@
     var acKey = mapAutocomplete(autocomplete);
     if (acKey) return { key: acKey, confidence: 1, method: 'autocomplete' };
 
+    var context = (options && typeof options === 'object' && options.context) || '';
+
     var raw = String(hints || '');
     var rawLower = raw.toLowerCase();
     var h = normalize(raw);
@@ -947,6 +1018,13 @@
 
     if (isSkipContext(rawLower, h)) return null;
     if (isOtherPersonContactContext(raw)) return null;
+
+    // 区块上下文优先（教育块的「城市」= 学校城市；工作块的「城市」= 工作城市）
+    var ctxKey = contextKeyFor(rawLower, h, context);
+    if (ctxKey) {
+      if (isApplicantOnlyKeyBlocked(ctxKey, raw)) return null;
+      return { key: ctxKey, confidence: 0.95, method: 'context' };
+    }
 
     var bestKey = null;
     var bestLen = -1;
@@ -1125,6 +1203,7 @@
     eduStart: ['eduList', 'start'],
     eduEnd: ['eduList', 'end'],
     schoolCity: ['eduList', 'city'],
+    department: ['eduList', 'department'],
     gpa: ['eduList', 'gpa'],
     eduDescription: ['eduList', 'description'],
     company: ['workList', 'company'],

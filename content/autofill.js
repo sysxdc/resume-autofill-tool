@@ -127,7 +127,8 @@
       if (!opt) return false;
       var v = String(opt.value || '').trim();
       var t = String(opt.text || '').trim();
-      if (!v && (!t || /select|choose|请选择|选择|--/i.test(t))) return false;
+      // 「年 / 月 / 日 / 请选择 / --」这类占位 option 不算已填（否则年月下拉会被整组跳过）
+      if (!v && (!t || /^(?:select|choose|请选择|选择|--+|--\s*请选择|年|月|日|年\/月\/日|年月日|yyyy|yyyy-mm-dd|yyyy\/mm\/dd|mm|dd)$/i.test(t))) return false;
       return true;
     }
     return String(el.value || '').trim() !== '';
@@ -193,9 +194,38 @@
     return parts.filter(Boolean).join(' ');
   }
 
+  /**
+   * v1.5.2：区块上下文（教育 / 实习 / 工作 / 项目 / 校园）。
+   * 「城市」在同一份表单的教育块与工作块含义不同，仅靠标签无法区分。
+   */
+  function detectSectionContext(el) {
+    var node = el;
+    for (var up = 0; up < 7 && node && node.parentElement; up++) {
+      var text = '';
+      if (node.tagName === 'FIELDSET') {
+        var lg = node.querySelector('legend');
+        if (lg) text = String(lg.textContent || '').trim();
+      }
+      if (!text && node.querySelector) {
+        var head = node.querySelector(':scope > legend, :scope > h2, :scope > h3, :scope > h4, :scope > summary, :scope > .section-title, :scope > .ant-card-head-title, :scope > .el-card__header, :scope > .panel-heading');
+        if (head) text = String(head.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+      if (text && text.length <= 24) {
+        if (/实习/.test(text)) return 'intern';
+        if (/教育|学历|学习经历|院校|在校|就读/.test(text)) return 'edu';
+        if (/工作|职业|任职|履历|工作经验/.test(text)) return 'work';
+        if (/项目/.test(text)) return 'project';
+        if (/校园|社团|学生工作|社会实践/.test(text)) return 'campus';
+      }
+      node = node.parentElement;
+    }
+    return '';
+  }
+
   function matchKeyForElement(el) {
     return M.matchFieldKey(collectHints(el), {
-      autocomplete: el.getAttribute('autocomplete') || ''
+      autocomplete: el.getAttribute('autocomplete') || '',
+      context: detectSectionContext(el)
     });
   }
 
@@ -849,22 +879,23 @@
       else if (/month|\bm\b|月/i.test(hint)) part = 'm';
       else if (/day|\bd\b|日期|日$/i.test(hint)) part = 'd';
       if (part) explicit[part] = true;
-      if (!part && n.tagName === 'SELECT') {
+      // select 的选项区间也用来判断年/月/日（hint 已命中 year 时同样要置位，否则年月双下拉会被误判非日期组）
+      if (n.tagName === 'SELECT') {
         var mx = maxOptionNumber(n);
-        if (mx >= 1900) { part = 'y'; yearSelect = true; }
-        else if (mx <= 12 && n.options.length >= 2) part = 'm';
-        else if (mx <= 31 && n.options.length >= 2) part = 'd';
+        if (mx >= 1900) { yearSelect = true; if (!part) part = 'y'; }
+        else if (!part && mx <= 12 && n.options.length >= 2) part = 'm';
+        else if (!part && mx <= 31 && n.options.length >= 2) part = 'd';
       }
       if (!part) part = ['y', 'm', 'd'][idx] || null;
       if (part && !parts[part]) parts[part] = n;
     });
 
-    var has = (parts.y ? 1 : 0) + (parts.m ? 1 : 0) + (parts.d ? 1 : 0);
-    if (has < 2) return null;
-    // 收紧：必须「有年份 select」或「三段都有明确年/月/日字样」，避免把普通两个输入框当日期组
-    if (!yearSelect && !(explicit.y && explicit.m && explicit.d)) {
-      if (!(parts.y && parts.m && parts.d && explicit.y + explicit.m + explicit.d >= 2)) return null;
-    }
+    // 没有年份的「日期组」一律不认：宁可整组不填，也不要把月/日单独塞进去
+    if (!parts.y) return null;
+    var has = (parts.m ? 1 : 0) + (parts.d ? 1 : 0);
+    if (has < 1) return null;
+    // 必须能确认年份身份：年份是 select（选项含 19xx/20xx），或标签明确写了“年”
+    if (!yearSelect && !explicit.y) return null;
     return parts;
   }
 
@@ -876,24 +907,76 @@
     if (!grp) return null;
     var want = { y: parts.y, m: parts.m, d: parts.d };
     var members = [];
-    var okCount = 0;
-    var needCount = 0;
     var keys = Object.keys(grp);
+    var needY = !!grp.y;
+    var needM = !!grp.m && !!want.m;
+    var yearOk = false;
+    var monthOk = false;
+    var dayOk = false;
+    // 先只做「能不能填」的预检：年份不存在就别动任何一个控件（避免半截日期）
+    if (needY && grp.y.tagName === 'SELECT' && !selectHasNumber(grp.y, want.y)) {
+      return { members: keys.map(function (k) { return grp[k]; }), ok: false, reason: 'year_not_available' };
+    }
+    if (needM && grp.m.tagName === 'SELECT' && !selectHasNumber(grp.m, want.m)) {
+      return { members: keys.map(function (k) { return grp[k]; }), ok: false, reason: 'month_not_available' };
+    }
     for (var i = 0; i < keys.length; i++) {
       var k = keys[i];
       var node = grp[k];
       members.push(node);
-      needCount += 1;
+      if (k === 'd' && !want.d) continue;
+      var wantVal = k === 'y' ? want.y : (k === 'm' ? want.m : want.d);
+      var okOne = false;
       if (node.tagName === 'SELECT') {
-        if (setSelectByNumber(node, want[k])) okCount += 1;
+        okOne = setSelectByNumber(node, wantVal) && selectHasNumber(node, wantVal);
       } else if (isReadonlyPicker(node)) {
-        var pickOk = await fillReadonlyPicker(node, k === 'y' ? want.y : (k === 'm' ? want.m : want.d));
-        if (pickOk) okCount += 1;
-      } else if (setNativeValue(node, want[k])) {
-        okCount += 1;
+        okOne = !!(await fillReadonlyPicker(node, wantVal));
+      } else {
+        okOne = setNativeValue(node, wantVal) && readNumber(node) === parseInt(wantVal, 10);
       }
+      if (k === 'y') yearOk = okOne;
+      else if (k === 'm') monthOk = okOne;
+      else if (k === 'd') dayOk = okOne;
     }
-    return { members: members, ok: needCount > 0 && okCount === needCount };
+    var ok = (!needY || yearOk) && (!needM || monthOk) && (!grp.d || !want.d || dayOk);
+    return { members: members, ok: ok, reason: ok ? '' : 'date_group_incomplete' };
+  }
+
+  function readNumber(node) {
+    if (!node) return NaN;
+    var raw = node.tagName === 'SELECT'
+      ? String(node.options[node.selectedIndex] ? node.options[node.selectedIndex].text : node.value)
+      : String(node.value || '');
+    return parseInt(String(raw).replace(/\D/g, ''), 10);
+  }
+
+  function selectHasNumber(sel, want) {
+    if (!sel || sel.tagName !== 'SELECT') return false;
+    var wantNum = parseInt(want, 10);
+    for (var i = 0; i < sel.options.length; i++) {
+      var raw = String(sel.options[i].value !== '' ? sel.options[i].value : sel.options[i].text || '').trim();
+      var num = parseInt(raw.replace(/\D/g, ''), 10);
+      if (raw === String(want) || (!isNaN(num) && num === wantNum)) return true;
+    }
+    return false;
+  }
+
+  /** 附近是否还有同组的年/月/日控件（用于 fail-closed：不写碎片） */
+  function hasSiblingDateParts(el) {
+    var box = el.closest
+      ? el.closest('td, tr, .el-form-item, .ant-form-item, .form-item, .field, .form-group, .row, li, label')
+      : null;
+    if (!box) box = el.parentElement;
+    if (!box) return false;
+    var nodes = box.querySelectorAll('select, input');
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n === el) continue;
+      var hint = [n.name, n.id, n.placeholder, n.getAttribute('aria-label'), String(n.className || '')].join(' ');
+      if (/年|月|日|year|month|day/i.test(hint)) return true;
+      if (n.tagName === 'SELECT' && maxOptionNumber(n) >= 1900) return true;
+    }
+    return false;
   }
 
   // ————— v1.3.4：日历网格型日期面板（‹‹ ‹ 十月 2026 › ›› + 星期表头 + 单月网格）—————
@@ -1524,6 +1607,24 @@
         profileKey: key,
         adjacentPairRole: adjacentRole || undefined
       };
+
+      // v1.5.2：整组优先 —— 在把值拆成“年/月/日部件”之前，先用完整日期尝试年/月/日控件，
+      // 否则部件值（如 "9"）无法组成日期，整组永远不会被尝试，只剩半截填充。
+      if (parseDateParts(value)) {
+        var grpFirst = await fillDateGroup(el, value);
+        if (grpFirst) {
+          grpFirst.members.forEach(function (m) { if (groupHandled) groupHandled.add(m); });
+          if (grpFirst.ok) {
+            filled += 1;
+            keyCounts[key] = count + 1;
+            if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
+            grpFirst.members.forEach(function (m) { highlight(m); });
+          } else if (skipped.length < 12) {
+            skipped.push({ key: key, reason: grpFirst.reason || 'date_group_failed' });
+          }
+          continue;
+        }
+      }
       if (M.maybeExtractDatePartValue && (M.isDatePartProfileKey(key) || M.detectDatePartRole(hints, dateOpts))) {
         var maxLen = el.getAttribute('maxlength');
         var ph = el.getAttribute('placeholder') || '';
@@ -1547,10 +1648,16 @@
             if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
             grpRes.members.forEach(function (m) { highlight(m); });
           } else if (skipped.length < 12) {
-            skipped.push({ key: key, reason: 'date_group_failed' });
+            skipped.push({ key: key, reason: grpRes.reason || 'date_group_failed' });
           }
           continue;
         }
+      }
+
+      // fail-closed：是年/月/日部件、但组不成完整日期 → 宁可不填，也不写半截日期
+      if (M.detectDatePartRole && M.detectDatePartRole(hints, dateOpts) && hasSiblingDateParts(el)) {
+        if (skipped.length < 12) skipped.push({ key: key, reason: 'date_part_no_group' });
+        continue;
       }
 
       var ok = false;
