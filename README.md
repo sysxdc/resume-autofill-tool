@@ -11,6 +11,7 @@
 - **本地资料库**：选项页按 playoffer 风格折叠分区编辑（个人信息 / 求职意向 / 教育 / 实习 / 工作 / 项目 / 校园 / 社会实践 / 技能 / 证书 / 外语 / 家庭 / 获奖 / 专利 / 论文 / 培训）。
 - **多段经历编辑（1.5.0）**：选项页可增删改排序 `eduList` / `workList` / `projectList`；保存写入列表；主条目扁平字段仍兼容旧匹配。
 - **自定义下拉适配（1.5.0）**：原生 select、`.el-select`、`.ant-select`、`.dictionary-selector` / listbox 写路径；Yes/No radio 增强；见 `demo/dropdowns.html`。
+- **加行按钮 + 起止时间合体控件（1.5.7）**：`增加教育经历` 这类「图标 + 文字」按钮会解析到真正的 `<button>`（之前点到没有 handler 的外层 div，点了没反应）；`起止时间` 合在一起的日期范围控件按「分区 + 第几段」分别填开始/结束。
 - **北森 Phoenix 网申（1.5.6）**：zhiye.com 的 `phoenix-select` 下拉 / 年月日期 / 字典与地区弹层 / div radio 全部走「点开弹层再选」；弹层按「本次新出现」判定、搜索后等重渲染、svg 勾选热区单独处理。组件结构与实测结论见 `docs/beisen-phoenix.md`。
 - **简历解析与多档案库（1.4.0）**：导入 PDF / DOCX / TXT / MD，本地解析成 profile 存进 IndexedDB，多份简历共存、一键切换应用。
 - **导入 / 导出 JSON**、**加载示例资料**、清空确认与保存反馈。
@@ -188,6 +189,20 @@ resume-autofill-tool/
   宁可不填也不猜；提交前手动选一下。
 
 ## Changelog
+
+### 1.5.7
+
+- **「增加 XX 经历」点不动**（BYD 校招简历实测）：按钮是 `<button><i/> <span>增加教育经历</span></button>`，
+  老逻辑先按「子元素 > 1 就跳过」把 button 排除，又把 span 当成「与外层文案相同的重复项」丢掉，
+  最后只剩一个没有点击 handler 的 wrapper div —— 点了没反应。
+  现在统一上溯到 `button / a / [role=button] / .el-btn / .el-button` 并按元素去重；
+  点完还会等行数真的涨上去（BYD 行是异步渲染的），避免在渲染完成前连点出多余空行。
+- **起止时间合体控件**（`el-date-editor--daterange`）：两个 `input.el-range-input` 共用一个
+  「起止时间」label，逐 input 匹配只会各写一份同样的值，而且派发 `change` 会触发 Element 的
+  `handleStartChange/handleEndChange`，未提交时读 `this.value` 直接抛错。
+  现在按「区块标题 → 第几段」取 `eduList[i] / workList[i] / projectList[i] / campusList[i]` 的
+  `start/end`（缺失回落 `eduStart/eduEnd`、`startDate/workEnd`…），走组件自己的 `pick` 事件提交，
+  并把这两个 input 从通用循环里排除。
 
 ### 1.5.6
 

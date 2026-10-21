@@ -3,6 +3,7 @@
  * 依赖 shared/match.js（须在 manifest content_scripts 中先于本文件加载）。
  * FILL_FORM / SCAN_FIELDS / COLLECT_FIELDS / APPLY_MAPPINGS
  * 不自动提交；不填 password/file；不盲勾 checkbox。
+ * v1.5.7: 「增加 XX 经历」按钮解析到真正的可点元素 + 等异步渲染；起止时间合体控件（el daterange）按分区/段序填。
  * v1.5.6: 北森 Phoenix 补齐（svg 勾选热区、弹层差集判定、年月面板、搜索重渲染等待、计数按 key+标签 分桶）。
  * v1.5.5: 北森 Phoenix 网申（phoenix-select 下拉/日期、字典与地区弹层、div radio）+ 按需点「添加」展开分区。
  * v1.3.7: Ant Design DatePicker（年/月面板 + 年月值 YYYY-MM）。
@@ -354,18 +355,23 @@
   function addButtonCandidates() {
     var nodes = document.querySelectorAll('button, a, [role="button"], .ant-btn, .el-button, span, div, i');
     var out = [];
+    var seen = [];
     Array.prototype.forEach.call(nodes, function (n) {
       if (n.disabled || /disabled/i.test(String(n.className || ''))) return;
-      if (n.children && n.childElementCount > 1) return;
       var t = String(n.textContent || '').replace(/\s+/g, ' ').trim();
       if (!t || t.length > 16) return;
       if (!ADD_BUTTON_RE.test(t)) return;
       if (isUnsafeAddButton(t)) return;
-      // 同一按钮的文字常被 span 包一层：内层与父节点文案完全相同时只留外层
-      var p = n.parentElement;
-      if (p && String(p.textContent || '').replace(/\s+/g, ' ').trim() === t) return;
       if (!isVisibleEl(n)) return;
-      out.push({ el: n, text: t });
+      // 文案常被 <span>/图标包一层（BYD：「增加教育经历」= button > i + span）：
+      // 统一解析到真正的可点元素，避免点到没有 handler 的外层 div
+      var clickable = n.closest ? n.closest('button, a, [role="button"], .ant-btn, .el-button') : null;
+      var target = clickable || n;
+      var targetText = String(target.textContent || '').replace(/\s+/g, ' ').trim();
+      if (targetText !== t && targetText.length > 24) return;
+      if (seen.indexOf(target) !== -1) return;
+      seen.push(target);
+      out.push({ el: target, text: t });
     });
     return out;
   }
@@ -408,11 +414,28 @@
     // v1.5.5：北森 Phoenix —— 每条记录是一个独立 .form，与区块标题共用一个 id
     var phoenixRows = countPhoenixRows(rule);
     if (phoenixRows) return phoenixRows;
+    // v1.5.7：区块 + .list-form-container 的行式布局（BYD 校招简历）
+    var listRows = countListFormRows(rule);
+    if (listRows) return listRows;
     // 退路：按常见列表容器估算
     var box = document.querySelector('[class*="' + rule.key + '"][class*="list"], [data-section*="' + rule.key + '"]');
     if (box) {
       var rows = box.querySelectorAll('[class*="item"], [class*="row"], li');
       return rows ? rows.length : 0;
+    }
+    return 0;
+  }
+
+  /** 区块标题匹配 rule，内部每条记录是一个 .list-form-container */
+  function countListFormRows(rule) {
+    var sections = document.querySelectorAll('.resume-section');
+    for (var i = 0; i < sections.length; i++) {
+      var head = sections[i].querySelector('.section-title .title') || sections[i].querySelector('.section-title');
+      var t = String((head && head.textContent) || '').replace(/\s+/g, ' ').trim();
+      if (!t || t.length > 20) continue;
+      if (!rule.re.test(t)) continue;
+      var rows = sections[i].querySelectorAll('.list-form-container');
+      if (rows.length) return rows.length;
     }
     return 0;
   }
@@ -444,6 +467,152 @@
    * 点「添加」把分区展开到目标条数。
    * @returns {{section:string, clicks:number}[]}
    */
+  // —————— v1.5.7：起止时间合在一个控件里（el-date-editor--daterange / ant-picker-range）——————
+  // 这类控件的两个 input 共享同一个 label（「起止时间」），逐 input 匹配只会各写一份同样的值；
+  // 必须按「分区 + 第几段」取 start/end，再走组件自己的提交路径。
+  var RANGE_EDITOR_SEL = '.el-date-editor--daterange, .el-date-editor--datetimerange, ' +
+    '.el-date-editor--monthrange, .ant-picker-range';
+
+  var RANGE_SECTION_MAP = {
+    edu: { listKey: 'eduList', startKey: 'eduStart', endKey: 'eduEnd' },
+    work: { listKey: 'workList', startKey: 'startDate', endKey: 'workEnd' },
+    intern: { listKey: 'internList', startKey: 'internStart', endKey: 'internEnd' },
+    project: { listKey: 'projectList', startKey: 'projectStart', endKey: 'projectEnd' },
+    campus: { listKey: 'campusList', startKey: 'campusStart', endKey: 'campusEnd' }
+  };
+
+  function nodeText(n) {
+    return String((n && n.textContent) || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function ruleForText(text) {
+    var t = String(text || '');
+    if (!t) return null;
+    for (var i = 0; i < ADD_SECTION_RULES.length; i++) {
+      if (ADD_SECTION_RULES[i].re.test(t)) return ADD_SECTION_RULES[i];
+    }
+    return null;
+  }
+
+  /** 范围控件属于哪个分区、第几段（BYD：.list-form-container + 「教育经历-1」标题） */
+  function rangeContext(el) {
+    var row = el.closest
+      ? el.closest('.list-form-container, [class*="list-form-item"], [class*="resume-item"]')
+      : null;
+    var rule = null;
+    var header = row
+      ? row.querySelector('.list-form-header, .form-header-title, [class*="header-title"]')
+      : null;
+    if (header) rule = ruleForText(nodeText(header));
+    var section = el.closest ? el.closest('.resume-section, .ant-card, section') : null;
+    if (!rule && section) {
+      var secHead = section.querySelector('.section-title .title') ||
+        section.querySelector('.section-title, .ant-card-head-title, h2, h3');
+      rule = ruleForText(nodeText(secHead));
+    }
+    if (!rule) return null;
+    if (!RANGE_SECTION_MAP[rule.key]) return null;
+    var index = 0;
+    var m = nodeText(header).match(/(\d+)\s*(?:$|[）)])/);
+    if (m) {
+      index = Math.max(0, parseInt(m[1], 10) - 1);
+    } else if (row && row.parentElement) {
+      var sibs = Array.prototype.filter.call(row.parentElement.children, function (n) {
+        return n.classList && n.classList.contains('list-form-container');
+      });
+      var pos = sibs.indexOf(row);
+      if (pos > 0) index = pos;
+    }
+    return { rule: rule, index: index };
+  }
+
+  /** 「2023-09」→ Date；缺日时，起点补 1 号，终点补当月最后一天 */
+  function rangeDateOf(value, isEnd) {
+    var parts = parseDateParts(value);
+    if (!parts) return null;
+    var y = parseInt(parts.y, 10);
+    var m = parseInt(parts.m, 10);
+    if (!y || !m) return null;
+    var d = parts.d ? parseInt(parts.d, 10) : (isEnd ? new Date(y, m, 0).getDate() : 1);
+    return new Date(y, m - 1, d);
+  }
+
+  function formatDateYmd(d) {
+    var mm = ('0' + (d.getMonth() + 1)).slice(-2);
+    var dd = ('0' + d.getDate()).slice(-2);
+    return d.getFullYear() + '-' + mm + '-' + dd;
+  }
+
+  /**
+   * 写范围控件：先落 UI 值，再用组件自己的提交路径（点日历格子走的就是 pick 事件）更新 v-model。
+   * 只有提交成功（v-model 已更新）才算填上，避免「看起来有值、表单其实没收到」。
+   */
+  async function fillRangeEditor(editor, startVal, endVal) {
+    var inputs = Array.prototype.filter.call(editor.querySelectorAll('input'), function (i) {
+      return !i.disabled && !i.readOnly;
+    });
+    if (inputs.length < 2) return false;
+    var start = rangeDateOf(startVal, false);
+    var end = rangeDateOf(endVal, true);
+    if (!start || !end) return false;
+    if (end.getTime() < start.getTime()) return false;
+    var vm = editor.__vue__ || (editor.querySelector('.el-range-input') || {}).__vue__;
+    var committed = false;
+    try {
+      if (vm && vm.picker && vm.picker.$emit) {
+        // 点日历格子走的就是这个 pick 事件：v-model 与两个 input 一起更新
+        vm.picker.$emit('pick', [start, end], true);
+        committed = true;
+      } else if (vm && vm.$emit) {
+        vm.$emit('input', [start, end]);
+        committed = true;
+      }
+    } catch (_) { /* ignore */ }
+    if (!committed) {
+      // 没有 Vue 实例的兜底：只派发 input（el-range-input 派发 change 会触发
+      // Element 的 handleStartChange/handleEndChange，未提交时读 this.value 直接抛错）
+      setInputRaw(inputs[0], formatDateYmd(start));
+      setInputRaw(inputs[1], formatDateYmd(end));
+    }
+    await sleep(120);
+    try { if (vm && typeof vm.handleClose === 'function') vm.handleClose(); } catch (_) { /* ignore */ }
+    await sleep(120);
+    if (!committed) return false;
+    return !!String(inputs[0].value || '').trim() && !!String(inputs[1].value || '').trim();
+  }
+
+  /** 页面上的范围日期控件：按分区/段序取 eduList[i].start/end 等 */
+  async function fillRangeEditors(profile, handled, filledKeys) {
+    var editors = Array.prototype.filter.call(document.querySelectorAll(RANGE_EDITOR_SEL), isVisibleEl);
+    var filled = 0;
+    for (var i = 0; i < editors.length; i++) {
+      var ed = editors[i];
+      var inputs = ed.querySelectorAll('input');
+      if (inputs.length < 2) continue;
+      var alreadyFilled = !!String(inputs[0].value || '').trim() && !!String(inputs[1].value || '').trim();
+      if (handled) {
+        for (var h = 0; h < inputs.length; h++) handled.add(inputs[h]);
+      }
+      if (alreadyFilled) continue;
+      var ctx = rangeContext(ed);
+      if (!ctx) continue;
+      var map = RANGE_SECTION_MAP[ctx.rule.key];
+      var list = profile && Array.isArray(profile[map.listKey]) ? profile[map.listKey] : [];
+      var item = list[ctx.index] || null;
+      var start = item && item.start ? String(item.start).trim() : '';
+      var end = item && item.end ? String(item.end).trim() : '';
+      if (!start) start = M.profileValue(profile, map.startKey) || '';
+      if (!end) end = M.profileValue(profile, map.endKey) || '';
+      if (!start || !end) continue;
+      if (!(await fillRangeEditor(ed, start, end))) continue;
+      filled += 1;
+      [map.startKey, map.endKey].forEach(function (k) {
+        if (filledKeys.indexOf(k) === -1) filledKeys.push(k);
+      });
+    }
+    return filled;
+  }
+
   async function expandAddSections(profile) {
     var report = [];
     for (var round = 0; round < 4; round++) {
@@ -459,7 +628,9 @@
         var have = countSectionRows(rule);
         if (have >= want) continue;
         simulateClick(cand.el);
-        await sleep(280);
+        // 行是异步渲染的（BYD 点完后 ~1s 才出现）：等行数真涨上去，再决定要不要继续点，
+        // 否则会在渲染完成前连点多下，多段档案会被点出额外空行
+        await waitUntil(function () { return countSectionRows(rule) > have; }, 1600, 150);
         var after = countSectionRows(rule);
         report.push({ section: rule.key, clicks: 1, before: have, after: after });
         if (after > have) progressed = true;
@@ -2442,11 +2613,18 @@
     }
 
     for (var pass = 0; pass < 2; pass++) {
+    // 起止时间合体的控件要在逐 input 匹配之前处理，否则两个 input 会被各写一份
+    if (opts.allowCustomSelect !== false) {
+      try { filled += await fillRangeEditors(profile, handled, filledKeys); } catch (_) { /* ignore */ }
+    }
     var els = iterFillableFields();
     for (var idx = 0; idx < els.length; idx++) {
       var el = els[idx];
       if (handled) { if (handled.has(el)) continue; handled.add(el); }
       if (groupHandled && groupHandled.has(el)) continue;
+      // 范围日期控件由 fillRangeEditors 负责（两个 input 共享一个 label）
+      if (el.classList && el.classList.contains('el-range-input')) continue;
+      if (el.closest && el.closest(RANGE_EDITOR_SEL)) continue;
       var struct = detectStructuredField(el);
       var key = struct ? struct.key : matchKeyForElement(el);
       if (!key) continue;

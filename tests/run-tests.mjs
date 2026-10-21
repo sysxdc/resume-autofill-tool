@@ -1741,12 +1741,29 @@ test('v1.5.6: 工作性质按该段职位推断', () => {
   assert.equal(Match.profileValue({ workList: [{ title: '工程师', nature: '兼职' }] }, 'workNature'), '兼职');
 });
 
-test('v1.5.6: manifest 1.5.6', () => {
+test('v1.5.7: manifest 1.5.7', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(pkg.version, '1.5.6');
+  assert.equal(pkg.version, '1.5.7');
 });
 
-console.log('v1.5.6 北森 Phoenix 适配');
+console.log('v1.5.7 加行按钮 / 起止时间合体控件');
+
+test('v1.5.7: 加行按钮解析到真正的可点元素', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/closest\('button, a, \[role="button"\], \.ant-btn, \.el-button'\)/.test(src), '应上溯到 button/a/[role=button]');
+  assert.ok(/seen\.indexOf\(target\) !== -1/.test(src), '应按可点元素去重');
+  assert.ok(/countListFormRows/.test(src), '应能数 .list-form-container 行数');
+  assert.ok(/countSectionRows\(rule\) > have/.test(src), '点完要等行数真的涨上去');
+});
+
+test('v1.5.7: 起止时间合体控件按分区/段序填', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/RANGE_EDITOR_SEL/.test(src) && /el-date-editor--daterange/.test(src), '应识别 el daterange');
+  assert.ok(/RANGE_SECTION_MAP/.test(src), '应有 分区 → listKey/startKey/endKey 映射');
+  assert.ok(/function rangeContext\(el\)/.test(src), '应能判断属于哪个分区、第几段');
+  assert.ok(/\$emit\('pick', \[start, end\]/.test(src), '应走组件的 pick 事件提交');
+  assert.ok(/el-range-input/.test(src), '通用循环应跳过范围控件的两个 input');
+});
 
 test('v1.5.6: 预计报到时间 / 紧急联系电话 各归其键', () => {
   assert.equal(Match.matchFieldKey('预计报到时间'), 'expectedStartDate');
