@@ -1429,8 +1429,95 @@
     return true;
   }
 
+  /** antd v3 的 Select（.ant-select 但没有 v4 的 .ant-select-selector） */
+  function isAntdV3SelectHost(host) {
+    if (!host || !host.classList || !host.classList.contains('ant-select')) return false;
+    return !host.querySelector('.ant-select-selector');
+  }
+
+  function antdV3SelectedText(host) {
+    var v = host.querySelector('.ant-select-selection-selected-value');
+    return v ? String(v.textContent || '').replace(/\s+/g, ' ').trim() : '';
+  }
+
+  /** antd v3 下拉：原生 click 打开 → 需要时输入搜索词 → 原生 click 选项 → 回读 */
+  async function fillAntdV3Select(host, value) {
+    if (!host || !value) return false;
+    if (antdV3SelectedText(host)) return false;
+    var want = String(value).replace(/\s+/g, '');
+    var tries = [String(value)].concat(regionPrefixVariants(value).reverse());
+
+    for (var t = 0; t < tries.length; t++) {
+      var target = tries[t];
+      if (!target) continue;
+      var sel = host.querySelector('.ant-select-selection');
+      if (!sel) return false;
+      if (!antdV3PanelIsOpen(sel)) {
+        try { sel.click(); } catch (_) { simulateClick(sel); }
+        await sleep(220);
+      }
+      var dd = dropdownForV3Select(sel);
+      var items = dd ? Array.prototype.slice.call(dd.querySelectorAll('li.ant-select-dropdown-menu-item')) : [];
+      items = items.filter(function (li) { return !/disabled/.test(String(li.className)); });
+
+      if (!items.length) {
+        // 远程搜索（学校/专业这类）：输入关键词等结果
+        var search = host.querySelector('.ant-select-search__field');
+        if (search) {
+          try {
+            search.focus();
+            var desc = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+            if (desc && desc.set) desc.set.call(search, target);
+            else search.value = target;
+            search.dispatchEvent(new Event('input', { bubbles: true }));
+          } catch (_) { /* ignore */ }
+          await sleep(1200);
+          dd = dropdownForV3Select(sel);
+          items = dd ? Array.prototype.slice.call(dd.querySelectorAll('li.ant-select-dropdown-menu-item')) : [];
+          items = items.filter(function (li) { return !/disabled/.test(String(li.className)); });
+        }
+      }
+      if (!items.length) continue;
+
+      var wantNorm = target.replace(/\s+/g, '');
+      var hit = items.filter(function (li) {
+        return String(li.textContent || '').replace(/\s+/g, '') === wantNorm;
+      })[0];
+      if (!hit) {
+        // 「使用“广东工业大学”作为我的学校」这种远程搜索占位项：文案里含目标就认
+        hit = items.filter(function (li) {
+          var t2 = String(li.textContent || '').replace(/\s+/g, '');
+          return t2.indexOf(wantNorm) !== -1;
+        })[0];
+      }
+      if (!hit) continue;
+      try { hit.click(); } catch (_) { simulateClick(hit); }
+      await sleep(320);
+      if (antdV3SelectedText(host)) { highlight(host); return true; }
+    }
+    return false;
+  }
+
+  /** 这个 select 自己那个下拉（按 aria-controls 找，找不到退回可见的那个） */
+  function dropdownForV3Select(sel) {
+    var ctrl = sel && sel.querySelector('[aria-controls]');
+    var id = ctrl ? ctrl.getAttribute('aria-controls') : (sel && sel.getAttribute('aria-controls'));
+    if (id) {
+      var byId = document.getElementById(id);
+      if (byId) return byId;
+    }
+    var list = Array.prototype.filter.call(document.querySelectorAll('.ant-select-dropdown'), isVisibleEl);
+    return list.length ? list[list.length - 1] : null;
+  }
+
+  function antdV3PanelIsOpen(sel) {
+    var dd = dropdownForV3Select(sel);
+    return !!(dd && isVisibleEl(dd) && dd.querySelector('li.ant-select-dropdown-menu-item'));
+  }
+
   function fillCustomSelect(host, value, key) {
     if (isPhoenixHost(host)) return fillPhoenixHost(host, value, key);
+    if (isAntdV3SelectHost(host)) return fillAntdV3Select(host, value);
     return new Promise(function (resolve) {
       if (!host || !value) { resolve(false); return; }
       if (customSelectLooksFilled(host)) { resolve(false); return; }
@@ -3242,7 +3329,7 @@
   }
 
   function isAntdPickerEl(el) {
-    try { return !!(el && el.closest && el.closest('.ant-picker')); } catch (_) { return false; }
+    try { return !!(el && el.closest && el.closest('.ant-picker, .ant-calendar-picker')); } catch (_) { return false; }
   }
 
   /** 等 antd 弹层真正挂上 DOM（首帧可能还没渲染） */
@@ -3283,7 +3370,7 @@
         if (!waited && isAntdPickerEl(el)) {
           try { el.blur(); } catch (_) { /* ignore */ }
           closeAllAntdPanels();
-          resolve('dbg:no_panel');
+          resolve(false);
           return;
         }
         // (0) antd v3 日历（.ant-calendar）：面板输入框 / 年面板 / 月面板
@@ -3319,7 +3406,7 @@
           cands = await pageUntilFound(desired);
         }
         if (!cands.length) {
-          resolve(isAntdPickerEl(el) ? 'dbg:antd_no_cand' : (forceSetReadonly(el, desired) ? 'forced' : false));
+          resolve(isAntdPickerEl(el) ? false : (forceSetReadonly(el, desired) ? 'forced' : false));
           return;
         }
         var i = 0;
@@ -3452,6 +3539,15 @@
     };
     walk(container, 0);
     if (texts.length) return texts[0];
+    // v1.5.12：antd v3 的 label 在另一列（.ant-form-item-label），兄弟节点里找不到
+    var item = container.closest && container.closest('.ant-form-item, .form-item, .field, .form-row, tr');
+    if (item) {
+      var lab = item.querySelector('label');
+      if (lab) {
+        var lt = String(lab.textContent || '').replace(/\s+/g, ' ').replace(/\*/g, '').trim();
+        if (lt && lt.length <= 24) return lt;
+      }
+    }
     var prev = container.previousElementSibling;
     if (prev) {
       var t2 = String(prev.textContent || '').replace(/\s+/g, ' ').trim();
@@ -3475,7 +3571,13 @@
       var opt = normalizeChoiceText(radioOptionText(radios[i]));
       if (!opt) continue;
       if (opt === want || (opt.length >= 2 && want.indexOf(opt) !== -1)) {
-        simulateClick(radios[i]);
+        var lab = radios[i].closest && radios[i].closest('label');
+        if (lab && lab.classList && lab.classList.contains('ant-radio-wrapper') && typeof lab.click === 'function') {
+          // antd v3 的 Radio：合成事件不触发 onChange，原生 click 才行
+          lab.click();
+        } else {
+          simulateClick(radios[i]);
+        }
         if (radios[i].checked) { highlight(radios[i]); return true; }
       }
     }
@@ -3682,7 +3784,7 @@
           }
         }
         if (ok === 'forced') forced.push(key);
-        if (!ok) skipped.push({ key: key, reason: typeof ok === 'string' ? ok : 'readonly_picker_not_found' });
+        if (!ok) skipped.push({ key: key, reason: 'readonly_picker_not_found' });
       } else {
         ok = commitFrameworkWidget(el, value) || setNativeValue(el, value);
         if (!ok && el.tagName && el.tagName.toLowerCase() === 'select') {

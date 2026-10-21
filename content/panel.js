@@ -218,6 +218,15 @@
         setStatus(reasonText(r), true);
         return;
       }
+      // 诊断用：把最近一次结果挂到宿主节点上（页面里读 dataset 就能看到，不影响页面）
+      try {
+        host.dataset.lastResult = JSON.stringify({
+          filled: r.filled || 0,
+          timedOut: !!r.timedOut,
+          keys: (r.filledKeys || []).slice(0, 80),
+          skipped: (r.skipped || []).slice(0, 30)
+        });
+      } catch (_) { /* ignore */ }
       var blanks = (r.unfilled && r.unfilled.length !== undefined) ? r.unfilled : api.unfilled();
       setStatus('已填 ' + (r.filled || 0) + ' 项' + (r.timedOut ? '（超时，部分字段没处理完）' : '') + '，' + summary(blanks));
       renderList(blanks);

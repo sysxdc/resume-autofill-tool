@@ -2058,6 +2058,26 @@ test('v1.5.14: 范围控件在实习分区可回落到 workList', () => {
   assert.ok(/list = profile\.workList/.test(src), '用 workList 取这一段的起止');
 });
 
+test('v1.5.15: 中华英才网 wecruit（antd v3）可控组件', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  // antd v3 的选项 / 已选值 / 日历面板类名都跟 v4 不一样
+  assert.ok(src.includes('.ant-select-dropdown-menu-item'), 'v3 选项类名');
+  assert.ok(src.includes('.ant-select-selection-selected-value'), 'v3 已选值类名');
+  assert.ok(src.includes('.ant-calendar-picker-container'), 'v3 日历面板');
+  assert.ok(src.includes('function tryAntdV3Calendar'), 'v3 日历填充函数');
+  assert.ok(src.includes('function fillAntdV3Select'), 'v3 下拉填充函数');
+  // v3 只认原生 click：合成事件它不接；面板开着再点会关掉
+  assert.ok(/if \(isAntdV3Picker\(el\)\)[\s\S]{0,180}el\.click\(\)/.test(src), 'v3 用原生 click 开面板');
+  // 下拉内部搜索框不再被主循环写（否则值进了搜索框、组件不显示）
+  assert.ok(src.includes('INNER_SELECT_SEARCH_SEL'), '内部搜索框跳过');
+  // 没有区块标题的 ATS 用兄弟标签推断分区
+  assert.ok(src.includes('function sectionContextBySiblingLabels'), '兄弟标签推断分区');
+  // 省市级联整串要能落到「广东省」
+  assert.ok(src.includes('function regionPrefixVariants'), '行政区前缀切分');
+  // 无名单选组的标题在另一列（.ant-form-item-label）
+  assert.ok(/closest\('\.ant-form-item, \.form-item, \.field, \.form-row, tr'\)/.test(src), 'radio 组标题兜底');
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

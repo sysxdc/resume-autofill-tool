@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.5.14**
+当前版本：**1.5.15**
 
 ## 功能概览
 
@@ -195,6 +195,27 @@ resume-autofill-tool/
   宁可不填也不猜；提交前手动选一下。
 
 ## Changelog
+
+### 1.5.15
+
+- **中华英才网 wecruit（`wecruit.hotjob.cn`，antd v3）控件逐个对不上**：
+  - **日期**：v3 是 `.ant-calendar-picker` + `.ant-calendar-picker-container`，且**只认原生 click**——合成
+    `mousedown/click` 打不开面板（实测 y=-3910 的屏外字段也一样，原生 click 就行）。面板里 `.ant-calendar-input`
+    写入 `YYYY-MM-DD` + Enter 最稳，退化路径走「年份面板 → 月份面板 → 日格」。
+  - **下拉**：v3 的选项是 `li.ant-select-dropdown-menu-item`、已选值是 `.ant-select-selection-selected-value`，
+    跟 v4/v5 完全不是一个类名。现在按 `.ant-select` 但无 `.ant-select-selector` 判定为 v3，走「原生 click 打开 →
+    需要时输入搜索词 → 原生 click 选项 → 回读已选值」。
+  - **值写进了搜索框**：主循环以前会把值写进 `.ant-select` 内部的搜索 `<input>`，组件不显示、页面一重渲染就没了；
+    现在这类内部输入框统一跳过，只由下拉写路径负责。
+  - **性别单选**：`.ant-radio-wrapper` 的 label 在另一列（`.ant-form-item-label`），组标题兜底去那里取；
+    v3 的 Radio 也只认原生 click，合成事件不触发 `onChange`。
+  - **没有区块标题的表单**：这块「教育经历 / 工作经历」只有重复的字段组，没有标题。新增
+    「同一组字段里的兄弟标签」推断分区（有学校/专业 → edu，有企业名称/工作描述 → work），
+    于是第二段的「开始时间 / 结束时间」不再被判成泛化的 `startDate/endDate`。
+  - **省市级联**：`籍贯` 是 `.cascader-plugins-wrap` 里的两个下拉，档案里是「广东省-阳江市-江城区」，
+    新增按行政区后缀切前缀，第一级能落到「广东省」。
+- **诊断**：悬浮窗把最近一次填充结果（`filled` / `filledKeys` / `skipped`）挂在宿主节点的 `dataset.lastResult` 上，
+  页面里读 `document.getElementById('__ra_panel_host__').dataset.lastResult` 就能看到「这个字段为什么没填」。
 
 ### 1.5.14
 
