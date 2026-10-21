@@ -716,10 +716,10 @@ test('buildSystemPrompt mentions select option matching', () => {
 
 console.log('repo integrity');
 
-test('manifest is MV3 1.4.x with icons', () => {
+test('manifest is MV3 1.4+/1.5.x with icons', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.ok(/^1\.4\.\d+$/.test(manifest.version), `version=${manifest.version}`);
+  assert.ok(/^1\.[45]\.\d+$/.test(manifest.version), `version=${manifest.version}`);
   assert.ok(manifest.icons['16']);
   assert.ok(manifest.action.default_icon['48']);
   assert.ok(manifest.content_scripts[0].js.includes('shared/match.js'));
@@ -1241,7 +1241,7 @@ test('v1.3.2: getLabelText 支持表格布局与 el-select 兄弟标签', () => 
 
 test('v1.3.2: manifest 版本已递增', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.ok(/^1\.4\.\d+$/.test(manifest.version), manifest.version);
+  assert.ok(/^1\.[45]\.\d+$/.test(manifest.version), manifest.version);
   assert.equal(manifest.content_scripts[0].all_frames, true);
 });
 
@@ -1355,7 +1355,7 @@ test('v1.3.7: antd 年/月/日面板 + 年月字段', () => {
 console.log('v1.4.0 简历库 / 解析器');
 test('v1.4.0: manifest 版本与资源接线', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.ok(/^1\.4\.\d+$/.test(pkg.version), 'manifest 应为 1.4.x，实际 ' + pkg.version);
+  assert.ok(/^1\.[45]\.\d+$/.test(pkg.version), 'manifest 应为 1.4+/1.5.x，实际 ' + pkg.version);
   const html = fs.readFileSync(path.join(root, 'options/options.html'), 'utf8');
   ['../lib/pdf.min.js', '../lib/mammoth.browser.min.js', '../shared/db.js', '../shared/resume-parser.js'].forEach((src) => {
     assert.ok(html.indexOf(src) !== -1, 'options.html 应加载 ' + src);
@@ -1396,7 +1396,7 @@ test('v1.4.1: emptyProfile 含空列表；normalizeProfile 保留 eduList', () =
   assert.equal(n.projectList[0].name, '项目A');
 });
 
-test('v1.4.1: mergeFlatOntoProfile 表单保存不丢多段经历', () => {
+test('v1.4.1/1.5.0: mergeFlatOntoProfile 省略列表键时保留多段经历', () => {
   const existing = Profile.normalizeProfile({
     name: '旧名',
     phone: '13800000000',
@@ -1404,13 +1404,8 @@ test('v1.4.1: mergeFlatOntoProfile 表单保存不丢多段经历', () => {
     workList: [{ company: '旧公司', title: '开发' }],
     projectList: [{ name: '旧项目' }]
   });
-  const flat = Profile.emptyProfile();
-  flat.name = '新名';
-  flat.phone = '13900000000';
-  // 模拟表单 readForm：扁平字段更新，列表为空数组
-  flat.eduList = [];
-  flat.workList = [];
-  flat.projectList = [];
+  // 仅扁平字段、不带列表键 → 保留档案列表（兼容旧保存路径）
+  const flat = { name: '新名', phone: '13900000000' };
   const merged = Profile.mergeFlatOntoProfile(flat, existing);
   assert.equal(merged.name, '新名');
   assert.equal(merged.phone, '13900000000');
@@ -1418,6 +1413,26 @@ test('v1.4.1: mergeFlatOntoProfile 表单保存不丢多段经历', () => {
   assert.equal(merged.eduList[0].school, 'A大学');
   assert.equal(merged.workList[0].company, '旧公司');
   assert.equal(merged.projectList[0].name, '旧项目');
+});
+
+test('v1.5.0: mergeFlatOntoProfile 显式列表覆盖（含清空）', () => {
+  const existing = Profile.normalizeProfile({
+    name: '旧名',
+    eduList: [{ school: 'A大学', degree: '本科' }],
+    workList: [{ company: '旧公司', title: '开发' }],
+    projectList: [{ name: '旧项目' }]
+  });
+  const flat = Profile.emptyProfile();
+  flat.name = '新名';
+  flat.eduList = [{ school: 'C大学', major: 'CS', degree: '硕士', start: '2020-09', end: '2023-06', city: '', gpa: '', description: '' }];
+  flat.workList = [];
+  flat.projectList = [{ name: '新项目', role: '开发', start: '', end: '', tech: 'TS', description: '' }];
+  const merged = Profile.mergeFlatOntoProfile(flat, existing);
+  assert.equal(merged.name, '新名');
+  assert.equal(merged.eduList.length, 1);
+  assert.equal(merged.eduList[0].school, 'C大学');
+  assert.equal(merged.workList.length, 0, '显式空数组应清空工作经历');
+  assert.equal(merged.projectList[0].name, '新项目');
 });
 
 test('v1.4.1: options 源守卫（脏表单确认 / 清空库 / 合并保存）', () => {
@@ -1435,8 +1450,168 @@ test('v1.4.1: db.openDB 失败可重试；resume-parser 有文件上限', () => 
   assert.ok(/onversionchange/.test(dbSrc), '应处理 versionchange');
   const Parser = require(path.join(root, 'shared/resume-parser.js'));
   assert.equal(Parser.MAX_FILE_BYTES, 20 * 1024 * 1024);
-  assert.ok(/1\.4\.1/.test(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')));
+  assert.ok(/1\.[45]\.\d+/.test(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')));
 });
+
+
+console.log('v1.5.0 多段编辑 / 下拉适配 / 语义模糊');
+
+test('v1.5.0: SAMPLE_PROFILE 含多段虚构经历', () => {
+  const s = Profile.SAMPLE_PROFILE;
+  assert.ok(Array.isArray(s.eduList) && s.eduList.length >= 1);
+  assert.ok(Array.isArray(s.workList) && s.workList.length >= 1);
+  assert.ok(Array.isArray(s.projectList) && s.projectList.length >= 1);
+  assert.equal(s.name, '张三');
+  assert.ok(!/api[_-]?key|sk-/i.test(JSON.stringify(s)), '样例不得含密钥');
+});
+
+test('v1.5.0: LIST_ITEM_LABELS / SECTION_TITLES 导出', () => {
+  assert.ok(Profile.LIST_ITEM_LABELS.eduList.school);
+  assert.ok(Profile.LIST_SECTION_TITLES.eduList);
+  assert.deepEqual(Profile.LIST_ITEM_FIELDS.eduList, [
+    'school', 'major', 'degree', 'start', 'end', 'city', 'gpa', 'description'
+  ]);
+});
+
+test('v1.5.0: normalizeProfile + merge 多段 roundtrip', () => {
+  const raw = {
+    name: '张三',
+    eduList: [
+      { school: '复旦大学', major: '计算机', degree: '本科', start: '2016-09', end: '2020-06' },
+      { school: '示例高中', major: '理科', degree: '高中', start: '2013-09', end: '2016-06' }
+    ],
+    workList: [
+      { company: '示例科技', title: '前端', start: '2020-07', end: '至今' }
+    ],
+    projectList: [
+      { name: '表单引擎', role: '负责人', tech: 'React' }
+    ]
+  };
+  const n = Profile.normalizeProfile(raw);
+  assert.equal(n.eduList.length, 2);
+  const flat = { name: '张三改' };
+  const kept = Profile.mergeFlatOntoProfile(flat, n);
+  assert.equal(kept.name, '张三改');
+  assert.equal(kept.eduList.length, 2);
+  const overlay = Profile.normalizeProfile({
+    name: '张三改',
+    eduList: n.eduList,
+    workList: n.workList,
+    projectList: n.projectList
+  });
+  const again = Profile.normalizeProfile(overlay);
+  assert.deepEqual(again.eduList.map((e) => e.school), ['复旦大学', '示例高中']);
+});
+
+test('v1.5.0: 语义模糊 — 新 CN ATS 同义', () => {
+  assert.equal(Match.matchFieldKey('意向岗位'), 'jobTarget');
+  assert.equal(Match.matchFieldKey('应聘岗位'), 'jobTarget');
+  assert.equal(Match.matchFieldKey('期望岗位'), 'jobTarget');
+  assert.equal(Match.matchFieldKey('毕业学校'), 'school');
+  assert.equal(Match.matchFieldKey('最高学历'), 'highestDegree');
+  assert.equal(Match.matchFieldKey('目前月薪'), 'currentSalary');
+  assert.equal(Match.matchFieldKey('希望薪资'), 'expectedSalary');
+  assert.equal(Match.matchFieldKey('籍贯'), 'nativePlace');
+  assert.equal(Match.matchFieldKey('祖籍'), 'nativePlace');
+  assert.equal(Match.matchFieldKey('户口所在地'), 'hukou');
+  assert.equal(Match.matchFieldKey('婚姻状况'), 'maritalStatus');
+  assert.equal(Match.matchFieldKey('民族'), 'ethnicity');
+  assert.equal(Match.matchFieldKey('紧急联系人姓名'), 'emergencyContactName');
+  assert.equal(Match.matchFieldKey('应急联系人电话'), 'emergencyContactPhone');
+  assert.equal(Match.matchFieldKey('到岗时间'), 'availability');
+  assert.equal(Match.matchFieldKey('工作性质'), 'jobType');
+  assert.equal(Match.matchFieldKey('雇佣类型'), 'jobType');
+});
+
+test('v1.5.0: denylist 仍拦截上司/微信误匹配', () => {
+  assert.equal(Match.matchFieldKey('直接上司微信'), null);
+  assert.equal(Match.matchFieldKey('直属上级电话'), null);
+  assert.equal(Match.matchFieldKey('supervisor wechat'), null);
+  assert.equal(Match.matchFieldKey('微信'), 'wechat');
+});
+
+test('v1.5.0: stripLabelNoise / normalizeOptionText / parseYesNo / findBestOption', () => {
+  assert.equal(Match.stripLabelNoise('请选择性别'), '性别');
+  assert.equal(Match.stripLabelNoise('请输入姓名'), '姓名');
+  assert.ok(Match.cleanLabelPunctuation('请选择：意向岗位').indexOf('意向岗位') !== -1);
+  assert.equal(Match.parseYesNo('是'), 'Yes');
+  assert.equal(Match.parseYesNo('否'), 'No');
+  assert.equal(Match.parseYesNo('可以'), 'Yes');
+  assert.equal(Match.normalizeToYesNo('是'), Match.parseYesNo('是'));
+  const hit = Match.findBestOption(
+    [{ value: '1', text: '本科' }, { value: '2', text: '硕士' }, { value: '', text: '请选择' }],
+    '本科'
+  );
+  assert.ok(hit);
+  assert.equal(hit.text, '本科');
+  const yn = Match.findBestOption(
+    [{ value: 'Y', text: '是' }, { value: 'N', text: '否' }],
+    '否'
+  );
+  assert.equal(yn.text, '否');
+  assert.equal(Match.normalizeOptionText('　本　科　'), '本科');
+});
+
+test('v1.5.0: profileValueForOccurrence 多段按序取值', () => {
+  const p = Profile.normalizeProfile({
+    school: '扁平校',
+    eduList: [
+      { school: '一段校', major: 'CS', degree: '本科' },
+      { school: '二段校', major: 'SE', degree: '硕士' }
+    ],
+    workList: [
+      { company: '公司A', title: '前端' },
+      { company: '公司B', title: '全栈' }
+    ],
+    projectList: [
+      { name: '项目一', role: '负责人' },
+      { name: '项目二', role: '成员' }
+    ]
+  });
+  assert.equal(Match.profileValueForOccurrence(p, 'school', 0), '扁平校');
+  assert.equal(Match.profileValueForOccurrence(p, 'school', 1), '二段校');
+  assert.equal(Match.profileValueForOccurrence(p, 'company', 1), '公司B');
+  assert.equal(Match.profileValueForOccurrence(p, 'projectName', 1), '项目二');
+  assert.equal(Match.profileValueForOccurrence(p, 'school', 9), '');
+  assert.equal(Match.profileValueForOccurrence(p, 'email', 1), p.email || '');
+});
+
+test('v1.5.0: options 多段编辑器源守卫', () => {
+  const src = fs.readFileSync(path.join(root, 'options/options.js'), 'utf8');
+  assert.ok(/renderListEditor/.test(src), '应有列表渲染');
+  assert.ok(/readListFromDom/.test(src), '应有列表读取');
+  assert.ok(/data-list-act/.test(src), '应有上移下移删除');
+  assert.ok(/list-eduList|list-workList|list-projectList/.test(
+    fs.readFileSync(path.join(root, 'options/options.html'), 'utf8')
+  ), 'options.html 应有多段容器');
+  assert.ok(/list-editor/.test(fs.readFileSync(path.join(root, 'options/options.css'), 'utf8')));
+});
+
+test('v1.5.0: autofill 下拉适配器源守卫', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/fillCustomSelect/.test(src));
+  assert.ok(/el-select/.test(src) && /ant-select/.test(src));
+  assert.ok(/dictionary-selector/.test(src));
+  assert.ok(/fillNamedRadioGroups/.test(src));
+  assert.ok(/profileValueForOccurrence/.test(src));
+  assert.ok(/findBestOption/.test(src));
+});
+
+test('v1.5.0: demo/dropdowns.html 存在且含四类组件', () => {
+  const html = fs.readFileSync(path.join(root, 'demo/dropdowns.html'), 'utf8');
+  assert.ok(/el-select/.test(html));
+  assert.ok(/ant-select/.test(html));
+  assert.ok(/dictionary-selector/.test(html));
+  assert.ok(/<select/.test(html));
+  assert.ok(/type="radio"/.test(html));
+  assert.ok(/活体验证|手动/.test(html));
+});
+
+test('v1.5.0: manifest 1.5.0', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  assert.equal(pkg.version, '1.5.0');
+});
+
 
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);

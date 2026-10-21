@@ -4,11 +4,13 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.4.1**
+当前版本：**1.5.0**
 
 ## 功能概览
 
 - **本地资料库**：选项页按 playoffer 风格折叠分区编辑（个人信息 / 求职意向 / 教育 / 实习 / 工作 / 项目 / 校园 / 社会实践 / 技能 / 证书 / 外语 / 家庭 / 获奖 / 专利 / 论文 / 培训）。
+- **多段经历编辑（1.5.0）**：选项页可增删改排序 `eduList` / `workList` / `projectList`；保存写入列表；主条目扁平字段仍兼容旧匹配。
+- **自定义下拉适配（1.5.0）**：原生 select、`.el-select`、`.ant-select`、`.dictionary-selector` / listbox 写路径；Yes/No radio 增强；见 `demo/dropdowns.html`。
 - **简历解析与多档案库（1.4.0）**：导入 PDF / DOCX / TXT / MD，本地解析成 profile 存进 IndexedDB，多份简历共存、一键切换应用。
 - **导入 / 导出 JSON**、**加载示例资料**、清空确认与保存反馈。
 - **兼容匹配（非完全匹配）**：关键词 + CN↔EN 同义 + Levenshtein / token 模糊评分；`autocomplete` 优先；保留 EEO / 法律问卷 denylist。
@@ -18,7 +20,7 @@
 
 ## 资料字段（1.3.0 playoffer 全量）
 
-受 [playoffer](https://playoffer.cn) 类 ATS 简历字段启发，扁平 schema 约 **255** 键（相对 1.2.x ~60 键大幅扩展）。多段经历只存**主条目**；完整 CN→key 对照见 [`docs/playoffer-field-map.md`](docs/playoffer-field-map.md)。
+受 [playoffer](https://playoffer.cn) 类 ATS 简历字段启发，扁平 schema 约 **255** 键（相对 1.2.x ~60 键大幅扩展）。扁平主条目 + 多段数组（`eduList`/`workList`/`projectList`，1.5.0 可在选项页编辑）；完整 CN→key 对照见 [`docs/playoffer-field-map.md`](docs/playoffer-field-map.md)。
 
 | 分区 | 主要字段（节选） |
 |------|------|
@@ -120,7 +122,8 @@ API 调用在 **background service worker** 中完成（避免页面 CORS），�
 ## 演示页（手动测试）
 
 ```text
-demo/job-application.html
+demo/job-application.html   # 综合申请表
+demo/dropdowns.html         # 原生 / Element / Ant / dictionary 下拉 + Yes/No（v1.5.0）
 ```
 
 ```bash
@@ -141,7 +144,7 @@ node tests/run-tests.mjs
 
 ```text
 resume-autofill-tool/
-├── manifest.json                 # MV3，version 1.4.1
+├── manifest.json                 # MV3，version 1.5.0
 ├── lib/                          # 打包的第三方库（离线，无 CDN）
 │   ├── pdf.min.js / pdf.worker.min.js
 │   └── mammoth.browser.min.js
@@ -181,6 +184,14 @@ resume-autofill-tool/
 - 证件号等敏感字段为选填；公共电脑请勿保存。
 
 ## Changelog
+
+### 1.5.0
+- **选项页多段经历编辑**：可折叠分区编辑教育 / 工作 / 项目多段（增删、上移下移）；加载示例 / 导入 / 切换档案刷新列表 UI；保存经 `mergeFlatOntoProfile` 写入显式列表（空数组表示清空）。
+- **下拉组件适配**：`autofill.js` 增加 Element-UI / Ant Design / dictionary-selector 点击展开→按文案选选项；命名 Yes/No radio 组可填；纯函数 `normalizeOptionText` / `findBestOption` / `parseYesNo` 可单测。
+- **演示页**：新增 `demo/dropdowns.html`（原生 select + 三类自定义下拉 + radio），附手动活体验证清单。
+- **语义模糊增强**：更多 CN ATS 同义（意向/应聘岗位、毕业学校、目前/期望薪资变体、籍贯/户口、婚姻/民族、紧急联系人*、到岗时间、工作性质等）；标签噪声归一（请选择/请输入、全角半角）；denylist 仍拦截上司微信等误匹配。
+- **多段填写（初版）**：同标签多行时 `profileValueForOccurrence` 按 `eduList[i]` / `workList[i]` / `projectList[i]` 取值（最多仍受 `MAX_FILLS_PER_KEY` 约束）。
+- SAMPLE 仍为虚构「张三」；manifest **1.5.0**。
 
 ### 1.4.1
 - **修复：保存表单不再清空多段经历**：选项页「保存资料」原先只写扁平字段，会把 IndexedDB / `chrome.storage` 里的 `eduList`/`workList`/`projectList` 冲掉；现通过 `mergeFlatOntoProfile` 拼回列表。

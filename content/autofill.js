@@ -9,6 +9,7 @@
  * v1.3.4: 日历网格型日期面板（翻月 + 点日，最外层面板判定）。
  * v1.3.3: 多表格日期面板（年/月/日 分组识别 + 确定按钮）。
  * v1.3.2: 表格布局（td/th 左列）与 Element-UI 下拉的标签发现，修复下拉选单填不上。
+ * v1.5.0: 自定义下拉写路径（native/el-select/ant-select/dictionary-selector）+ Yes/No radio；多段 list occurrence。
  * v1.3.1: 搜索框跳过 + readonly 弹层选择器点击 + 无名 radio 白名单；skipped 原因上报。
  * v1.3.0: D10 相邻年/月 placeholder 对 + 附近日期组标签；D9 拆分失败跳过。
  * v1.2.3: getLabelText 支持 antd/form-item、aria-labelledby；年/月日期拆分；hints 优先标签。
@@ -343,7 +344,12 @@
   var PICKER_BLOCK_RE = /^(提交|保存|取消|关闭|确定删除|删除|清除|重置|退出|submit|save|cancel|close|reset|delete)$/i;
 
   /** 允许自动勾选的单选组（语义容易误判的组不在此列） */
-  var RADIO_SAFE_KEYS = { gender: 1, maritalStatus: 1, politicalStatus: 1, ethnicity: 1 };
+  var RADIO_SAFE_KEYS = {
+    gender: 1, maritalStatus: 1, politicalStatus: 1, ethnicity: 1,
+    hasRelativeAtCompany: 1, acceptAdjustment: 1, isFreshGraduate: 1,
+    hasMilitaryService: 1, isVeteran: 1, willingToRelocate: 1,
+    hasChronicIllness: 1, hasCriminalRecord: 1, hasStudyAbroad: 1
+  };
 
   function isReadonlyPicker(el) {
     if (!el || el.disabled || !el.readOnly) return false;
@@ -360,6 +366,175 @@
       try { el.click(); } catch (e) { /* ignore */ }
     }
   }
+
+  // ————— v1.5.0：自定义下拉适配器（Element / Ant / dictionary / listbox）—————
+
+  var CUSTOM_SELECT_HOST =
+    '.el-select, .ant-select, .dictionary-selector, .form-select, [role="combobox"]';
+  var DROPDOWN_OPTION_SEL =
+    '[role="option"], .el-select-dropdown__item, .el-option, .ant-select-item-option, ' +
+    '.ant-select-item, .dictionary-option, .option-item, .select-option, li.el-select-dropdown__item';
+
+  function findCustomSelectHost(el) {
+    if (!el || !el.closest) return null;
+    return el.closest(CUSTOM_SELECT_HOST);
+  }
+
+  function customSelectLooksFilled(host) {
+    if (!host) return false;
+    var txt = '';
+    var selected = host.querySelector(
+      '.el-select__selected-item, .el-input__inner, .ant-select-selection-item, .ant-select-selection-search-input, .selected-text, [class*="selected"]'
+    );
+    if (selected) {
+      txt = String(selected.textContent || selected.value || '').replace(/\s+/g, ' ').trim();
+    }
+    if (!txt) {
+      var inp = host.querySelector('input');
+      if (inp) txt = String(inp.value || '').replace(/\s+/g, ' ').trim();
+    }
+    if (!txt || /请选择|请输入|select|choose|--/i.test(txt)) return false;
+    return true;
+  }
+
+  function collectOpenDropdownOptions() {
+    var nodes = document.querySelectorAll(DROPDOWN_OPTION_SEL);
+    var out = [];
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (!isVisibleEl(n)) continue;
+      var txt = String(n.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!txt || txt.length > 80 || PICKER_BLOCK_RE.test(txt)) continue;
+      out.push({ el: n, text: txt, value: n.getAttribute('data-value') || txt });
+    }
+    return out;
+  }
+
+  function openCustomSelect(host) {
+    if (!host) return;
+    var clickTarget =
+      host.querySelector('.el-input__inner, .ant-select-selector, .el-select__wrapper, [role="combobox"], input') ||
+      host;
+    simulateClick(clickTarget);
+  }
+
+  /**
+   * 写自定义下拉：点击展开 → 按文案匹配选项 → 点击。
+   * 纯匹配逻辑复用 M.findBestOption / matchSelectOption。
+   */
+  function fillCustomSelect(host, value) {
+    return new Promise(function (resolve) {
+      if (!host || !value) { resolve(false); return; }
+      if (customSelectLooksFilled(host)) { resolve(false); return; }
+      openCustomSelect(host);
+      setTimeout(function () {
+        var opts = collectOpenDropdownOptions();
+        if (!opts.length) {
+          // 再试一次：部分组件需要第二次点击
+          openCustomSelect(host);
+          setTimeout(function () {
+            opts = collectOpenDropdownOptions();
+            finish(opts);
+          }, 280);
+          return;
+        }
+        finish(opts);
+      }, 320);
+
+      function finish(opts) {
+        if (!opts || !opts.length) { resolve(false); return; }
+        var matched = M.findBestOption
+          ? M.findBestOption(opts, value)
+          : (M.matchSelectOption && M.matchSelectOption(opts, value));
+        if (!matched) { resolve(false); return; }
+        var wantNorm = M.normalizeOptionText
+          ? M.normalizeOptionText(matched.text || matched.value)
+          : String(matched.text || matched.value || '').toLowerCase();
+        var hit = null;
+        for (var i = 0; i < opts.length; i++) {
+          var tn = M.normalizeOptionText
+            ? M.normalizeOptionText(opts[i].text)
+            : String(opts[i].text || '').toLowerCase();
+          if (tn === wantNorm || opts[i].text === matched.text) { hit = opts[i]; break; }
+        }
+        if (!hit) hit = opts[0];
+        simulateClick(hit.el);
+        setTimeout(function () {
+          resolve(customSelectLooksFilled(host) || true);
+        }, 200);
+      }
+    });
+  }
+
+  /** 命名 radio 组：按 name 聚合，Yes/No 与安全键可填 */
+  function fillNamedRadioGroups(profile, keyCounts, filledKeys) {
+    var filled = 0;
+    var radios = Array.from(document.querySelectorAll('input[type=radio][name]')).filter(function (r) {
+      return !r.disabled && r.offsetParent !== null;
+    });
+    var byName = {};
+    radios.forEach(function (r) {
+      if (!byName[r.name]) byName[r.name] = [];
+      byName[r.name].push(r);
+    });
+    Object.keys(byName).forEach(function (name) {
+      var group = byName[name];
+      if (group.length < 2) return;
+      // 已有选中则跳过
+      if (group.some(function (r) { return r.checked; })) return;
+      var labelHint = '';
+      var first = group[0];
+      var wrap = first.closest
+        ? first.closest('fieldset, .el-form-item, .ant-form-item, .form-item, .form-group, tr, li, div')
+        : first.parentElement;
+      if (wrap) {
+        var lab = wrap.querySelector('label, legend, .el-form-item__label, .ant-form-item-label');
+        if (lab) labelHint = String(lab.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+      if (!labelHint) labelHint = name;
+      var scored = M.matchFieldKeyScored ? M.matchFieldKeyScored(labelHint, {}) : null;
+      var gkey = scored && scored.key;
+      if (!gkey) return;
+      var gval = M.profileValue(profile, gkey);
+      if (!gval) return;
+      var opts = group.map(function (r) {
+        return { value: r.value, text: radioOptionText(r), el: r };
+      });
+      var isYn = M.isYesNoOnlySelect && M.isYesNoOnlySelect(opts);
+      if (!RADIO_SAFE_KEYS[gkey] && !isYn) return;
+      if (keyCounts['radio:' + gkey]) return;
+      var matched = M.findBestOption ? M.findBestOption(opts, gval) : null;
+      if (!matched && isYn && M.parseYesNo) {
+        var yn = M.parseYesNo(gval);
+        if (yn) matched = M.findBestOption(opts, yn);
+      }
+      if (!matched) return;
+      var target = null;
+      for (var i = 0; i < opts.length; i++) {
+        if (opts[i].text === matched.text || String(opts[i].value) === String(matched.value)) {
+          target = opts[i].el;
+          break;
+        }
+      }
+      if (!target) return;
+      simulateClick(target);
+      if (target.checked) {
+        keyCounts['radio:' + gkey] = 1;
+        filled += 1;
+        if (filledKeys.indexOf(gkey) === -1) filledKeys.push(gkey);
+        highlight(target);
+      }
+    });
+    return filled;
+  }
+
+  /** 扫描页面上的自定义下拉宿主（无 native select 时） */
+  function iterCustomSelectHosts() {
+    return Array.from(document.querySelectorAll(CUSTOM_SELECT_HOST)).filter(function (h) {
+      return isVisibleEl(h) || (h.offsetParent !== null);
+    });
+  }
+
 
   /** 可见性判断：offsetParent 在 position:fixed 弹层里恒为 null，改用 rect + computedStyle */
   function isVisibleEl(n) {
@@ -1284,12 +1459,29 @@
       if (!key) continue;
       var count = keyCounts[key] || 0;
       if (count >= MAX_FILLS_PER_KEY) continue;
-      var value = M.profileValue(profile, key);
+      var value = M.profileValueForOccurrence
+        ? M.profileValueForOccurrence(profile, key, count)
+        : M.profileValue(profile, key);
       if (!value) {
         if (skipped.length < 12) skipped.push({ key: key, reason: 'no_profile_value' });
         continue;
       }
       if (fieldLooksFilled(el)) continue;
+      // 自定义下拉宿主：走 click → option 路径
+      var customHost = findCustomSelectHost(el);
+      if (customHost && el.tagName.toLowerCase() !== 'select') {
+        if (customSelectLooksFilled(customHost)) continue;
+        try {
+          var cOk = await fillCustomSelect(customHost, value);
+          if (cOk) {
+            filled += 1;
+            keyCounts[key] = count + 1;
+            if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
+            highlight(el);
+            continue;
+          }
+        } catch (_) { /* fall through */ }
+      }
       var hints = collectHints(el);
       var adjacentRole = detectAdjacentDatePairRole(el);
       var dateOpts = {
@@ -1372,6 +1564,50 @@
           if (filledKeys.indexOf(gkey) === -1) filledKeys.push(gkey);
         }
       });
+      filled += fillNamedRadioGroups(profile, keyCounts, filledKeys);
+    }
+
+    // 无关联 input 的自定义下拉宿主（仅展示层）
+    if (opts.allowCustomSelect !== false) {
+      var hosts = iterCustomSelectHosts();
+      for (var hi = 0; hi < hosts.length; hi++) {
+        var host = hosts[hi];
+        if (customSelectLooksFilled(host)) continue;
+        var hLabel = '';
+        var prev = host.previousElementSibling;
+        if (prev) {
+          hLabel = M.visibleLabelText ? M.visibleLabelText(prev) : String(prev.textContent || '');
+          hLabel = String(hLabel || '').replace(/\s+/g, ' ').trim();
+          if (M.cleanLabelPunctuation) hLabel = M.cleanLabelPunctuation(hLabel);
+        }
+        if (!hLabel) {
+          var formItem = host.closest
+            ? host.closest('.el-form-item, .ant-form-item, .form-item, .form-group')
+            : null;
+          if (formItem) {
+            var fl = formItem.querySelector('.el-form-item__label, .ant-form-item-label, label');
+            if (fl) hLabel = String(fl.textContent || '').replace(/\s+/g, ' ').trim();
+          }
+        }
+        if (!hLabel) continue;
+        var hKey = M.matchFieldKey(hLabel, {});
+        if (!hKey) continue;
+        var hCount = keyCounts[hKey] || 0;
+        if (hCount >= MAX_FILLS_PER_KEY) continue;
+        var hVal = M.profileValueForOccurrence
+          ? M.profileValueForOccurrence(profile, hKey, hCount)
+          : M.profileValue(profile, hKey);
+        if (!hVal) continue;
+        try {
+          var hOk = await fillCustomSelect(host, hVal);
+          if (hOk) {
+            filled += 1;
+            keyCounts[hKey] = hCount + 1;
+            if (filledKeys.indexOf(hKey) === -1) filledKeys.push(hKey);
+            highlight(host);
+          }
+        } catch (_) { /* ignore */ }
+      }
     }
 
     return { filled: filled, filledKeys: filledKeys, skipped: skipped, forced: forced };

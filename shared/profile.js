@@ -1,6 +1,6 @@
 /**
  * 共享简历资料 schema：默认空 profile、字段列表、示例资料。
- * playoffer.cn 启发的扁平 schema（v1.3.0）；多段经历仅存主条目。
+ * playoffer.cn 启发的扁平 schema（v1.3.0+）；v1.5.0 选项页可编辑多段经历。
  * 同时支持浏览器全局（ResumeAutofillProfile）与 Node（module.exports）。
  */
 (function (root, factory) {
@@ -110,6 +110,28 @@
     eduList: ['school', 'major', 'degree', 'start', 'end', 'city', 'gpa', 'description'],
     workList: ['company', 'title', 'start', 'end', 'city', 'description'],
     projectList: ['name', 'role', 'start', 'end', 'tech', 'description']
+  };
+
+  /** 选项页多段编辑：字段中文标签 */
+  var LIST_ITEM_LABELS = {
+    eduList: {
+      school: '学校', major: '专业', degree: '学历/学位', start: '开始', end: '结束',
+      city: '城市', gpa: 'GPA', description: '描述'
+    },
+    workList: {
+      company: '公司', title: '职位', start: '开始', end: '结束',
+      city: '城市', description: '描述'
+    },
+    projectList: {
+      name: '项目名称', role: '角色', start: '开始', end: '结束',
+      tech: '技术栈', description: '描述'
+    }
+  };
+
+  var LIST_SECTION_TITLES = {
+    eduList: '教育经历（多段）',
+    workList: '工作经历（多段）',
+    projectList: '项目经历（多段）'
   };
 
   /** 数组第一条 → 扁平主条目字段名映射 */
@@ -441,7 +463,43 @@
     trainingEnd: '2021-02',
     trainingOrg: '示例培训机构',
     trainingGain: '掌握构建与发布流水线、性能指标监控',
-    trainingContent: 'Webpack/Vite、CI/CD、可观测性基础'
+    trainingContent: 'Webpack/Vite、CI/CD、可观测性基础',
+    eduList: [
+      {
+        school: '复旦大学', major: '计算机科学与技术', degree: '本科',
+        start: '2016-09', end: '2020-06', city: '上海', gpa: '3.6/4.0',
+        description: '系统学习数据结构、操作系统、计算机网络与软件工程。'
+      },
+      {
+        school: '示例高中', major: '理科', degree: '高中',
+        start: '2013-09', end: '2016-06', city: '杭州', gpa: '',
+        description: ''
+      }
+    ],
+    workList: [
+      {
+        company: '示例科技有限公司', title: '前端工程师',
+        start: '2020-07', end: '至今', city: '上海',
+        description: '负责 B 端产品前端开发与工程化建设，维护设计系统与表单引擎。'
+      },
+      {
+        company: '示例互联网公司', title: '前端实习生',
+        start: '2019-07', end: '2019-09', city: '上海',
+        description: '参与后台管理系统页面开发与组件封装。'
+      }
+    ],
+    projectList: [
+      {
+        name: '企业级表单引擎', role: '前端负责人',
+        start: '2021-03', end: '2022-12', tech: 'React, TypeScript',
+        description: '设计可配置表单渲染与校验体系，覆盖 20+ 业务场景。'
+      },
+      {
+        name: '内部组件库', role: '核心开发',
+        start: '2020-09', end: '2021-02', tech: 'React, Storybook',
+        description: '搭建基础组件与文档站点，统一交互规范。'
+      }
+    ]
   };
 
   function normalizeProfile(raw) {
@@ -473,7 +531,12 @@
     }
     for (i = 0; i < LIST_FIELDS.length; i++) {
       k = LIST_FIELDS[i];
-      merged[k] = base[k];
+      // 选项页多段编辑器显式提交数组时优先用 overlay；否则保留已有档案列表
+      if (Object.prototype.hasOwnProperty.call(overlay, k) && Array.isArray(overlay[k])) {
+        merged[k] = overlay[k];
+      } else {
+        merged[k] = base[k];
+      }
     }
     return normalizeProfile(merged);
   }
@@ -502,6 +565,8 @@
     PROFILE_FIELDS: PROFILE_FIELDS,
     LIST_FIELDS: LIST_FIELDS,
     LIST_ITEM_FIELDS: LIST_ITEM_FIELDS,
+    LIST_ITEM_LABELS: LIST_ITEM_LABELS,
+    LIST_SECTION_TITLES: LIST_SECTION_TITLES,
     MAIN_ENTRY_MAP: MAIN_ENTRY_MAP,
     emptyList: emptyList,
     normalizeList: normalizeList,

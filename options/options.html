@@ -10,7 +10,7 @@
   <div class="wrap">
     <header class="header">
       <h1>编辑简历资料</h1>
-      <p class="subtitle">资料保存在本机 <code>chrome.storage.local</code>，不会上传到任何服务器（启用 AI 时除外，见下方说明）。字段布局对齐 playoffer 风格 ATS 简历模型（v1.4.0）：支持多份简历共存，教育/工作/项目可存多段，主条目字段自动取第一段。</p>
+      <p class="subtitle">资料保存在本机 <code>chrome.storage.local</code>，不会上传到任何服务器（启用 AI 时除外，见下方说明）。字段布局对齐 playoffer 风格 ATS 简历模型（v1.5.0）：支持多份简历共存，教育/工作/项目可存多段，主条目字段自动取第一段。</p>
     </header>
 
     <div class="toolbar">
@@ -149,6 +149,28 @@
           <label>最早到岗<input type="text" name="earliestStart" placeholder="" /></label>
           <label class="full">工作许可 / 签证<input type="text" name="workAuth" placeholder="" /></label>
         </div>
+      </details>
+
+
+      <details class="section" open>
+        <summary>教育经历（多段）</summary>
+        <p class="section-note">可添加多段教育；保存后写入 <code>eduList</code>。下方「教育背景（主条目）」仍为扁平兼容字段，通常与第一段同步。</p>
+        <div id="list-eduList" class="list-editor" data-list="eduList"></div>
+        <button type="button" class="btn ghost list-add" data-list="eduList">＋ 添加教育经历</button>
+      </details>
+
+      <details class="section">
+        <summary>工作经历（多段）</summary>
+        <p class="section-note">可添加多段工作；保存后写入 <code>workList</code>。</p>
+        <div id="list-workList" class="list-editor" data-list="workList"></div>
+        <button type="button" class="btn ghost list-add" data-list="workList">＋ 添加工作经历</button>
+      </details>
+
+      <details class="section">
+        <summary>项目经历（多段）</summary>
+        <p class="section-note">可添加多段项目；保存后写入 <code>projectList</code>。</p>
+        <div id="list-projectList" class="list-editor" data-list="projectList"></div>
+        <button type="button" class="btn ghost list-add" data-list="projectList">＋ 添加项目经历</button>
       </details>
 
       <details class="section">

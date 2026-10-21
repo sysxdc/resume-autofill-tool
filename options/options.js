@@ -1,5 +1,6 @@
 /**
  * 选项页：编辑并保存简历 profile + AI 设置；导入/导出 JSON、示例资料、清空确认。
+ * v1.5.0：eduList/workList/projectList 多段可折叠编辑（增删改排序）。
  */
 (function () {
   'use strict';
@@ -14,12 +15,92 @@
   var saveStatus = document.getElementById('save-status');
   var aiSaveStatus = document.getElementById('ai-save-status');
 
+  var LIST_KEYS = P.LIST_FIELDS || ['eduList', 'workList', 'projectList'];
+  var LIST_LABELS = P.LIST_ITEM_LABELS || {};
+  var LIST_ITEM_FIELDS = P.LIST_ITEM_FIELDS || {};
+
+  function emptyListItem(listKey) {
+    var keys = LIST_ITEM_FIELDS[listKey] || [];
+    var item = {};
+    keys.forEach(function (k) { item[k] = ''; });
+    return item;
+  }
+
+  function readListFromDom(listKey) {
+    var root = document.getElementById('list-' + listKey);
+    if (!root) return [];
+    var rows = root.querySelectorAll('.list-row');
+    var out = [];
+    Array.prototype.forEach.call(rows, function (row) {
+      var item = emptyListItem(listKey);
+      var keys = LIST_ITEM_FIELDS[listKey] || [];
+      keys.forEach(function (k) {
+        var inp = row.querySelector('[data-field="' + k + '"]');
+        item[k] = inp ? String(inp.value || '').trim() : '';
+      });
+      out.push(item);
+    });
+    return P.normalizeList ? P.normalizeList(listKey, out) : out;
+  }
+
+  function readAllLists() {
+    var lists = {};
+    LIST_KEYS.forEach(function (k) { lists[k] = readListFromDom(k); });
+    return lists;
+  }
+
+  function renderListEditor(listKey, items) {
+    var root = document.getElementById('list-' + listKey);
+    if (!root) return;
+    var keys = LIST_ITEM_FIELDS[listKey] || [];
+    var labels = LIST_LABELS[listKey] || {};
+    var arr = Array.isArray(items) ? items : [];
+    if (!arr.length) {
+      root.innerHTML = '<p class="muted" style="font-size:12px;color:#94a3b8">暂无记录，点击下方按钮添加。</p>';
+      return;
+    }
+    root.innerHTML = arr.map(function (item, idx) {
+      var fields = keys.map(function (k) {
+        var lab = labels[k] || k;
+        var isLong = k === 'description' || k === 'tech';
+        var val = item && item[k] != null ? String(item[k]) : '';
+        if (isLong) {
+          return '<label class="full">' + lab +
+            '<textarea rows="2" data-field="' + k + '">' + esc(val) + '</textarea></label>';
+        }
+        return '<label>' + lab +
+          '<input type="text" data-field="' + k + '" value="' + esc(val).replace(/"/g, '&quot;') + '" /></label>';
+      }).join('');
+      return '' +
+        '<div class="list-row" data-index="' + idx + '">' +
+          '<div class="list-row-head">' +
+            '<span class="list-row-title">第 ' + (idx + 1) + ' 段</span>' +
+            '<div class="list-row-actions">' +
+              '<button type="button" class="btn ghost" data-list-act="up" data-list="' + listKey + '" data-index="' + idx + '">上移</button>' +
+              '<button type="button" class="btn ghost" data-list-act="down" data-list="' + listKey + '" data-index="' + idx + '">下移</button>' +
+              '<button type="button" class="btn ghost" data-list-act="remove" data-list="' + listKey + '" data-index="' + idx + '">删除</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="grid">' + fields + '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function writeLists(profile) {
+    var p = profile || {};
+    LIST_KEYS.forEach(function (k) {
+      renderListEditor(k, p[k] || []);
+    });
+  }
+
   function readForm() {
     var data = P.emptyProfile();
     FIELDS.forEach(function (key) {
       var el = form.elements.namedItem(key);
       data[key] = el ? String(el.value || '').trim() : '';
     });
+    var lists = readAllLists();
+    LIST_KEYS.forEach(function (k) { data[k] = lists[k]; });
     return data;
   }
 
@@ -29,6 +110,7 @@
       var el = form.elements.namedItem(key);
       if (el) el.value = p[key] || '';
     });
+    writeLists(p);
   }
 
   function showStatus(el, text, ms) {
@@ -188,6 +270,78 @@
       document.querySelectorAll('details.section').forEach(function (d) { d.open = false; });
     });
   }
+
+
+  // ————— v1.5.0：多段经历编辑器事件 —————
+  function moveListItem(listKey, index, delta) {
+    var items = readListFromDom(listKey);
+    // readListFromDom normalizes and may drop empties — re-read raw from DOM without normalize for reorder
+    var root = document.getElementById('list-' + listKey);
+    if (!root) return;
+    var keys = LIST_ITEM_FIELDS[listKey] || [];
+    var raw = [];
+    Array.prototype.forEach.call(root.querySelectorAll('.list-row'), function (row) {
+      var item = emptyListItem(listKey);
+      keys.forEach(function (k) {
+        var inp = row.querySelector('[data-field="' + k + '"]');
+        item[k] = inp ? String(inp.value || '') : '';
+      });
+      raw.push(item);
+    });
+    var j = index + delta;
+    if (j < 0 || j >= raw.length) return;
+    var tmp = raw[index];
+    raw[index] = raw[j];
+    raw[j] = tmp;
+    renderListEditor(listKey, raw);
+  }
+
+  document.querySelectorAll('button.list-add').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var listKey = btn.getAttribute('data-list');
+      var root = document.getElementById('list-' + listKey);
+      if (!root) return;
+      var keys = LIST_ITEM_FIELDS[listKey] || [];
+      var raw = [];
+      Array.prototype.forEach.call(root.querySelectorAll('.list-row'), function (row) {
+        var item = emptyListItem(listKey);
+        keys.forEach(function (k) {
+          var inp = row.querySelector('[data-field="' + k + '"]');
+          item[k] = inp ? String(inp.value || '') : '';
+        });
+        raw.push(item);
+      });
+      raw.push(emptyListItem(listKey));
+      renderListEditor(listKey, raw);
+    });
+  });
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target && e.target.closest ? e.target.closest('button[data-list-act]') : null;
+    if (!btn) return;
+    var act = btn.getAttribute('data-list-act');
+    var listKey = btn.getAttribute('data-list');
+    var index = parseInt(btn.getAttribute('data-index'), 10);
+    if (!listKey || isNaN(index)) return;
+    if (act === 'up') moveListItem(listKey, index, -1);
+    else if (act === 'down') moveListItem(listKey, index, 1);
+    else if (act === 'remove') {
+      var root = document.getElementById('list-' + listKey);
+      if (!root) return;
+      var keys = LIST_ITEM_FIELDS[listKey] || [];
+      var raw = [];
+      Array.prototype.forEach.call(root.querySelectorAll('.list-row'), function (row, i) {
+        if (i === index) return;
+        var item = emptyListItem(listKey);
+        keys.forEach(function (k) {
+          var inp = row.querySelector('[data-field="' + k + '"]');
+          item[k] = inp ? String(inp.value || '') : '';
+        });
+        raw.push(item);
+      });
+      renderListEditor(listKey, raw);
+    }
+  });
 
   // ————— v1.4.0：简历库（IndexedDB 多档案） —————
 

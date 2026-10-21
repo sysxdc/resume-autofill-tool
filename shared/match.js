@@ -2,6 +2,7 @@
  * 共享字段匹配逻辑：关键词、同义、模糊评分、姓名拆分、profile 取值、select 匹配、label 可见文本。
  * 浏览器挂到 ResumeAutofillMatch；Node 通过 module.exports 引入。
  *
+ * v1.5.0: 更多 CN ATS 同义、标签噪声归一、选项/YesNo 纯函数导出；多段 occurrence 取值。
  * v1.3.0: playoffer 全量字段关键词 / FIELD_ORDER；紧急联系人拆分；地址/技能别名；证明人/家庭 denylist。
  * v1.2.4: D9 毕业时间→eduEnd + 拆分失败跳过；D10 相邻年/月 placeholder 与附近日期组标签。
  * v1.3.1: honors 键；应聘职位归 jobTarget（不再被 summary 抢）；
@@ -99,13 +100,13 @@
       'nationality', '国籍', 'citizen'
     ],
     ethnicity: [
-      '民族', 'ethnic'
+      '民族', 'ethnic', 'ethnicity', '民族成分'
     ],
     politicalStatus: [
       'politicalstatus', 'political_status', '政治面貌', '党派'
     ],
     maritalStatus: [
-      'maritalstatus', 'marital_status', '婚姻状况', '婚否', '婚姻'
+      'maritalstatus', 'marital_status', '婚姻状况', '婚否', '婚姻', '是否已婚', '婚姻情况'
     ],
     idType: [
       'idtype', 'id_type', 'documenttype', 'doctype', '证件类型', '证件种类'
@@ -134,14 +135,16 @@
       'qq号', 'qq号码', '腾讯qq', 'qq'
     ],
     emergencyContactName: [
-      'emergencycontactname', 'emergency_contact_name', '紧急联系人姓名', '紧急联络人姓名'
+      'emergencycontactname', 'emergency_contact_name', '紧急联系人姓名', '紧急联络人姓名',
+      '紧急联系人名字', '应急联系人姓名'
     ],
     emergencyContactRelation: [
-      'emergencycontactrelation', 'emergency_contact_relation', '紧急联系人关系', '与紧急联系人关系'
+      'emergencycontactrelation', 'emergency_contact_relation', '紧急联系人关系', '与紧急联系人关系',
+      '紧急联络人关系', '与应急联系人关系'
     ],
     emergencyContactPhone: [
       'emergencycontactphone', 'emergency_contact_phone', '紧急联系人电话', '紧急联系人手机',
-      '紧急联络人电话'
+      '紧急联络人电话', '紧急联系人号码', '应急联系人电话'
     ],
     emergencyContact: [
       'emergencycontact', 'emergency_contact', 'emergencyphone', '紧急联系人',
@@ -176,10 +179,10 @@
       'hukoutype', 'hukou_type', '户口性质', '户籍性质'
     ],
     hukou: [
-      'hukou', 'householdregister', '户籍', '户口所在地', '户口'
+      'hukou', 'householdregister', '户籍', '户口所在地', '户口', '户籍所在地', '户口地址'
     ],
     nativePlace: [
-      'nativeplace', 'native_place', 'hometown', '籍贯', '出生地'
+      'nativeplace', 'native_place', 'hometown', '籍贯', '出生地', '籍贯所在地', '祖籍'
     ],
     studentOrigin: [
       'studentorigin', 'student_origin', '生源地', '生源'
@@ -221,7 +224,7 @@
     gaokaoScore: ['gaokaoscore', 'gaokao_score', '高考分数', '高考成绩'],
     gaokaoSubjects: ['gaokaosubjects', 'gaokao_subjects', '高考科目', '高考科类'],
     professionalTitle: ['professionaltitle', 'professional_title', '专业技术职级', '职称', '专业技术职务'],
-    highestDegree: ['highestdegree', 'highest_degree', '最高学历'],
+    highestDegree: ['highestdegree', 'highest_degree', '最高学历', '最高学位', '最终学历'],
     isFreshGraduate: ['isfreshgraduate', 'freshgraduate', '是否应届生', '应届生', '应届'],
     workStatus: ['workstatus', 'work_status', '工作状态', '在职状态', '求职状态'],
     lastCompany: ['lastcompany', 'last_company', '上一家公司', '上家公司', '前一家公司', '最近一家公司'],
@@ -230,10 +233,10 @@
     careerPlan: ['careerplan', 'career_plan', '职业规划', '职业目标'],
     school: [
       'school', 'university', 'college', 'institution', 'edu_school', 'campus',
-      '毕业院校', '就读院校', '学校', '大学', '院校', '教育机构'
+      '毕业院校', '就读院校', '学校', '大学', '院校', '教育机构', '毕业学校', '所在院校', '就读学校'
     ],
     eduDegree: [
-      'eduDegree', 'edu_degree', '学历'
+      'eduDegree', 'edu_degree', '学历', '教育学历', '学历层次'
     ],
     degree: [
       'degree', 'educationlevel', 'education_level', 'edu_level', 'qualification',
@@ -342,7 +345,7 @@
     ],
     jobType: [
       'jobtype', 'job_type', 'worktype',
-      '工作性质', '职位类型', '全职兼职', '用工类型'
+      '工作性质', '职位类型', '全职兼职', '用工类型', '工作类型', '雇佣类型', '任职类型'
     ],
     employmentType: [
       'employmenttype', 'employment_type', '用工性质'
@@ -416,13 +419,13 @@
     ],
     expectedSalary: [
       'expectedsalary', 'expected_salary', 'salaryexpectation', 'salary', 'compensation',
-      '期望薪资', '期望月薪', '薪资期望', '期望待遇', '薪资要求'
+      '期望薪资', '期望月薪', '薪资期望', '期望待遇', '薪资要求', '期望薪水', '希望薪资', '意向薪资'
     ],
     expectedAnnualSalary: [
       'expectedannualsalary', 'expected_annual_salary', '期望年薪'
     ],
     currentSalary: [
-      'currentsalary', 'current_salary', '目前薪资', '当前薪资', '现薪资'
+      'currentsalary', 'current_salary', '目前薪资', '当前薪资', '现薪资', '目前月薪', '当前月薪', '现月薪'
     ],
     expectedCity: [
       'expectedcity', 'expected_city', 'preferredcity', 'preferred_location', 'preferredlocation',
@@ -438,13 +441,13 @@
       'currentindustry', 'current_industry', '目前行业', '当前行业'
     ],
     expectedStartDate: [
-      'expectedstartdate', 'expected_start_date', '预计入职时间', '期望入职时间'
+      'expectedstartdate', 'expected_start_date', '预计入职时间', '期望入职时间', '预计到岗', '期望到岗时间'
     ],
     jobTarget: [
       'jobtarget', 'job_target', 'desiredposition', 'desired_position', 'targetrole',
       'jobobjective', 'job_objective', 'positionapplied', 'appliedposition', 'applyposition',
       '求职意向', '目标职位', '目标岗位', '期望职位', '意向岗位', '应聘职位', '应聘岗位',
-      '申请职位', '意向职位', '应征职位'
+      '申请职位', '意向职位', '应征职位', '应聘岗位名称', '意向工作', '期望岗位', '申请岗位'
     ],
     hasRelativeAtCompany: [
       'hasrelativeatcompany', '是否有亲属在本公司', '是否有亲属在公司', '公司亲属'
@@ -453,7 +456,7 @@
       'acceptadjustment', 'accept_adjustment', '是否接受调剂', '接受调剂'
     ],
     availability: [
-      'availability', 'availabledate', '到岗', '可到岗', '到岗时间'
+      'availability', 'availabledate', '到岗', '可到岗', '到岗时间', '可到岗时间', '入职时间安排'
     ],
     noticePeriod: [
       'noticeperiod', 'notice_period', '通知期', '离职通知期', '辞呈期', 'notice'
@@ -1110,6 +1113,49 @@
     };
   }
 
+  /**
+   * 同标签多行时：第 n 次出现取 list[n]（n 从 0）。
+   * 仅映射教育/工作/项目主字段；未映射键走扁平 profileValue。
+   */
+  var LIST_OCCURRENCE_MAP = {
+    school: ['eduList', 'school'],
+    major: ['eduList', 'major'],
+    eduDegree: ['eduList', 'degree'],
+    degree: ['eduList', 'degree'],
+    eduStart: ['eduList', 'start'],
+    eduEnd: ['eduList', 'end'],
+    schoolCity: ['eduList', 'city'],
+    gpa: ['eduList', 'gpa'],
+    eduDescription: ['eduList', 'description'],
+    company: ['workList', 'company'],
+    title: ['workList', 'title'],
+    startDate: ['workList', 'start'],
+    workEnd: ['workList', 'end'],
+    endDate: ['workList', 'end'],
+    workCity: ['workList', 'city'],
+    workDescription: ['workList', 'description'],
+    projectName: ['projectList', 'name'],
+    projectRole: ['projectList', 'role'],
+    projectStart: ['projectList', 'start'],
+    projectEnd: ['projectList', 'end'],
+    projectDesc: ['projectList', 'description']
+  };
+
+  function profileValueForOccurrence(profile, key, occurrence) {
+    var idx = occurrence | 0;
+    if (idx > 0) {
+      var map = LIST_OCCURRENCE_MAP[key];
+      if (map) {
+        var list = profile && profile[map[0]];
+        if (Array.isArray(list) && list[idx] && list[idx][map[1]]) {
+          return String(list[idx][map[1]]).trim();
+        }
+        return '';
+      }
+    }
+    return profileValue(profile, key);
+  }
+
   function profileValue(profile, key) {
     if (!profile) return '';
     if (key === 'firstName') {
@@ -1527,14 +1573,64 @@
     return '';
   }
 
+  function toHalfWidth(s) {
+    return String(s || '').replace(/[！-～]/g, function (ch) {
+      return String.fromCharCode(ch.charCodeAt(0) - 0xFEE0);
+    }).replace(/\u3000/g, ' ');
+  }
+
+  /**
+   * 去掉 ATS 常见标签噪声：请选择 / 请输入 / 必填星号 / 全角标点。
+   */
+  function stripLabelNoise(s) {
+    var t = toHalfWidth(String(s || ''));
+    t = t
+      .replace(/[*＊✱☆]/g, '')
+      .replace(/^(请选择|请输入|请填写|请选择或输入|select|please\s*select|please\s*enter)\s*/i, '')
+      .replace(/\s*(请选择|请输入|请填写)\s*$/i, '')
+      .replace(/[（(]\s*(必填|选填|可选|optional|required)\s*[）)]/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return t;
+  }
+
   function cleanLabelPunctuation(s) {
-    var t = String(s || '')
-      .replace(/[*＊✱ ass]/g, '')
+    var t = stripLabelNoise(s)
       .replace(/\s+/g, ' ')
       .trim();
     if (!t) return '';
     if (/^[:：\-\/\\|·•.。,，、]+$/.test(t)) return '';
+    t = t.replace(/[:：]+$/g, '').trim();
     return t;
+  }
+
+  /** 下拉选项文案归一：全角→半角、去空白与占位前缀 */
+  function normalizeOptionText(s) {
+    var t = stripLabelNoise(s)
+      .replace(/[\s\u3000]+/g, '')
+      .toLowerCase();
+    return t;
+  }
+
+  /**
+   * 在选项列表中找最佳匹配（纯函数，便于单测）。
+   * options: [{value,text}|string]；返回命中项或 null。
+   */
+  function findBestOption(options, value) {
+    if (!options || !options.length) return null;
+    var normalized = [];
+    var i, o;
+    for (i = 0; i < options.length; i++) {
+      o = options[i];
+      if (typeof o === 'string') normalized.push({ value: o, text: o });
+      else normalized.push({ value: o.value != null ? o.value : '', text: o.text != null ? o.text : '' });
+    }
+    return matchSelectOption(normalized, value);
+  }
+
+  /** parseYesNo：normalizeToYesNo 别名，测试/适配器统一入口 */
+  function parseYesNo(value) {
+    return normalizeToYesNo(value);
   }
 
   function looksLikeOptionPollution(text) {
@@ -2072,6 +2168,13 @@
     labelTextFromFormItem: labelTextFromFormItem,
     labelTextFromParentPrevSibling: labelTextFromParentPrevSibling,
     cleanLabelPunctuation: cleanLabelPunctuation,
+    stripLabelNoise: stripLabelNoise,
+    toHalfWidth: toHalfWidth,
+    normalizeOptionText: normalizeOptionText,
+    findBestOption: findBestOption,
+    parseYesNo: parseYesNo,
+    LIST_OCCURRENCE_MAP: LIST_OCCURRENCE_MAP,
+    profileValueForOccurrence: profileValueForOccurrence,
     isOtherPersonContactContext: isOtherPersonContactContext,
     isApplicantOnlyKeyBlocked: isApplicantOnlyKeyBlocked,
     extractDatePart: extractDatePart,
