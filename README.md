@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.4.0**
+当前版本：**1.4.1**
 
 ## 功能概览
 
@@ -141,7 +141,7 @@ node tests/run-tests.mjs
 
 ```text
 resume-autofill-tool/
-├── manifest.json                 # MV3，version 1.4.0
+├── manifest.json                 # MV3，version 1.4.1
 ├── lib/                          # 打包的第三方库（离线，无 CDN）
 │   ├── pdf.min.js / pdf.worker.min.js
 │   └── mammoth.browser.min.js
@@ -181,6 +181,14 @@ resume-autofill-tool/
 - 证件号等敏感字段为选填；公共电脑请勿保存。
 
 ## Changelog
+
+### 1.4.1
+- **修复：保存表单不再清空多段经历**：选项页「保存资料」原先只写扁平字段，会把 IndexedDB / `chrome.storage` 里的 `eduList`/`workList`/`projectList` 冲掉；现通过 `mergeFlatOntoProfile` 拼回列表。
+- **修复：`normalizeProfile` / `emptyProfile` 保留列表字段**，避免解析结果在归一化时丢段。
+- **修复：切换档案前确认未保存修改**；快速连点「应用」用代数号只落地最后一次。
+- **修复：「清空」同时清理 IndexedDB 简历库**（文案与行为一致）。
+- **修复：IndexedDB 打开失败后可重试**（失败时重置 `dbPromise`；监听 `onclose` / `onversionchange`）。
+- **优化：解析文件上限 20MB**；整库导入前确认覆盖；`run-tests.mjs` 串联 `resume-parser.test.mjs`。
 
 ### 1.4.0
 - **简历解析（纯本地）**：新增 `shared/resume-parser.js` + 打包 `pdf.js 3.11` / `mammoth 1.13`；PDF / DOCX / TXT / MD → 文本 → profile，无需联网、无 CDN。

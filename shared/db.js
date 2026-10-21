@@ -54,8 +54,22 @@
         }
         void e;
       };
-      req.onsuccess = function () { resolve(req.result); };
+      req.onsuccess = function () {
+        var db = req.result;
+        // 连接异常关闭后允许重开，避免永久卡在失败/失效的 Promise 上
+        db.onclose = function () { dbPromise = null; };
+        db.onversionchange = function () {
+          try { db.close(); } catch (err) { /* ignore */ }
+          dbPromise = null;
+        };
+        resolve(db);
+      };
       req.onerror = function () { reject(req.error || new Error('无法打开本地简历库')); };
+    }).then(function (db) {
+      return db;
+    }, function (err) {
+      dbPromise = null;
+      throw err;
     });
     return dbPromise;
   }

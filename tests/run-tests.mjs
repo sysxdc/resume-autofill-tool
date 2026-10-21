@@ -7,6 +7,7 @@ import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1354,7 +1355,7 @@ test('v1.3.7: antd 年/月/日面板 + 年月字段', () => {
 console.log('v1.4.0 简历库 / 解析器');
 test('v1.4.0: manifest 版本与资源接线', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.strictEqual(pkg.version, '1.4.0');
+  assert.ok(/^1\.4\.\d+$/.test(pkg.version), 'manifest 应为 1.4.x，实际 ' + pkg.version);
   const html = fs.readFileSync(path.join(root, 'options/options.html'), 'utf8');
   ['../lib/pdf.min.js', '../lib/mammoth.browser.min.js', '../shared/db.js', '../shared/resume-parser.js'].forEach((src) => {
     assert.ok(html.indexOf(src) !== -1, 'options.html 应加载 ' + src);
@@ -1372,6 +1373,84 @@ test('v1.4.0: profile 支持多段经历', () => {
   assert.strictEqual(prof.school, 'A大学');
 });
 
+
+console.log('v1.4.1 回归：列表保留 / 合并 / 解析护栏');
+test('v1.4.1: emptyProfile 含空列表；normalizeProfile 保留 eduList', () => {
+  const empty = Profile.emptyProfile();
+  assert.deepEqual(empty.eduList, []);
+  assert.deepEqual(empty.workList, []);
+  assert.deepEqual(empty.projectList, []);
+  const raw = {
+    name: '张三',
+    eduList: [{ school: '浙江大学', major: '软件工程', degree: '硕士' }],
+    workList: [{ company: '示例公司', title: '工程师' }],
+    projectList: [{ name: '项目A', tech: 'JS' }],
+    unknownKey: 'drop-me'
+  };
+  const n = Profile.normalizeProfile(raw);
+  assert.equal(n.name, '张三');
+  assert.equal(n.unknownKey, undefined);
+  assert.equal(n.eduList.length, 1);
+  assert.equal(n.eduList[0].school, '浙江大学');
+  assert.equal(n.workList[0].company, '示例公司');
+  assert.equal(n.projectList[0].name, '项目A');
+});
+
+test('v1.4.1: mergeFlatOntoProfile 表单保存不丢多段经历', () => {
+  const existing = Profile.normalizeProfile({
+    name: '旧名',
+    phone: '13800000000',
+    eduList: [{ school: 'A大学', degree: '本科' }, { school: 'B大学', degree: '硕士' }],
+    workList: [{ company: '旧公司', title: '开发' }],
+    projectList: [{ name: '旧项目' }]
+  });
+  const flat = Profile.emptyProfile();
+  flat.name = '新名';
+  flat.phone = '13900000000';
+  // 模拟表单 readForm：扁平字段更新，列表为空数组
+  flat.eduList = [];
+  flat.workList = [];
+  flat.projectList = [];
+  const merged = Profile.mergeFlatOntoProfile(flat, existing);
+  assert.equal(merged.name, '新名');
+  assert.equal(merged.phone, '13900000000');
+  assert.equal(merged.eduList.length, 2);
+  assert.equal(merged.eduList[0].school, 'A大学');
+  assert.equal(merged.workList[0].company, '旧公司');
+  assert.equal(merged.projectList[0].name, '旧项目');
+});
+
+test('v1.4.1: options 源守卫（脏表单确认 / 清空库 / 合并保存）', () => {
+  const src = fs.readFileSync(path.join(root, 'options/options.js'), 'utf8');
+  assert.ok(/mergeFlatOntoProfile/.test(src), '保存应走 mergeFlatOntoProfile');
+  assert.ok(/isFormDirty/.test(src) && /未保存修改/.test(src), '切换档案应确认未保存修改');
+  assert.ok(/DB\.clearAll/.test(src), '清空应清理 IndexedDB');
+  assert.ok(/applyGen/.test(src), '应用档案应有代数号防竞态');
+  assert.ok(/相同 id 会覆盖/.test(src), '整库导入应确认覆盖');
+});
+
+test('v1.4.1: db.openDB 失败可重试；resume-parser 有文件上限', () => {
+  const dbSrc = fs.readFileSync(path.join(root, 'shared/db.js'), 'utf8');
+  assert.ok(/dbPromise = null/.test(dbSrc), '打开失败应重置 dbPromise');
+  assert.ok(/onversionchange/.test(dbSrc), '应处理 versionchange');
+  const Parser = require(path.join(root, 'shared/resume-parser.js'));
+  assert.equal(Parser.MAX_FILE_BYTES, 20 * 1024 * 1024);
+  assert.ok(/1\.4\.1/.test(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')));
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
+
+// 串联简历解析套件（独立计数，失败则整体非零退出）
+{
+  console.log('');
+  console.log('—— resume-parser.test.mjs ——');
+  const child = spawnSync(process.execPath, [path.join(__dirname, 'resume-parser.test.mjs')], {
+    encoding: 'utf8',
+    cwd: root
+  });
+  if (child.stdout) process.stdout.write(child.stdout);
+  if (child.stderr) process.stderr.write(child.stderr);
+  if (child.status) process.exit(child.status);
+}

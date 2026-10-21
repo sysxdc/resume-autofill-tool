@@ -40,6 +40,19 @@
     }
   }
 
+  /** 未保存表单改动检测：切换档案前确认，避免静默丢改 */
+  var formBaseline = '';
+  var applyGen = 0;
+  function snapshotForm() {
+    try { return JSON.stringify(readForm()); } catch (err) { return ''; }
+  }
+  function markFormClean() {
+    formBaseline = snapshotForm();
+  }
+  function isFormDirty() {
+    return snapshotForm() !== formBaseline;
+  }
+
   function readAiForm() {
     return AI.normalizeAiSettings({
       enabled: document.getElementById('ai-enabled').checked,
@@ -59,17 +72,41 @@
 
   form.addEventListener('submit', function (e) {
     e.preventDefault();
-    var profile = readForm();
-    chrome.storage.local.set({ profile: profile }, function () {
-      showStatus(saveStatus, '已保存 ✓', 2500);
-    });
-    // 同步写回当前档案（库里那份也要跟着变）
+    // 表单只有扁平字段；必须从当前档案 / storage 拼回 eduList 等，否则一点保存就清空多段经历
+    var saveWithLists = function (existing) {
+      var profile = P.mergeFlatOntoProfile
+        ? P.mergeFlatOntoProfile(readForm(), existing || {})
+        : readForm();
+      chrome.storage.local.set({ profile: profile }, function () {
+        showStatus(saveStatus, '已保存 ✓', 2500);
+        markFormClean();
+      });
+      if (DB) {
+        DB.getActiveResume().then(function (rec) {
+          if (!rec) return;
+          rec.profile = profile;
+          return DB.saveResume(rec).then(refreshResumeList);
+        }).catch(function () { /* 无档案时忽略 */ });
+      }
+    };
     if (DB) {
       DB.getActiveResume().then(function (rec) {
-        if (!rec) return;
-        rec.profile = profile;
-        return DB.saveResume(rec).then(refreshResumeList);
-      }).catch(function () { /* 无档案时忽略 */ });
+        if (rec && rec.profile) {
+          saveWithLists(rec.profile);
+          return;
+        }
+        chrome.storage.local.get(['profile'], function (result) {
+          saveWithLists(result.profile || {});
+        });
+      }).catch(function () {
+        chrome.storage.local.get(['profile'], function (result) {
+          saveWithLists(result.profile || {});
+        });
+      });
+    } else {
+      chrome.storage.local.get(['profile'], function (result) {
+        saveWithLists(result.profile || {});
+      });
     }
   });
 
@@ -82,12 +119,20 @@
   });
 
   document.getElementById('btn-clear').addEventListener('click', function () {
-    if (!confirm('确定清空所有本地简历资料？此操作不可撤销。（不影响 AI 设置）')) return;
+    if (!confirm('确定清空当前表单，并删除本地简历库中的全部档案？此操作不可撤销。（不影响 AI 设置）')) return;
     var empty = P.emptyProfile();
     chrome.storage.local.set({ profile: empty }, function () {
       writeForm(empty);
+      markFormClean();
       showStatus(saveStatus, '已清空', 2500);
     });
+    if (DB) {
+      DB.clearAll().then(function () {
+        return refreshResumeList();
+      }).catch(function (err) {
+        showStatus(saveStatus, '表单已清空，但简历库清理失败：' + String(err && err.message || err), 6000);
+      });
+    }
   });
 
   document.getElementById('btn-sample').addEventListener('click', function () {
@@ -206,13 +251,19 @@
   /** 把档案写入 chrome.storage（内容脚本读 profile）+ 表单 */
   function applyResume(rec) {
     var src = rec.profile || {};
+    // normalizeProfile（1.4.1+）已保留列表；旧版兼容再抄一遍
     var profile = P.normalizeProfile(src);
-    P.LIST_FIELDS.forEach(function (k) {
-      profile[k] = P.normalizeList(k, src[k] || []);
-    });
+    if (P.LIST_FIELDS) {
+      P.LIST_FIELDS.forEach(function (k) {
+        if (!profile[k] || !profile[k].length) {
+          profile[k] = P.normalizeList(k, src[k] || []);
+        }
+      });
+    }
     return new Promise(function (resolve) {
       chrome.storage.local.set({ profile: profile }, function () {
         writeForm(profile);
+        markFormClean();
         resolve();
       });
     });
@@ -314,10 +365,15 @@
       var id = btn.getAttribute('data-id');
       try {
         if (act === 'apply') {
+          if (isFormDirty() && !confirm('当前表单有未保存修改，切换档案将丢弃这些修改。继续？')) return;
+          var myGen = ++applyGen;
           var rec = await DB.getResume(id);
           if (!rec) return;
+          if (myGen !== applyGen) return; // 快速连点时只应用最后一次
           await DB.setMeta('activeId', id);
+          if (myGen !== applyGen) return;
           await applyResume(rec);
+          if (myGen !== applyGen) return;
           showStatus(saveStatus, '已应用「' + rec.name + '」到当前表单', 3000);
           await refreshResumeList();
         } else if (act === 'rename') {
@@ -370,6 +426,7 @@
       var reader = new FileReader();
       reader.onload = async function () {
         try {
+          if (!confirm('导入将写入本地简历库（相同 id 会覆盖）。继续？')) return;
           var added = await DB.importAll(String(reader.result || '{}'));
           await refreshResumeList();
           alert('已导入 ' + added.length + ' 份档案');
@@ -386,5 +443,6 @@
   chrome.storage.local.get(['profile', 'aiSettings'], function (result) {
     writeForm(result.profile);
     writeAiForm(result.aiSettings || (AI && AI.DEFAULT_AI_SETTINGS));
+    markFormClean();
   });
 })();

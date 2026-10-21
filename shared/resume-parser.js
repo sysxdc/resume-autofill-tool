@@ -501,7 +501,7 @@
       warnings: warnings,
       stats: { chars: text.length, edu: eduList.length, work: workList.length, project: projectList.length },
       parsedAt: Date.now(),
-      parserVersion: opts.version || '1.4.0'
+      parserVersion: opts.version || '1.4.1'
     };
   }
 
@@ -580,9 +580,15 @@
     return { text: String(result.value || ''), kind: 'docx', messages: (result.messages || []).map(function (m) { return m.message; }) };
   }
 
+  var MAX_FILE_BYTES = 20 * 1024 * 1024;
+
   /** 统一入口：按扩展名/类型分派 */
   async function extractTextFromFile(file) {
-    var name = String(file && file.name || '');
+    if (!file) throw new Error('未选择文件');
+    if (typeof file.size === 'number' && file.size > MAX_FILE_BYTES) {
+      throw new Error('文件过大（上限 20MB）');
+    }
+    var name = String(file.name || '');
     var ext = (name.split('.').pop() || '').toLowerCase();
     if (ext === 'pdf' || file.type === 'application/pdf') return await extractPdf(file);
     if (ext === 'docx') return await extractDocx(file);
@@ -599,6 +605,7 @@
   }
 
   var api = {
+    MAX_FILE_BYTES: MAX_FILE_BYTES,
     normalizeText: normalizeText,
     splitSections: splitSections,
     headingKey: headingKey,

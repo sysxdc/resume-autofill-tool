@@ -173,6 +173,9 @@
     for (var i = 0; i < PROFILE_FIELDS.length; i++) {
       p[PROFILE_FIELDS[i]] = '';
     }
+    for (var j = 0; j < LIST_FIELDS.length; j++) {
+      p[LIST_FIELDS[j]] = [];
+    }
     return p;
   }
 
@@ -448,7 +451,31 @@
       var k = PROFILE_FIELDS[i];
       if (src[k] != null) out[k] = String(src[k]).trim();
     }
+    for (var j = 0; j < LIST_FIELDS.length; j++) {
+      var lk = LIST_FIELDS[j];
+      out[lk] = normalizeList(lk, src[lk] || []);
+    }
     return out;
+  }
+
+  /**
+   * 表单只编辑扁平字段；保存时用此函数把现有档案的多段经历拼回去，避免误清空。
+   */
+  function mergeFlatOntoProfile(flat, existing) {
+    var base = existing && typeof existing === 'object' ? existing : {};
+    var overlay = flat && typeof flat === 'object' ? flat : {};
+    var merged = {};
+    var i, k;
+    for (i = 0; i < PROFILE_FIELDS.length; i++) {
+      k = PROFILE_FIELDS[i];
+      if (Object.prototype.hasOwnProperty.call(overlay, k)) merged[k] = overlay[k];
+      else if (Object.prototype.hasOwnProperty.call(base, k)) merged[k] = base[k];
+    }
+    for (i = 0; i < LIST_FIELDS.length; i++) {
+      k = LIST_FIELDS[i];
+      merged[k] = base[k];
+    }
+    return normalizeProfile(merged);
   }
 
   function profileHasData(profile) {
@@ -484,6 +511,7 @@
     SAMPLE_PROFILE: SAMPLE_PROFILE,
     emptyProfile: emptyProfile,
     normalizeProfile: normalizeProfile,
+    mergeFlatOntoProfile: mergeFlatOntoProfile,
     profileHasData: profileHasData,
     profileNonEmpty: profileNonEmpty
   };
