@@ -227,6 +227,14 @@
       'englishlevel', 'english_level', '英语等级', '英语水平', '语言等级', '外语等级',
       '语言级别', '外语水平等级'
     ],
+    englishScore: [
+      'englishscore', 'english_score', '英语成绩', '外语成绩', '语言成绩', '英语分数',
+      '四六级成绩', 'cet成绩', '雅思成绩', '托福成绩'
+    ],
+    englishDate: [
+      'englishdate', 'english_date', '英语考试时间', '外语考试时间', '语言考试时间',
+      '四六级时间', '英语获得时间', '雅思考试时间', '托福考试时间'
+    ],
     gaokaoDate: ['gaokaodate', 'gaokao_date', '高考时间', '高考日期'],
     gaokaoScore: ['gaokaoscore', 'gaokao_score', '高考分数', '高考成绩'],
     gaokaoSubjects: ['gaokaosubjects', 'gaokao_subjects', '高考科目', '高考科类'],
@@ -575,6 +583,7 @@
     'emergencyContactName', 'emergencyContactRelation', 'emergencyContactPhone', 'emergencyContact',
     'namePinyin', 'englishName', 'preferredName', 'firstName', 'lastName', 'resumeTitle',
     'secondaryEmail', 'email', 'wechat', 'qq', 'phoneCountryCode', 'phone',
+    'englishScore', 'englishDate',
     'birthday', 'age', 'idType', 'idNumber', 'gender',
     'nationality', 'ethnicity', 'politicalStatus', 'maritalStatus',
     'linkedin', 'github', 'website',
@@ -1429,6 +1438,17 @@
       var sk = profile.skills && String(profile.skills).trim();
       if (sk) return sk;
       return (profile.techSkills && String(profile.techSkills).trim()) || '';
+    }
+    // 外语成绩 / 取得时间：单独没填时回退到证书的成绩 / 时间（老档案只有 certScore/certDate）
+    if (key === 'englishScore') {
+      var esc = profile.englishScore && String(profile.englishScore).trim();
+      if (esc) return esc;
+      return (profile.certScore && String(profile.certScore).trim()) || '';
+    }
+    if (key === 'englishDate') {
+      var edt = profile.englishDate && String(profile.englishDate).trim();
+      if (edt) return edt;
+      return (profile.certDate && String(profile.certDate).trim()) || '';
     }
     // 国籍 ↔ 国家（仅单向：nationality 可回退 country）
     if (key === 'nationality') {

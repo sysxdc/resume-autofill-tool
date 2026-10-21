@@ -689,7 +689,8 @@
     var title = String((head && head.textContent) || '').replace(/\s+/g, ' ').trim();
     if (!/语言|外语/.test(title)) return null;
     var label = String(getLabelText(el) || '').replace(/\s+/g, '');
-    if (/成绩|分数|得分/.test(label)) return 'certScore';
+    if (/成绩|分数|得分/.test(label)) return 'englishScore';
+    if (/获得时间|取得时间|获取时间|考试时间|发证时间/.test(label)) return 'englishDate';
     if (/等级|级别/.test(label)) return 'englishLevel';
     return null;
   }
@@ -2744,7 +2745,9 @@
       if (el.classList && el.classList.contains('el-range-input')) continue;
       if (el.closest && el.closest(RANGE_EDITOR_SEL)) continue;
       var struct = detectStructuredField(el);
-      var key = struct ? struct.key : (matchKeyForElement(el) || sectionFallbackKey(el));
+      // 分区兜底优先：语言技能里的「获得时间」全局会落到 certDate（证书时间），
+      // 在这种分区里应该用 englishDate
+      var key = struct ? struct.key : (sectionFallbackKey(el) || matchKeyForElement(el));
       if (!key) continue;
       var counterKey = occurrenceKey(key, getLabelText(el));
       var count = struct ? 0 : (keyCounts[counterKey] || 0);
@@ -3063,6 +3066,61 @@
     };
   }
 
+  // ————— v1.5.9：填完之后还剩哪些字段空着（给悬浮窗 / 弹窗提示） —————
+
+  var LABEL_NOISE_RE = /^(请选择|请输入|select|choose|please select|--|-)$/i;
+
+  function fieldRequired(el) {
+    if (!el) return false;
+    if (el.required) return true;
+    var label = String(getLabelText(el) || '');
+    if (/^\s*[*＊]/.test(label)) return true;
+    var item = el.closest ? el.closest('.el-form-item, .form-item, .field, .form-group, tr') : null;
+    if (item && item.className && /(^|\s)(is-)?required(\s|$)/.test(String(item.className))) return true;
+    var lab = item && item.querySelector ? item.querySelector('.el-form-item__label, label') : null;
+    if (lab && /^\s*[*＊]/.test(String(lab.textContent || ''))) return true;
+    return false;
+  }
+
+  function sectionTitleFor(el) {
+    var sec = el.closest
+      ? el.closest('.resume-section, fieldset, .form-section, .ant-card, .el-card, section, .card')
+      : null;
+    if (!sec) return '';
+    var head = sec.querySelector(
+      '.section-title .title, legend, h1, h2, h3, h4, .ant-card-head-title, .el-card__header, .card-title'
+    );
+    var t = head ? String(head.textContent || '').replace(/\s+/g, ' ').trim() : '';
+    return t.length > 24 ? '' : t;
+  }
+
+  function cleanFieldLabel(text) {
+    var t = String(text || '').replace(/\s+/g, ' ').trim();
+    t = t.replace(/^[*＊\s]+/, '').replace(/[:：]\s*$/, '').trim();
+    if (!t || t.length > 30) return '';
+    if (LABEL_NOISE_RE.test(t)) return '';
+    return t;
+  }
+
+  /** 页面上还空着、且能认出标签的字段（供「未填字段」清单） */
+  function unfilledFields() {
+    var out = [];
+    var seen = {};
+    iterFillableFields().forEach(function (el) {
+      if (!el || el.disabled) return;
+      if (!isVisibleEl(el)) return;
+      if (fieldLooksFilled(el)) return;
+      var label = cleanFieldLabel(getLabelText(el));
+      if (!label) return;
+      var section = sectionTitleFor(el);
+      var sig = section + '|' + label;
+      if (seen[sig]) return;
+      seen[sig] = 1;
+      out.push({ label: label, required: fieldRequired(el), section: section });
+    });
+    return out.slice(0, 60);
+  }
+
   async function handleScan() {
     var fields = scanFields();
     return { ok: true, fields: fields, count: fields.length };
@@ -3125,7 +3183,8 @@
     }
     // 顶层：留一点时间收集子 frame 的汇报
     var agg = await collectFrameResults(900);
-    if (!agg.frames) return own;
+    var blanks = unfilledFields();
+    if (!agg.frames) return Object.assign({}, own, { unfilled: blanks });
     return {
       ok: own.ok !== false,
       expanded: own.expanded || [],
@@ -3134,9 +3193,19 @@
         return own.filledKeys.indexOf(k) === -1;
       })),
       skipped: (own.skipped || []).concat(agg.skipped).slice(0, 20),
-      frames: agg.frames + 1
+      frames: agg.frames + 1,
+      unfilled: blanks
     };
   }
+
+  // 悬浮窗（content/panel.js）与这里同处一个隔离世界，直接暴露一个内部 API，省掉消息中转
+  try {
+    window.__resumeAutofill = {
+      fill: function (options) { return handleFillMultiFrame(options || {}); },
+      unfilled: function () { return unfilledFields(); },
+      scan: function () { return handleScan(); }
+    };
+  } catch (_) { /* ignore */ }
 
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     if (message && message.type === 'FILL_FORM') {

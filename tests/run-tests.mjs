@@ -1741,9 +1741,9 @@ test('v1.5.6: 工作性质按该段职位推断', () => {
   assert.equal(Match.profileValue({ workList: [{ title: '工程师', nature: '兼职' }] }, 'workNature'), '兼职');
 });
 
-test('v1.5.8: manifest 1.5.8', () => {
+test('v1.5.9: manifest 1.5.9', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(pkg.version, '1.5.8');
+  assert.equal(pkg.version, '1.5.9');
 });
 
 console.log('v1.5.7 加行按钮 / 起止时间合体控件');
@@ -1837,7 +1837,8 @@ test('v1.5.8: 泛化「成绩」不直接映射（避免抢高考成绩/绩点�
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
   assert.ok(/function sectionFallbackKey/.test(src), '应有分区兜底');
   assert.ok(/\/语言\|外语\//.test(src), '只在语言/外语分区兜底');
-  assert.ok(/return 'certScore'/.test(src), '语言分区里成绩 → certScore');
+  assert.ok(/return 'englishScore'/.test(src), '语言分区里成绩 → englishScore');
+  assert.ok(/return 'englishDate'/.test(src), '语言分区里获得时间 → englishDate');
 });
 
 test('v1.5.8: 电话所在区域 → phoneCountryCode，手机号码仍是 phone', () => {
@@ -1858,6 +1859,56 @@ test('v1.5.8: 下拉改轮询 + 组件实例提交', () => {
   assert.ok(/function commitFrameworkWidget/.test(src), 'el-input-number / el-date-editor 走组件提交');
   assert.ok(/\$emit\('input', n\)/.test(src), '数字框传 Number');
   assert.ok(/valueFormat/.test(src), '日期按 valueFormat 决定 Date / 字符串');
+});
+
+console.log('v1.5.9 悬浮窗 / 未填字段 / 外语成绩时间');
+
+test('v1.5.9: 悬浮窗进了 manifest 且只在顶层 frame 出现', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  const js = pkg.content_scripts[0].js;
+  assert.ok(js.indexOf('content/panel.js') !== -1, 'panel.js 要注册进 content_scripts');
+  assert.ok(js.indexOf('content/panel.js') > js.indexOf('content/autofill.js'), 'panel 要在 autofill 之后');
+  const src = fs.readFileSync(path.join(root, 'content/panel.js'), 'utf8');
+  assert.ok(/window\.top !== window/.test(src), '子 frame 不显示');
+  assert.ok(/attachShadow/.test(src), '样式要隔离在 shadow DOM');
+  assert.ok(src.indexOf('innerHTML') === -1 || !/\.innerHTML\s*=/.test(src), '别用 innerHTML（Trusted Types 站点会拦）');
+  assert.ok(/panelState/.test(src), '位置 / 收起状态要持久化');
+});
+
+test('v1.5.9: 悬浮窗拖动 / 收起 / 调接口', () => {
+  const src = fs.readFileSync(path.join(root, 'content/panel.js'), 'utf8');
+  assert.ok(/pointerdown/.test(src) && /pointermove/.test(src), '要能拖');
+  assert.ok(/clampX|clampY/.test(src), '拖动要限制在视口内');
+  assert.ok(/data-act', 'fill'|data-act="fill"/.test(src) || src.indexOf("'fill'") !== -1, '要有填写按钮');
+  assert.ok(/__resumeAutofill/.test(src), '走 autofill.js 暴露的 API');
+  const auto = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/window\.__resumeAutofill = \{/.test(auto), 'autofill.js 要暴露 API');
+});
+
+test('v1.5.9: 未填字段清单（标签 + 必填 + 分区）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function unfilledFields/.test(src), '应有 unfilledFields');
+  assert.ok(/function fieldRequired/.test(src), '要能判断必填');
+  assert.ok(/function sectionTitleFor/.test(src), '要能带分区名');
+  assert.ok(/unfilled: blanks/.test(src) || /unfilled: unfilledFields\(\)/.test(src), '填充结果里要带 unfilled');
+});
+
+test('v1.5.9: 外语成绩 / 取得时间 独立成键并可回退证书', () => {
+  assert.equal(Match.matchFieldKey('外语成绩'), 'englishScore');
+  assert.equal(Match.matchFieldKey('外语考试时间'), 'englishDate');
+  assert.equal(Match.profileValue({ englishScore: '520' }, 'englishScore'), '520');
+  assert.equal(Match.profileValue({ certScore: '510' }, 'englishScore'), '510');
+  assert.equal(Match.profileValue({ englishDate: '2023-06' }, 'englishDate'), '2023-06');
+  assert.equal(Match.profileValue({ certDate: '2019-06' }, 'englishDate'), '2019-06');
+  const prof = fs.readFileSync(path.join(root, 'shared/profile.js'), 'utf8');
+  assert.ok(/englishScore/.test(prof) && /englishDate/.test(prof), 'profile 字段表要包含新键');
+  const html = fs.readFileSync(path.join(root, 'options/options.html'), 'utf8');
+  assert.ok(/name="englishScore"/.test(html) && /name="englishDate"/.test(html), '选项页要有输入框');
+});
+
+test('v1.5.9: 语言分区优先用外语键（不被 certDate 抢走）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/sectionFallbackKey\(el\) \|\| matchKeyForElement\(el\)/.test(src), '分区兜底要优先于全局匹配');
 });
 
 console.log('');
