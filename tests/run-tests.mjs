@@ -2138,6 +2138,22 @@ console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
 
+// 串联 DOM 行为基线（Playwright；没装 playwright 只警告不阻塞）
+{
+  console.log('');
+  console.log('—— run-dom-tests.mjs（真实浏览器行为基线）——');
+  const child = spawnSync(process.execPath, [path.join(__dirname, 'run-dom-tests.mjs')], {
+    encoding: 'utf8',
+    cwd: root
+  });
+  if (child.stdout) process.stdout.write(child.stdout);
+  if (child.stderr) process.stderr.write(child.stderr);
+  if (child.status && !/找不到 playwright/.test(String(child.stderr || '') + String(child.stdout || ''))) {
+    process.exit(child.status);
+  }
+  if (child.status) console.log('（跳过：本机没装 playwright）');
+}
+
 // 串联简历解析套件（独立计数，失败则整体非零退出）
 {
   console.log('');

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><title>R11 Ant Design 月份面板（« 2020年 » + 1月..12月）</title>
+<style>
+ body{font-family:system-ui;padding:24px;background:#1b1d21;color:#d7dbe0}
+ .ant-form-item{margin-bottom:16px}
+ .ant-form-item-label{font-size:13px;color:#a0a8b3;margin-bottom:6px}
+ .ant-picker{display:inline-flex;align-items:center;justify-content:space-between;width:320px;padding:6px 11px;
+             border:1px solid #3a3f47;border-radius:6px;background:#24272c;cursor:pointer}
+ .ant-picker input{border:0;background:transparent;color:#e8ecf1;outline:none;width:100%;font-size:14px}
+ .ant-picker-focused{border-color:#2f6fed;box-shadow:0 0 0 2px rgba(47,111,237,.2)}
+ .ant-picker-dropdown{display:none;position:absolute;z-index:50;width:300px;background:#23262b;border:1px solid #3a3f47;
+                      border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:8px}
+ .ant-picker-header{display:flex;align-items:center;justify-content:space-between;padding:4px 6px 10px}
+ .ant-picker-header button{border:0;background:none;color:#aab2bd;cursor:pointer;font-size:13px;padding:2px 6px}
+ .ant-picker-header-view{font-weight:600;letter-spacing:.5px}
+ .ant-picker-content{width:100%;border-collapse:collapse}
+ .ant-picker-content td{padding:8px 0;text-align:center;font-size:13px;cursor:pointer;border-radius:4px}
+ .ant-picker-content td:hover{background:#33383f}
+ .ant-picker-cell-in-view{color:#e8ecf1}
+ .ant-picker-cell-selected{background:#2f6fed;color:#fff}
+</style></head>
+<body>
+<div class="ant-form-item">
+  <div class="ant-form-item-label">入学时间</div>
+  <div class="ant-picker" id="picker">
+    <input id="enroll" readonly placeholder="请选择日期" value="" />
+    <span class="ant-picker-suffix">📅</span>
+  </div>
+</div>
+<div class="ant-form-item">
+  <div class="ant-form-item-label">应聘职位</div>
+  <input name="JOB_OBJECTIVE" style="width:320px;padding:7px;border:1px solid #3a3f47;border-radius:6px;background:#24272c;color:#e8ecf1" />
+</div>
+<div class="ant-form-item">
+  <div class="ant-form-item-label">出生年月</div>
+  <div class="ant-picker" id="picker2">
+    <input id="birth" readonly placeholder="请选择" value="" />
+    <span class="ant-picker-suffix">📅</span>
+  </div>
+</div>
+
+<div class="ant-picker-dropdown" id="dd">
+  <div class="ant-picker-panel">
+    <div class="ant-picker-header">
+      <button type="button" class="ant-picker-header-super-prev-btn">«</button>
+      <button type="button" class="ant-picker-header-prev-btn">‹</button>
+      <div class="ant-picker-header-view" id="hv">2020年</div>
+      <button type="button" class="ant-picker-header-next-btn">›</button>
+      <button type="button" class="ant-picker-header-super-next-btn">»</button>
+    </div>
+    <table class="ant-picker-content"><tbody id="tb"></tbody></table>
+  </div>
+</div>
+
+<script>
+  var viewYear = 2020;
+  var target = null;   // 当前是哪个输入框
+  var dd = document.getElementById('dd');
+
+  function render() {
+    document.getElementById('hv').textContent = viewYear + '年';
+    var tb = document.getElementById('tb');
+    tb.innerHTML = '';
+    for (var r = 0; r < 4; r++) {
+      var tr = document.createElement('tr');
+      for (var c = 0; c < 3; c++) {
+        var m = r * 3 + c + 1;
+        var td = document.createElement('td');
+        td.className = 'ant-picker-cell ant-picker-cell-in-view';
+        var inner = document.createElement('div');
+        inner.className = 'ant-picker-cell-inner';
+        inner.textContent = m + '月';
+        td.appendChild(inner);
+        td.addEventListener('click', function (mm) {
+          return function () {
+            if (!target) return;
+            target.value = viewYear + '-' + ('0' + mm).slice(-2);
+            target.dispatchEvent(new Event('input', { bubbles: true }));
+            target.dispatchEvent(new Event('change', { bubbles: true }));
+            dd.style.display = 'none';
+          };
+        }(m));
+        tr.appendChild(td);
+      }
+      tb.appendChild(tr);
+    }
+  }
+
+  function openFor(input) {
+    target = input;
+    var r = input.closest('.ant-picker').getBoundingClientRect();
+    dd.style.left = r.left + 'px';
+    dd.style.top = (r.bottom + scrollY + 4) + 'px';
+    dd.style.display = 'block';
+    input.closest('.ant-picker').classList.add('ant-picker-focused');
+    render();
+  }
+  document.getElementById('enroll').addEventListener('focus', function () { openFor(this); });
+  document.getElementById('birth').addEventListener('focus', function () { openFor(this); });
+  document.querySelector('.ant-picker-header-super-prev-btn').addEventListener('click', function () { viewYear -= 10; render(); });
+  document.querySelector('.ant-picker-header-super-next-btn').addEventListener('click', function () { viewYear += 10; render(); });
+  document.querySelector('.ant-picker-header-prev-btn').addEventListener('click', function () { viewYear -= 1; render(); });
+  document.querySelector('.ant-picker-header-next-btn').addEventListener('click', function () { viewYear += 1; render(); });
+  render();
+</script>
+</body></html>

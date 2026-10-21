@@ -140,13 +140,40 @@ python3 -m http.server 8765
 # 浏览器打开 http://localhost:8765/demo/job-application.html
 ```
 
-## 自动化测试（无需 Chrome）
+## 自动化测试
 
 ```bash
-node tests/run-tests.mjs
+node tests/run-tests.mjs        # 三套一起跑
+node tests/run-dom-tests.mjs    # 只跑真实浏览器里的控件行为基线
 ```
 
-覆盖：关键词与同义模糊、denylist、姓名拆分、`profileValue`、select 匹配、**AI merge 纯函数（无网络）**、manifest / 选项页 / 弹窗结构等。零第三方依赖。
+三套分层，各管一件事，别再混着看：
+
+| 套件 | 断言什么 | 能不能证明「填得对」 |
+|---|---|---|
+| `tests/run-tests.mjs`（180 项） | 关键词/模糊评分、denylist、`profileValue`、select 匹配、AI merge 纯函数、manifest 结构 | **不能**，只做 smoke：防手滑删类名/常量 |
+| `tests/run-dom-tests.mjs`（9 项 + `fixtures/dom/*.html`） | 真实 Chromium 里「怎么打开 / 怎么写进去 / 回读是什么 / 有什么坑」 | 能，这是唯一的行为证据 |
+| `tests/resume-parser.test.mjs`（20 项） | 简历文本 → 结构化 profile | 能（解析域） |
+
+### 为什么要有 DOM 基线
+
+历史上 174 条单测全是对源码字符串断言（`assert.ok(src.includes('.ant-calendar-picker'))`），改一行类名就绿，真实站点照样填不上——「改好了 → 实测还是不行」的重演根因就在这。
+
+`fixtures/dom/` 里是自包含的控件复刻页（无 CDN、无真实个人信息），每个包住一类组件和一个真实的坑：
+
+| fixture | 组件 | 锁住的坑 |
+|---|---|---|
+| `wecruit-antd3-select.html` | antd v3 远程搜索下拉 | 隐藏 input 存 `0/20000/20001` 编码值 → 「是否已填」不能看它；**点 li 不提交**，只有键盘 `ArrowDown`+`Enter` 才提交 |
+| `r11-antd-month.html` | antd 风格「只有年月」面板 | 绑的是 `focus` 不是 `click`，合成 click 打不开；年视图有「±1 年 / ±10 年」两种箭头 |
+| `r12-antd-date.html` | antd 风格年月日面板 | 表里混着非当月格子，点错会串月 |
+| `r1-en-datepicker.html` | 英文日历 + 上/下月导航 | 没有年视图，只能逐月点；42 格里有相邻月 |
+| `datepanel-replica.html` | 年表/月表/日表 | 不点「确定」不回写 |
+| `r5-wheel-picker.html` | 滚动轮 | 点选后还要「确定」才提交 |
+| `r4-paginated-select.html` | 分页下拉 | 点选项立即提交，无需确认 |
+| `r3-ymd-selects.html` | 年/月/日 三个原生 select | 年、月 value 不补零，日补零——统一补零写不进去 |
+| `calendargrid-replica.html` | 日历网格 | 年箭头与月箭头语义不同，不能混用 |
+
+**新增控件的规矩**：先写 fixture（复刻出那个坑），再写策略；策略合并时必须让对应用例从红转绿。只有源码字符串断言的改动不算修好。
 
 ## 目录结构
 

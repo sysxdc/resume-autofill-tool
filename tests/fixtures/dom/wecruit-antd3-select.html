@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8" /><title>wecruit antd v3 远程搜索下拉</title>
+<style>
+ body{font-family:system-ui;padding:24px;background:#fff}
+ .ant-form-item{display:flex;gap:14px;align-items:center;margin-bottom:16px}
+ .ant-form-item-label{width:120px;color:#666}
+ .ant-select{position:relative;width:420px;border:1px solid #d9d9d9;border-radius:4px;padding:4px 8px;min-height:32px}
+ .ant-select-selection__placeholder{color:#bfbfbf}
+ .ant-select-search__field{border:0;outline:0;width:100%;font-size:14px}
+ .ant-select-dropdown{position:absolute;width:420px;max-height:220px;overflow:auto;border:1px solid #e8e8e8;
+   box-shadow:0 2px 8px rgba(0,0,0,.15);background:#fff;display:none}
+ .ant-select-dropdown-menu{margin:0;padding:4px 0;list-style:none}
+ .ant-select-dropdown-menu-item{padding:6px 12px;cursor:pointer}
+ .ant-select-dropdown-menu-item-active{background:#e6f7ff}
+</style></head>
+<body>
+
+<!-- 复刻 wecruit（中华英才网）教育经历的「学校」控件：
+     1) 点开只有「暂无数据」，必须先输入关键词才有选项（远程搜索）
+     2) 隐藏 input 里存着 0/20000/20001 这种编码值 —— 「是否已填」不能看它
+     3) 鼠标点 li **不提交**，只有键盘 ArrowDown 到高亮项 + Enter 才提交 -->
+<div class="ant-form-item">
+  <div class="ant-form-item-label"><label>学校*</label></div>
+  <div class="ant-select" id="sel">
+    <span class="ant-select-selection" id="selection">
+      <div class="ant-select-selection__rendered">
+        <ul><li class="ant-select-search ant-select-search--inline">
+          <input class="ant-select-search__field" id="search" autocomplete="off" />
+        </li></ul>
+      </div>
+      <span class="ant-select-selection__placeholder" id="ph">请填写学校</span>
+      <span class="ant-select-selection-selected-value" id="picked" style="display:none"></span>
+    </span>
+    <input type="hidden" id="code" value="0/20000/20001" />
+  </div>
+</div>
+
+<ul class="ant-select-dropdown-menu" id="dd"></ul>
+
+<script>
+  var SEL = ['广东工业大学', '广东工业大学华立学院'];
+  var dd = document.getElementById('dd');
+  var search = document.getElementById('search');
+  var picked = document.getElementById('picked');
+  var ph = document.getElementById('ph');
+  var code = document.getElementById('code');
+  var active = -1;
+  var items = [];
+
+  function render(list) {
+    items = list;
+    active = -1;
+    dd.innerHTML = '';
+    list.forEach(function (t) {
+      var li = document.createElement('li');
+      li.className = 'ant-select-dropdown-menu-item';
+      li.textContent = t;
+      // 关键：鼠标点 li 只高亮，不提交（复刻真实站点的行为）
+      li.addEventListener('click', function () { /* 故意不提交 */ });
+      dd.appendChild(li);
+    });
+    dd.style.display = 'block';
+  }
+
+  function commit(text, codeVal) {
+    picked.textContent = text;
+    picked.style.display = '';
+    ph.style.display = 'none';
+    code.value = codeVal;
+    dd.style.display = 'none';
+    document.getElementById('sel').setAttribute('data-selected', text);
+  }
+
+  document.getElementById('selection').addEventListener('click', function () {
+    if (dd.style.display !== 'block') render(['暂无数据']);
+    search.focus();
+  });
+
+  search.addEventListener('input', function () {
+    var kw = String(search.value || '').trim();
+    if (!kw) return render(['暂无数据']);
+    setTimeout(function () {
+      render(SEL.filter(function (s) { return s.indexOf(kw) !== -1; }));
+    }, 120);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (dd.style.display !== 'block' || !items.length) return;
+    if (e.key === 'ArrowDown') {
+      active = Math.min(active + 1, items.length - 1);
+      Array.prototype.forEach.call(dd.children, function (li, i) {
+        li.classList.toggle('ant-select-dropdown-menu-item-active', i === active);
+      });
+      e.preventDefault();
+    }
+    if (e.key === 'Enter' && active >= 0) {
+      commit(items[active], '0/20000/20001/' + (active + 1));
+      e.preventDefault();
+    }
+  });
+</script>
+</body></html>
