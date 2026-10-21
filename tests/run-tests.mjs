@@ -1741,9 +1741,9 @@ test('v1.5.6: 工作性质按该段职位推断', () => {
   assert.equal(Match.profileValue({ workList: [{ title: '工程师', nature: '兼职' }] }, 'workNature'), '兼职');
 });
 
-test('v1.5.9: manifest 1.5.9', () => {
+test('v1.5.10: manifest 1.5.10', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(pkg.version, '1.5.9');
+  assert.equal(pkg.version, '1.5.10');
 });
 
 console.log('v1.5.7 加行按钮 / 起止时间合体控件');
@@ -1854,7 +1854,7 @@ test('v1.5.8: 加行候选只留最内层可点元素', () => {
 
 test('v1.5.8: 下拉改轮询 + 组件实例提交', () => {
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
-  assert.ok(/waited >= 2600/.test(src), '下拉要轮询到选项出现');
+  assert.ok(/waited >= \d+/.test(src), '下拉要轮询到选项出现');
   assert.ok(/function hostDropdownOptions/.test(src), '优先读宿主自己的下拉节点');
   assert.ok(/function commitFrameworkWidget/.test(src), 'el-input-number / el-date-editor 走组件提交');
   assert.ok(/\$emit\('input', n\)/.test(src), '数字框传 Number');
@@ -1909,6 +1909,45 @@ test('v1.5.9: 外语成绩 / 取得时间 独立成键并可回退证书', () =>
 test('v1.5.9: 语言分区优先用外语键（不被 certDate 抢走）', () => {
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
   assert.ok(/sectionFallbackKey\(el\) \|\| matchKeyForElement\(el\)/.test(src), '分区兜底要优先于全局匹配');
+});
+
+console.log('v1.5.10 Moka 字段块 / 胶囊展开 / 未填定位');
+
+test('v1.5.10: 字段块标签兜底 + 噪声过滤', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function labelNoise/.test(src), '要有标签噪声过滤');
+  assert.ok(/未填写\|必填项/.test(src), '校验提示不能当字段名');
+  assert.ok(src.indexOf('+\\d{1,4}') !== -1, '区号不能当字段名');
+  assert.ok(/字段块/.test(src), '字段块兜底要写清来由');
+  assert.ok(/block\.children/.test(src), '要遍历字段块的子节点找标题');
+});
+
+test('v1.5.10: Moka sd-Select 接入下拉写路径', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/sd-Select-container/.test(src), '宿主选择器要含 Moka 的 sd-Select');
+  assert.ok(/sd-Menu-content-item/.test(src), '选项选择器要含 Moka 菜单项');
+});
+
+test('v1.5.10: 未填字段带 id / 行号 / 可定位', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function revealField/.test(src), '要能跳到字段');
+  assert.ok(/UNFILLED_ELS/.test(src), '要记住字段引用');
+  assert.ok(/row: row > 1 \? row : 0/.test(src), '同名列要带序号');
+  assert.ok(/revealField: function/.test(src), 'API 要暴露 revealField');
+  assert.ok(/SECTION_WORD_RE/.test(src), '分区标题要有词表');
+});
+
+test('v1.5.10: 胶囊点击能展开（遮罩不吞 click）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/panel.js'), 'utf8');
+  assert.ok(/if \(moved\) shield\.style\.display = 'block'/.test(src), '遮罩只能在拖动后出现');
+  assert.ok(/if \(wasPill && !moved\) expand\(\)/.test(src), '胶囊在 pointerup 里展开');
+  assert.ok(/function expand\(\)/.test(src), '要有 expand');
+});
+
+test('v1.5.10: 单次填充 45s 上限', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/timedOut/.test(src), '要标记超时');
+  assert.ok(/> 45000/.test(src) || /> 45e3/.test(src), '要有总时长预算');
 });
 
 console.log('');

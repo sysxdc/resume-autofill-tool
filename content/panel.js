@@ -58,6 +58,9 @@
     '.list li { display: flex; gap: 6px; padding: 5px 2px; font-size: 12px; color: #c9c1b2;',
     '  border-bottom: 1px solid rgba(236,230,218,.05); }',
     '.list li:last-child { border-bottom: 0; }',
+    '.list li { cursor: pointer; border-radius: 3px; }',
+    '.list li:hover { background: rgba(236,230,218,.06); }',
+    '.row-n { color: #6f675c; }',
     '.req { color: #e0674a; width: 8px; flex: none; }',
     '.sec { color: #6f675c; flex: none; max-width: 88px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }',
     '.label { flex: 1; word-break: break-all; }',
@@ -172,20 +175,30 @@
     listEl.classList.toggle('empty', !list.length);
     list.forEach(function (it) {
       var li = document.createElement('li');
+      li.title = '点一下跳到这个字段';
+      if (it.id) li.setAttribute('data-field', it.id);
       var req = document.createElement('span');
       req.className = 'req';
       req.textContent = it.required ? '*' : '';
-      var sec = document.createElement('span');
-      sec.className = 'sec';
-      sec.textContent = it.section || '';
+      li.appendChild(req);
+      if (it.section) {
+        var sec = document.createElement('span');
+        sec.className = 'sec';
+        sec.textContent = it.section + (it.row ? ' ' + it.row : '');
+        li.appendChild(sec);
+      }
       var label = document.createElement('span');
       label.className = 'label';
       label.textContent = it.label || '';
-      li.appendChild(req);
-      if (it.section) li.appendChild(sec);
       li.appendChild(label);
       listEl.appendChild(li);
     });
+  }
+
+  function jumpTo(item) {
+    var id = item && item.getAttribute('data-field');
+    if (!id || !api.revealField) return;
+    try { api.revealField(id); } catch (_) { /* ignore */ }
   }
 
   function summary(blanks) {
@@ -206,7 +219,7 @@
         return;
       }
       var blanks = (r.unfilled && r.unfilled.length !== undefined) ? r.unfilled : api.unfilled();
-      setStatus('已填 ' + (r.filled || 0) + ' 项，' + summary(blanks));
+      setStatus('已填 ' + (r.filled || 0) + ' 项' + (r.timedOut ? '（超时，部分字段没处理完）' : '') + '，' + summary(blanks));
       renderList(blanks);
     } catch (err) {
       setStatus('填写失败：' + String((err && err.message) || err).slice(0, 80), true);
@@ -256,10 +269,12 @@
 
   var drag = null;
   var moved = false;
+  var dragFrom = '';
 
-  function onDown(e) {
+  function onDown(e, fromPill) {
     if (e.button !== 0) return;
     if (e.target.closest('[data-act]')) return;
+    dragFrom = fromPill ? 'pill' : 'head';
     var rect = host.getBoundingClientRect();
     drag = { dx: e.clientX - rect.left, dy: e.clientY - rect.top, w: rect.width, h: rect.height };
     moved = false;
@@ -268,15 +283,17 @@
     host.style.left = rect.left + 'px';
     host.style.top = rect.top + 'px';
     head.classList.add('dragging');
-    shield.style.display = 'block';
     window.addEventListener('pointermove', onMove, true);
     window.addEventListener('pointerup', onUp, true);
-    e.preventDefault();
+    // 胶囊要靠 click 展开：pointerdown 上 preventDefault 会把后续 click 一起吞掉
+    if (!fromPill) e.preventDefault();
   }
 
   function onMove(e) {
     if (!drag) return;
     if (Math.abs(e.clientX - (drag.dx + host.getBoundingClientRect().left)) > 3) moved = true;
+    // 遮罩只在真的拖起来之后才铺：否则它会盖住胶囊，把 click 吞掉（点不开就是这个问题）
+    if (moved) shield.style.display = 'block';
     var x = Math.max(4, Math.min(e.clientX - drag.dx, window.innerWidth - drag.w - 4));
     var y = Math.max(4, Math.min(e.clientY - drag.dy, window.innerHeight - drag.h - 4));
     host.style.left = x + 'px';
@@ -288,21 +305,30 @@
   function onUp() {
     if (!drag) return;
     drag = null;
+    var wasPill = dragFrom === 'pill';
+    dragFrom = '';
     head.classList.remove('dragging');
     shield.style.display = 'none';
     window.removeEventListener('pointermove', onMove, true);
     window.removeEventListener('pointerup', onUp, true);
     saveState();
+    // 胶囊上的“点一下展开”放在 pointerup 里处理：遮罩 / 重渲染都可能把 click 吞掉
+    if (wasPill && !moved) expand();
+    moved = false;
   }
 
   head.addEventListener('pointerdown', onDown);
-  pill.addEventListener('pointerdown', onDown);
-  pill.addEventListener('click', function (e) {
-    if (moved) { moved = false; return; }
-    e.stopPropagation();
+  pill.addEventListener('pointerdown', function (e) { onDown(e, true); });
+  function expand() {
+    if (!state.collapsed) return;
     state.collapsed = false;
     applyState();
     saveState();
+  }
+
+  pill.addEventListener('click', function (e) {
+    e.stopPropagation();
+    expand();
   });
 
   window.addEventListener('resize', function () {
@@ -311,6 +337,11 @@
       state.top = clampY(state.top);
       applyState();
     }
+  });
+
+  listEl.addEventListener('click', function (e) {
+    var li = e.target.closest('li');
+    if (li) jumpTo(li);
   });
 
   root.addEventListener('click', function (e) {

@@ -31,6 +31,20 @@
 
   var MAX_FILLS_PER_KEY = M.MAX_FILLS_PER_KEY;
 
+  // 字段块里的“标签位”常见噪声词，别当字段名
+  var LABEL_STOP_RE = /^(必填|选填|\*|请输入|请选择|上传|删除|添加|新增|保存|取消|确定|编辑|查看|更多|展开|收起|全部|全选|其他|以上)$/;
+
+  /** 不像字段名的文本（校验提示、区号、按钮词、导航长文） */
+  function labelNoise(text, maxLen) {
+    var t = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!t || t.length > (maxLen || 24)) return true;
+    if (LABEL_STOP_RE.test(t)) return true;
+    if (/未填写|必填项|错误|提示|不能为空|请输入|请选择/.test(t)) return true;
+    if (/^\+\d{1,4}$/.test(t)) return true;
+    if (t.split(' ').length > 3) return true;
+    return false;
+  }
+
   function getLabelText(el) {
     // 1. label[for]
     if (el.id) {
@@ -43,10 +57,18 @@
       } catch (_) { /* ignore */ }
     }
     // 1b. wrapping label
+    //     注意：不少组件库（Moka 的 sd-Input）把控件包在 <label> 里，里面的文本是当前值/错误提示，
+    //     真正的字段名在更外层的 .title 里，所以这里要排掉「值 / 占位符 / 校验文案」
     var parentLabel = el.closest('label');
     if (parentLabel) {
-      var tWrap = M.visibleLabelText(parentLabel);
-      if (tWrap) return tWrap;
+      var tWrap = String(M.visibleLabelText(parentLabel) || '').replace(/\s+/g, ' ').trim();
+      var ownValue = String(el.value || '').trim();
+      var ownPh = String(el.getAttribute('placeholder') || '').trim();
+      var extraControls = parentLabel.querySelectorAll('input, select, textarea').length > 1;
+      if (tWrap && !extraControls && !labelNoise(tWrap) &&
+          tWrap !== ownValue && tWrap !== ownPh) {
+        return tWrap;
+      }
     }
     // 1c. aria-label
     var aria = el.getAttribute('aria-label');
@@ -70,7 +92,9 @@
     // 3. form-item container (antd / element / semi / formily)
     if (M.labelTextFromFormItem) {
       var tForm = M.labelTextFromFormItem(el);
-      if (tForm) return tForm;
+      // 兜底规则可能抓到校验提示（Moka 的「必填项未填写」）或外层容器名，过滤掉继续往下找
+      // form-item 里的是真标签，只挡校验文案，长度放宽
+      if (tForm && !labelNoise(tForm, 40)) return tForm;
     }
     // 4. previousElementSibling
     var prev = el.previousElementSibling;
@@ -80,12 +104,13 @@
         : String(prev.textContent || '');
       tPrev = String(tPrev || '').replace(/\s+/g, ' ').trim();
       if (M.cleanLabelPunctuation) tPrev = M.cleanLabelPunctuation(tPrev);
-      if (tPrev) return tPrev;
+      // 导航条/列表容器也会是「前一个兄弟」：文本过长或多段的不是字段名
+      if (!labelNoise(tPrev)) return tPrev;
     }
     // 5. parent's previousElementSibling (label-col | control-col)
     if (M.labelTextFromParentPrevSibling) {
       var tCol = M.labelTextFromParentPrevSibling(el);
-      if (tCol) return tCol;
+      if (tCol && !labelNoise(tCol, 40)) return tCol;
     }
     // 6. 表格布局（Redsea / 老 HR 系统）：字段名在左侧单元格
     var cell = el.closest ? el.closest('td, th') : null;
@@ -97,7 +122,27 @@
           : String(prevCell.textContent || '');
         tCell = String(tCell || '').replace(/\s+/g, ' ').trim();
         if (M.cleanLabelPunctuation) tCell = M.cleanLabelPunctuation(tCell);
-        if (tCell && tCell.length <= 40) return tCell;
+        if (tCell && tCell.length <= 40 && !labelNoise(tCell)) return tCell;
+      }
+    }
+    // 6b. 通用「字段块」：控件上方/左侧是一段短文本（Moka 的 .apply-field > .title）
+    //     放在最后兜底，前面各家的规则都不命中时才用，避免把正常站点的标签带偏
+    var block = el.parentElement;
+    for (var bd = 0; bd < 6 && block; bd++, block = block.parentElement) {
+      var blockText = String(block.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!blockText) continue;          // 控件外层常是只有 input 的壳，继续往上找
+      if (blockText.length > 80) break;
+      var bKids = block.children || [];
+      for (var bi = 0; bi < bKids.length; bi++) {
+        var kid = bKids[bi];
+        if (!kid || kid === el || kid.contains(el)) break;
+        // 同一个控件组里还有别的输入（比如 +86 区号）→ 那是控件不是标签
+        if (kid.querySelector && kid.querySelector('input, select, textarea, button')) continue;
+        var kidText = String(kid.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!kidText || kidText.length > 16) continue;
+        if (labelNoise(kidText)) continue;
+        if (M.cleanLabelPunctuation) kidText = M.cleanLabelPunctuation(kidText);
+        if (kidText) return kidText;
       }
     }
     // 7. Element-UI 自定义下拉：标题常在控件容器的前一个兄弟节点
@@ -110,7 +155,7 @@
         var tPv = M.visibleLabelText ? M.visibleLabelText(pv) : String(pv.textContent || '');
         tPv = String(tPv || '').replace(/\s+/g, ' ').trim();
         if (M.cleanLabelPunctuation) tPv = M.cleanLabelPunctuation(tPv);
-        if (tPv && tPv.length <= 40) return tPv;
+        if (tPv && tPv.length <= 40 && !labelNoise(tPv)) return tPv;
       }
     }
     return '';
@@ -969,10 +1014,12 @@
   // ————— v1.5.0：自定义下拉适配器（Element / Ant / dictionary / listbox）—————
 
   var CUSTOM_SELECT_HOST =
-    '.el-select, .ant-select, .dictionary-selector, .form-select, .phoenix-select, [role="combobox"]';
+    '.el-select, .ant-select, .dictionary-selector, .form-select, .phoenix-select, [role="combobox"], ' +
+    '[class*="sd-Select-container"]';  // Moka（app.mokahr.com）的自绘下拉
   var DROPDOWN_OPTION_SEL =
     '[role="option"], .el-select-dropdown__item, .el-option, .ant-select-item-option, ' +
-    '.ant-select-item, .dictionary-option, .option-item, .select-option, li.el-select-dropdown__item';
+    '.ant-select-item, .dictionary-option, .option-item, .select-option, li.el-select-dropdown__item, ' +
+    '[class*="sd-Menu-content-item"]';
 
   /** 关掉已经展开的下拉，避免它的选项污染下一个字段的匹配 */
   function closeOpenDropdowns() {
@@ -1028,8 +1075,11 @@
       var inp = host.querySelector('input');
       if (inp) txt = String(inp.value || '').replace(/\s+/g, ' ').trim();
     }
-    if (!txt || /请选择|请输入|select|choose|--/i.test(txt)) return false;
-    return true;
+    if (txt && !/请选择|请输入|select|choose|--/i.test(txt)) return true;
+    // Moka 这类自绘下拉把选中值渲染成 span，input.value 一直是空的
+    var hostText = String(host.textContent || '').replace(/\s+/g, ' ').trim();
+    if (hostText && hostText.length <= 24 && !/请选择|请输入|可多选|最多|select|choose|--/i.test(hostText)) return true;
+    return false;
   }
 
   function collectOpenDropdownOptions() {
@@ -1074,7 +1124,7 @@
         if (scoped) { finish(scoped); return; }
         var opts = collectOpenDropdownOptions();
         if (opts.length) { finish(opts); return; }
-        if (waited >= 2600) { closeOpenDropdowns(); resolve(false); return; }
+        if (waited >= 1800) { closeOpenDropdowns(); resolve(false); return; }
         if (!reopened && waited >= 900) {
           reopened = true;
           openCustomSelect(host);
@@ -2731,13 +2781,17 @@
       try { expanded = await expandAddSections(profile); } catch (e) { expanded = []; }
     }
 
+    var startedAt = Date.now();
+    var timedOut = false;
     for (var pass = 0; pass < 2; pass++) {
+      if (timedOut) break;
     // 起止时间合体的控件要在逐 input 匹配之前处理，否则两个 input 会被各写一份
     if (opts.allowCustomSelect !== false) {
       try { filled += await fillRangeEditors(profile, handled, filledKeys); } catch (_) { /* ignore */ }
     }
     var els = iterFillableFields();
     for (var idx = 0; idx < els.length; idx++) {
+      if (Date.now() - startedAt > 45000) { timedOut = true; break; }
       var el = els[idx];
       if (handled) { if (handled.has(el)) continue; handled.add(el); }
       if (groupHandled && groupHandled.has(el)) continue;
@@ -2978,7 +3032,10 @@
     // 别把弹层留在页面上
     try { closePhoenixPanels(); } catch (_) { /* ignore */ }
 
-    return { filled: filled, expanded: expanded, filledKeys: filledKeys, skipped: skipped, forced: forced };
+    return {
+      filled: filled, expanded: expanded, filledKeys: filledKeys, skipped: skipped,
+      forced: forced, timedOut: timedOut
+    };
   }
 
   /**
@@ -3062,7 +3119,8 @@
       expanded: result.expanded || [],
       filledKeys: result.filledKeys,
       skipped: result.skipped || [],
-      forced: result.forced || []
+      forced: result.forced || [],
+      timedOut: !!result.timedOut
     };
   }
 
@@ -3082,16 +3140,35 @@
     return false;
   }
 
+  var SECTION_WORD_RE = /个人|基本信息|教育|工作|实习|项目|校园|语言|获奖|证书|技能|附件|上传|申请|授权|说明|经历|背景|其他|自我评价|联系方式|家庭/;
+
   function sectionTitleFor(el) {
     var sec = el.closest
       ? el.closest('.resume-section, fieldset, .form-section, .ant-card, .el-card, section, .card')
       : null;
-    if (!sec) return '';
-    var head = sec.querySelector(
-      '.section-title .title, legend, h1, h2, h3, h4, .ant-card-head-title, .el-card__header, .card-title'
-    );
-    var t = head ? String(head.textContent || '').replace(/\s+/g, ' ').trim() : '';
-    return t.length > 24 ? '' : t;
+    if (sec) {
+      var head = sec.querySelector(
+        '.section-title .title, legend, h1, h2, h3, h4, .ant-card-head-title, .el-card__header, .card-title'
+      );
+      var t = head ? String(head.textContent || '').replace(/\s+/g, ' ').trim() : '';
+      if (t && t.length <= 24) return t;
+    }
+    // Moka 这类：分区标题是「字段块」前一个兄弟节点里的短文本
+    var node = el.parentElement;
+    for (var up = 0; up < 8 && node; up++, node = node.parentElement) {
+      var kids = node.children || [];
+      for (var i = 0; i < kids.length; i++) {
+        var kid = kids[i];
+        if (!kid || kid === el || kid.contains(el)) break;
+        var kt = String(kid.textContent || '').replace(/\s+/g, ' ').trim();
+        if (!kt || kt.length > 12) continue;
+        if (!SECTION_WORD_RE.test(kt)) continue;
+        // 字段名也会混进来（获奖时间 / 学校名称），别当分区标题
+        if (/名称|时间|日期|号码|编号|地址|邮箱|电话|分数|描述$/.test(kt)) continue;
+        return kt.replace(/添加$|新增$/, '');
+      }
+    }
+    return '';
   }
 
   function cleanFieldLabel(text) {
@@ -3102,23 +3179,50 @@
     return t;
   }
 
-  /** 页面上还空着、且能认出标签的字段（供「未填字段」清单） */
+  var UNFILLED_ELS = {};
+
+  /** 页面上还空着、且能认出标签的字段（供「未填字段」清单 + 点击定位） */
   function unfilledFields() {
     var out = [];
     var seen = {};
+    UNFILLED_ELS = {};
     iterFillableFields().forEach(function (el) {
       if (!el || el.disabled) return;
       if (!isVisibleEl(el)) return;
+      var host = findCustomSelectHost(el);
+      if (host && customSelectLooksFilled(host)) return;
       if (fieldLooksFilled(el)) return;
       var label = cleanFieldLabel(getLabelText(el));
       if (!label) return;
       var section = sectionTitleFor(el);
       var sig = section + '|' + label;
-      if (seen[sig]) return;
-      seen[sig] = 1;
-      out.push({ label: label, required: fieldRequired(el), section: section });
+      var row = seen[sig] ? seen[sig] + 1 : 1;
+      seen[sig] = row;
+      var id = 'f' + out.length;
+      UNFILLED_ELS[id] = el;
+      out.push({
+        id: id,
+        label: label,
+        required: fieldRequired(el),
+        section: section,
+        row: row > 1 ? row : 0
+      });
     });
     return out.slice(0, 60);
+  }
+
+  /** 点「未填字段」清单 → 滚到那个字段并闪一下 */
+  function revealField(id) {
+    var el = UNFILLED_ELS[id];
+    if (!el || !el.isConnected) return false;
+    try {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    } catch (_) {
+      try { el.scrollIntoView(); } catch (__) { /* ignore */ }
+    }
+    highlight(el);
+    try { el.focus({ preventScroll: true }); } catch (_) { /* ignore */ }
+    return true;
   }
 
   async function handleScan() {
@@ -3203,6 +3307,7 @@
     window.__resumeAutofill = {
       fill: function (options) { return handleFillMultiFrame(options || {}); },
       unfilled: function () { return unfilledFields(); },
+      revealField: function (id) { return revealField(id); },
       scan: function () { return handleScan(); }
     };
   } catch (_) { /* ignore */ }
