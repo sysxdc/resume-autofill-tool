@@ -1366,7 +1366,8 @@
     if (txt && !/请选择|请输入|请填写|填写|select|choose|--/i.test(txt)) return true;
     // Moka 这类自绘下拉把选中值渲染成 span，input.value 一直是空的
     var hostText = String(host.textContent || '').replace(/\s+/g, ' ').trim();
-    if (hostText && hostText.length <= 24 && !/请选择|请输入|可多选|最多|select|choose|--/i.test(hostText)) return true;
+    // 「必填项未填写」这类校验提示不是选中值，别把它当已填
+    if (hostText && hostText.length <= 24 && !/请选择|请输入|可多选|最多|select|choose|--|必填|未填写|不能为空|错误|请上传/i.test(hostText)) return true;
     return false;
   }
 
@@ -1487,6 +1488,12 @@
     var w = normText(value);
     if (!w) return false;
     if (a === w || a.indexOf(w) !== -1 || w.indexOf(a) !== -1) return true;
+    // 档案值写「应届生」、选项是「应届毕业生」这类同义词，不能当选歪了撤掉
+    var syns = valueSynonymVariants(value);
+    for (var i = 0; i < syns.length; i++) {
+      var sn = normText(syns[i]);
+      if (sn && (a === sn || a.indexOf(sn) !== -1 || sn.indexOf(a) !== -1)) return true;
+    }
     return false;
   }
 
@@ -1736,6 +1743,45 @@
     return filled;
   }
 
+  /**
+   * v1.5.16：下拉选项和档案值常常是同义词不同写法
+   * （档案写「应届生」，Moka 的选项是「应届毕业生」；写「本科」，选项是「学士」…）
+   * 精确匹配失败时按同义组再找一轮。
+   */
+  var VALUE_SYNONYM_SETS = [
+    ['应届生', '应届毕业生', '应届', '在校生', '应届毕业'],
+    ['本科', '学士', '大学本科', '本科生'],
+    ['硕士', '研究生', '硕士研究生', '硕士生'],
+    ['博士', '博士研究生'],
+    ['男', '男性', '先生'],
+    ['女', '女性', '女士'],
+    ['是', '接受', '同意', '可以', '服从'],
+    ['否', '不接受', '不同意', '不服从']
+  ];
+
+  function valueSynonymVariants(value) {
+    var v = String(value == null ? '' : value).replace(/\s+/g, '');
+    if (!v) return [];
+    var out = [];
+    VALUE_SYNONYM_SETS.forEach(function (set) {
+      var hit = set.some(function (x) { return x === v || v.indexOf(x) >= 0; });
+      if (!hit) return;
+      set.forEach(function (x) { if (x !== v && out.indexOf(x) === -1) out.push(x); });
+    });
+    return out;
+  }
+
+  function matchOptionByVariants(opts, variants) {
+    for (var i = 0; i < variants.length; i++) {
+      var v = String(variants[i]).replace(/\s+/g, '');
+      for (var j = 0; j < opts.length; j++) {
+        var t = String((opts[j] && opts[j].text) || '').replace(/\s+/g, '');
+        if (t && (t === v || t.indexOf(v) >= 0)) return opts[j];
+      }
+    }
+    return null;
+  }
+
   function fillCustomSelect(host, value, key) {
     if (isPhoenixHost(host)) return fillPhoenixHost(host, value, key);
     if (isAntdV3SelectHost(host)) return fillAntdV3Select(host, value);
@@ -1781,6 +1827,10 @@
             ? M.findBestOption(opts, value)
             : (M.matchSelectOption && M.matchSelectOption(opts, value));
           // 籍贯这类「省 / 市」两级下拉拿到的是整串，按行政区后缀切出能对上的那一段
+          if (!matched) {
+            var syns = valueSynonymVariants(value);
+            if (syns.length) matched = matchOptionByVariants(opts, syns);
+          }
           if (!matched) {
             var variants = regionPrefixVariants(value);
             for (var vi = variants.length - 1; vi >= 0 && !matched; vi--) {
@@ -3805,6 +3855,55 @@
     return false;
   }
 
+  /**
+   * v1.5.16：有些站点的标签 match.js 还没收（或收到的 key 档案里是空的）。
+   * 只在这些情况下补一层别名，不覆盖已有的匹配结果。
+   */
+  var EXTRA_LABEL_KEYS = [
+    [/^(所在地|现居地|当前所在地|当前城市|现居住地)$/, 'currentCity'],
+    [/^(工作经验|工作年限)$/, 'workYears'],
+    [/^职责$/, 'projectRole'],
+    [/^(语言类型|语种|语言种类)$/, 'languageType'],
+    [/^(掌握程度|熟练程度|语言水平|语言等级)$/, 'languageLevel'],
+    [/^(期望城市|意向城市|期望工作城市)$/, 'expectedCity'],
+    [/^(是否服从调剂|是否接受调剂.*|是否服从.*调配)$/, 'acceptAdjustment'],
+    [/^(城市选择能否服从分配|能否服从分配|是否服从城市分配)$/, 'cityAdjustment']
+  ];
+
+  function aliasKeyForLabel(label, currentKey) {
+    var t = String(label || '').replace(/[*＊\s]/g, '');
+    if (!t) return '';
+    for (var i = 0; i < EXTRA_LABEL_KEYS.length; i++) {
+      if (!EXTRA_LABEL_KEYS[i][0].test(t)) continue;
+      var k = EXTRA_LABEL_KEYS[i][1];
+      return k === currentKey ? '' : k;
+    }
+    return '';
+  }
+
+  /**
+   * v1.5.16：有些网申（Moka 这种）表单是分块懒挂载的，
+   * 一键填写点太早会漏掉下半截字段。这里等输入框数量稳定下来再开始。
+   */
+  async function waitForFormSettle(maxMs) {
+    var last = -1;
+    var stable = 0;
+    var waited = 0;
+    var limit = typeof maxMs === 'number' ? maxMs : 1500;
+    while (waited < limit) {
+      var n = document.querySelectorAll('input, textarea, select').length;
+      if (n === last) {
+        stable += 1;
+        if (stable >= 2) return;
+      } else {
+        stable = 0;
+        last = n;
+      }
+      await sleep(150);
+      waited += 150;
+    }
+  }
+
   async function fillFromProfile(profile, options) {
     var opts = options || {};
     var filled = 0;
@@ -3829,6 +3928,7 @@
       try { expanded = await expandAddSections(profile); } catch (e) { expanded = []; }
     }
 
+    try { await waitForFormSettle(1500); } catch (_) { /* ignore */ }
     var startedAt = Date.now();
     var timedOut = false;
     for (var pass = 0; pass < 2; pass++) {
@@ -3856,6 +3956,7 @@
       var key = struct
         ? struct.key
         : (compoundEduKey(getLabelText(el)) || sectionFallbackKey(el) || matchKeyForElement(el));
+      if (!key) key = aliasKeyForLabel(getLabelText(el), null);
       if (!key) continue;
       var counterKey = occurrenceKey(key, getLabelText(el));
       var count = struct ? 0 : (keyCounts[counterKey] || 0);
@@ -3865,6 +3966,16 @@
         : (M.profileValueForOccurrence
           ? M.profileValueForOccurrence(profile, key, count)
           : M.profileValue(profile, key));
+      if (!value) {
+        // 主 key 取不到值：试一下别名（所在地 / 工作经验 / 职责 / 语言类型 ...）
+        var aliasKey = aliasKeyForLabel(getLabelText(el), key);
+        if (aliasKey) {
+          value = M.profileValueForOccurrence
+            ? M.profileValueForOccurrence(profile, aliasKey, count)
+            : M.profileValue(profile, aliasKey);
+          if (value) key = aliasKey;
+        }
+      }
       if (!value) {
         if (skipped.length < 12) skipped.push({ key: key, reason: 'no_profile_value' });
         continue;

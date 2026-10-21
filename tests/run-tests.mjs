@@ -2087,6 +2087,53 @@ test('v1.5.15: 中华英才网 wecruit（antd v3）可控组件', () => {
   assert.ok(/isAntdV3SelectHost\(host\)\)\s*\{\s*return !!antdV3SelectedText/.test(src), 'v3 已填判定');
 });
 
+console.log('v1.5.16 Moka（古茗）：sd-Select / 别名 / 同义词 / 年+月');
+
+test('v1.5.16: sd-Select 的 input 不再被当成搜索框过滤掉', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const m = src.match(/var INNER_SELECT_SEARCH_SEL =([\s\S]*?);/);
+  assert.ok(m, '要能找到选择器定义');
+  assert.ok(!/sd-Select-container/.test(m[1]), 'sd-Select 不能在里面');
+});
+
+test('v1.5.16: 「必填项未填写」校验提示不算已选值', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/必填\|未填写\|不能为空/.test(src), 'customSelectLooksFilled 要忽略校验提示');
+});
+
+test('v1.5.16: 标签别名（所在地/工作经验/职责/语言/期望城市）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function aliasKeyForLabel/.test(src), '要有别名表');
+  ['currentCity', 'workYears', 'projectRole', 'languageType', 'languageLevel', 'expectedCity', 'cityAdjustment', 'acceptAdjustment'].forEach((k) => {
+    assert.ok(src.indexOf("'" + k + "'") !== -1, '别名要覆盖 ' + k);
+  });
+  assert.ok(/aliasKeyForLabel\(getLabelText\(el\), null\)/.test(src), 'key 为空时用别名');
+});
+
+test('v1.5.16: 同义词（应届生 ↔ 应届毕业生）匹配与校验', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function valueSynonymVariants/.test(src), '同义组展开');
+  assert.ok(/应届生', '应届毕业生'/.test(src), '应届组');
+  assert.ok(/function matchOptionByVariants/.test(src), '按同义组找选项');
+  assert.ok(/var syns = valueSynonymVariants\(value\)/.test(src), '匹配时用同义词');
+  assert.ok(/var syns = valueSynonymVariants\(value\)[\s\S]{0,200}optionTextPlausible|optionTextPlausible[\s\S]{0,600}valueSynonymVariants/.test(src), '校验也认同义词');
+});
+
+test('v1.5.16: 年+月下拉对（fillYearMonthPairs）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/async function fillYearMonthPairs/.test(src), '要有年月对处理');
+  assert.ok(/placeholder === '年' \|\| ph === '月'/.test(src) || /ph === '年' \|\| ph === '月'/.test(src), '按 placeholder 认年月下拉');
+  assert.ok(/YM_SECTION_MAP/.test(src) && /教育背景/.test(src) && /实习经历/.test(src) && /项目经验/.test(src), '按分区取起止');
+  assert.ok(/yms\.length >= 4/.test(src), '起止 4 个 / 单个 2 个');
+  assert.ok(/fillYearMonthPairs\(profile, filledKeys\)/.test(src), '接进填写主流程');
+});
+
+test('v1.5.16: 填写前等表单稳定（懒挂载）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/async function waitForFormSettle/.test(src), '要等输入框数量稳定');
+  assert.ok(/await waitForFormSettle\(/.test(src), '接进 fillFromProfile');
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
