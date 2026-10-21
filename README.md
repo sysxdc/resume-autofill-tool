@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.5.11**
+当前版本：**1.5.12**
 
 ## 功能概览
 
@@ -195,6 +195,22 @@ resume-autofill-tool/
   宁可不填也不猜；提交前手动选一下。
 
 ## Changelog
+
+### 1.5.12
+
+- **快手校招（campus.kuaishou.cn）一个字段都填不进去**，根因有两个：
+  - `findCustomSelectHost` 用 `[role="combobox"]` 找下拉宿主，而 antd v5 把 `role="combobox"` 放在 **input 本身**上。
+    host 变成了那个 input：`host.querySelector('input')` 是 null、弹层读不到、`customSelectLooksFilled` 永远 false，
+    于是每个下拉都走一遍注定失败的流程。现在命中 input/textarea/select 就缩放回 `.ant-select` 这类外层组件。
+  - 「最高学历学校 / 最高学历专业 / 最高学历毕业日期」被关键词匹配成了 `highestDegree`
+    （先撞到「学历」），学校框里被塞「本科」。新增组合词优先判断：`...学校 → school`、`...专业 → major`、`...日期 → eduEnd`。
+- **可搜索下拉（学校 / 专业）改成「先输入再选」**：点开 → 没匹配就网搜索框里输值 → 等远程结果（最多 4.2s）→ 点完全一致的那条。
+  同一页面会同时挂着好几个没关的 antd 弹层，按 `aria-controls` 找到本字段的 listbox 再上溯到弹层，多弹层并存时只取最后出现的那组。
+- **不再「宁可选错」**：
+  - 选项点下去之前先核对：选项文字跟档案值对不上就不点（`斯威本科技大学` 进学校就是这么来的）。
+  - 点完再读一次选中项核对；antd 没有 `.ant-select-selection-item` 就算没选中，不拿搜索框里的残留文字冒充。
+  - 区号下拉（`+86` / `+82`）不再被手机号命中。
+  - 选完之后**不按 Esc**：rc-select 的 Esc 会把旧值还原，刚选好的学校会被撤回去。
 
 ### 1.5.11
 

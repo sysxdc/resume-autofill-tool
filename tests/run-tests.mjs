@@ -1741,9 +1741,13 @@ test('v1.5.6: 工作性质按该段职位推断', () => {
   assert.equal(Match.profileValue({ workList: [{ title: '工程师', nature: '兼职' }] }, 'workNature'), '兼职');
 });
 
-test('v1.5.11: manifest 1.5.11', () => {
+test('manifest 版本与 README 一致（不绑死具体版本号）', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(pkg.version, '1.5.11');
+  const readme = fs.readFileSync(path.join(root, 'README.md'), 'utf8');
+  const m = readme.match(/当前版本：\*\*([0-9.]+)\*\*/);
+  assert.ok(m, 'README 要写当前版本');
+  assert.equal(pkg.version, m[1]);
+  assert.ok(/^\d+\.\d+\.\d+$/.test(pkg.version), '版本号格式');
 });
 
 console.log('v1.5.7 加行按钮 / 起止时间合体控件');
@@ -1948,6 +1952,49 @@ test('v1.5.10: 单次填充 45s 上限', () => {
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
   assert.ok(/timedOut/.test(src), '要标记超时');
   assert.ok(/> 45000/.test(src) || /> 45e3/.test(src), '要有总时长预算');
+});
+
+console.log('v1.5.12 快手（antd v5）下拉');
+
+test('v1.5.12: [role=combobox] 落在 input 上时要缩放到外层组件', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/CUSTOM_SELECT_HOST[\s\S]{0,400}role="combobox"/.test(src), '宿主选择器里要有 combobox');
+  assert.ok(/tag === 'INPUT' \|\| tag === 'TEXTAREA'/.test(src), 'input 要能被识别出来并缩放');
+  assert.ok(/\.el-select, \.ant-select, \.dictionary-selector/.test(src), '缩放目标要是外层组件');
+});
+
+test('v1.5.12: 弹层按 aria-controls 定位，多弹层只取最后打开的一组', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function dropdownForHost/.test(src), '要有按 aria 定位弹层的函数');
+  assert.ok(/aria-controls/.test(src) && /aria-owns/.test(src), '两个属性都要认');
+  assert.ok(/closest\('\.ant-select-dropdown'\)/.test(src), 'listbox 空壳要能上溯到弹层');
+  assert.ok(/groups\[groups\.length - 1\]/.test(src), '多弹层并存取最后一组');
+});
+
+test('v1.5.12: 组合学历标签不被 highestDegree 抢走', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function compoundEduKey/.test(src), '要有组合词判断');
+  assert.ok(/最高学历\|最高学位/.test(src), '要认最高学历前缀');
+  assert.ok(/return 'school'/.test(src) && /return 'major'/.test(src), '学校 / 专业要分开');
+  assert.ok(/compoundEduKey\(getLabelText\(el\)\)/.test(src), '逐字段匹配时要用上');
+});
+
+test('v1.5.12: 可搜索下拉「先输入再选」+ 远程搜索等待', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function typeIntoSearch/.test(src), '要能往搜索框里输值');
+  assert.ok(/sigAtType/.test(src), '要按选项指纹判断搜索是否生效');
+  assert.ok(/waited >= \(searched \? 4200 : 3000\)/.test(src), '搜过的要多等一会儿');
+  assert.ok(/ArrowDown/.test(src), '点不开时用方向键展开');
+});
+
+test('v1.5.12: 选之前核对、选之后复核，宁可不填', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function optionTextPlausible/.test(src), '要有选项合理性判断');
+  assert.ok(/if \(!optionTextPlausible\(wantText, value\)\)/.test(src), '点之前先核对');
+  assert.ok(/if \(optionTextPlausible\(shown, value\)\)/.test(src), '点之后复核');
+  assert.ok(/ant-select/.test(src) && /selection-item/.test(src), 'antd 没选中项就算没选中');
+  assert.ok(/function isDialCodeList/.test(src), '区号下拉要拦');
+  assert.ok(!/simulateClick\(hit\.el\);[\s\S]{0,120}closeOpenDropdowns\(\);[\s\S]{0,80}customSelectText/.test(src), '选完不能按 Esc（会还原旧值）');
 });
 
 console.log('');

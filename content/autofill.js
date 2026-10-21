@@ -1001,8 +1001,14 @@
 
   function simulateClick(el) {
     if (!el) return;
-    // SVG 元素没有 el.click()，统一派发 click 事件（北森字典/地区的勾选热区就是 svg）
+    // SVG 元素没有 el.click()，统一派发事件（北森字典/地区的勾选热区就是 svg）
     try {
+      var ptr = null;
+      try { ptr = new PointerEvent('pointerdown', { bubbles: true }); } catch (_) { ptr = null; }
+      if (ptr) {
+        el.dispatchEvent(ptr);
+        try { el.dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); } catch (_) { /* ignore */ }
+      }
       el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
       el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -1040,9 +1046,39 @@
    * 打开瞬间外层可能还在过渡动画里（rect 为 0），但节点已经在，按 style 判断即可，
    * 不用干等它“看得见”——BYD 这类重页面要 1.5~2s，逐字段等就是卡顿的来源。
    */
+  /**
+   * antd 的弹层 portal 到 body，同页可能同时挂着好几个（上一轮没关干净的），
+   * 猜错就会把「+82」「斯威本科技大学」这种别人家的选项点进去。
+   * 用 aria-controls / aria-owns 精确找到当前这个下拉自己的那一个。
+   */
+  function dropdownForHost(host) {
+    if (!host || !host.querySelector) return null;
+    var input = host.querySelector('input[aria-controls], input[aria-owns], [aria-controls], [aria-owns]');
+    if (input) {
+      var id = input.getAttribute('aria-controls') || input.getAttribute('aria-owns');
+      if (id) {
+        var byId = document.getElementById(id);
+        if (byId) {
+          // antd 的 aria 目标是 listbox 空壳（0 尺寸、没有选项），真正的选项在它所属的弹层里
+          var box = byId.closest ? byId.closest('.ant-select-dropdown') : null;
+          if (box) return box;
+          if (byId.querySelector('.ant-select-item-option')) return byId;
+        }
+      }
+    }
+    var own = host.querySelector('.el-select-dropdown, .ant-select-dropdown');
+    return own || null;
+  }
+
   function hostDropdownOptions(host) {
     if (!host || !host.querySelector) return null;
-    var dd = host.querySelector('.el-select-dropdown, .ant-select-dropdown');
+    var dd = dropdownForHost(host);
+    if (!dd) return null;
+    // 页面里常驻着好几个「隐藏但仍有 DOM」的下拉（antd 不会卸载），
+    // 按 aria-controls 找到的那个可能已经过气：屏幕上有高度才算数
+    var box = null;
+    try { box = dd.getBoundingClientRect(); } catch (_) { box = null; }
+    if (box && box.height === 0) dd = null;
     if (!dd) return null;
     var st = null;
     try { st = window.getComputedStyle(dd); } catch (_) { st = null; }
@@ -1059,7 +1095,18 @@
 
   function findCustomSelectHost(el) {
     if (!el || !el.closest) return null;
-    return el.closest(CUSTOM_SELECT_HOST);
+    var host = el.closest(CUSTOM_SELECT_HOST);
+    if (!host) return null;
+    // CUSTOM_SELECT_HOST 里的 [role="combobox"] 会直接命中 antd 的 input 本身（快手就是），
+    // 那样 host 里既找不到 input 也读不到弹层，等于一个字段都填不动 —— 一律缩放到外层组件
+    var tag = String(host.tagName || '').toUpperCase();
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+      var wrap = host.closest(
+        '.el-select, .ant-select, .dictionary-selector, .form-select, .phoenix-select, [class*="sd-Select-container"]'
+      );
+      return wrap || host.parentElement || host;
+    }
+    return host;
   }
 
   function customSelectLooksFilled(host) {
@@ -1082,24 +1129,57 @@
     return false;
   }
 
+  /**
+   * 收集「当前可见」的选项。
+   * 快手的下拉失焦后不会关（页面上能同时挂着好几个可见弹层），
+   * 所以多个弹层并存时只取 DOM 里最后出现的那个 —— 也就是刚点开的这个。
+   */
   function collectOpenDropdownOptions() {
     var nodes = document.querySelectorAll(DROPDOWN_OPTION_SEL);
+    var groups = [];
+    var lastBox = null;
     var out = [];
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
       if (!isVisibleEl(n)) continue;
-      var txt = String(n.textContent || '').replace(/\s+/g, ' ').trim();
-      if (!txt || txt.length > 80 || PICKER_BLOCK_RE.test(txt)) continue;
-      out.push({ el: n, text: txt, value: n.getAttribute('data-value') || txt });
+      var box = n.closest('.ant-select-dropdown, .el-select-dropdown, [class*="dropdown"], [class*="Dropdown"]');
+      if (box) {
+        if (box !== lastBox) { lastBox = box; groups.push([]); }
+        groups[groups.length - 1].push(n);
+      } else {
+        out.push(n);
+      }
     }
-    return out;
+    var picked = [];
+    if (groups.length) {
+      picked = groups[groups.length - 1];
+      if (groups.length > 1) {
+        // 别的弹层还开着：留给调用方清理，但选项只用最后那组
+        out = out.concat(groups.slice(0, -1).reduce(function (a, b) { return a.concat(b); }, []));
+        // 别的弹层里的选项不当候选，这里只返回最后一组
+        out = [];
+      }
+    }
+    picked = picked.length ? picked : out;
+    var res = [];
+    for (var j = 0; j < picked.length; j++) {
+      var m = picked[j];
+      var txt = String(m.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!txt || txt.length > 80 || PICKER_BLOCK_RE.test(txt)) continue;
+      res.push({ el: m, text: txt, value: m.getAttribute('data-value') || txt });
+    }
+    return res;
   }
 
   function openCustomSelect(host) {
     if (!host) return;
+    // 先找真正的输入框：antd 只认落在 input 上的 mousedown（落在外层 div 上不开弹层），
+    // 快手「最高学历学校」这种远程搜索下拉就是这么点不开的
     var clickTarget =
-      host.querySelector('.el-input__inner, .ant-select-selector, .el-select__wrapper, [role="combobox"], input') ||
+      host.querySelector('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"])') ||
+      host.querySelector('.el-input__inner, .ant-select-selector, .el-select__wrapper, [role="combobox"]') ||
       host;
+    try { clickTarget.focus(); } catch (_) { /* ignore */ }
     simulateClick(clickTarget);
   }
 
@@ -1107,25 +1187,185 @@
    * 写自定义下拉：点击展开 → 按文案匹配选项 → 点击。
    * 纯匹配逻辑复用 M.findBestOption / matchSelectOption。
    */
+  /**
+   * 往自定义下拉的搜索框里输值：antd v5 的「学校 / 专业」、Moka 的可搜索下拉，
+   * 都要先输入再选，光点开只有一屏默认选项。
+   * 用原生 setter + input 事件，React / Vue 的受控组件才认。
+   */
+  function typeIntoSearch(host, text) {
+    var input = host.querySelector('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"])');
+    if (!input) return false;
+    var setter = null;
+    try {
+      setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+    } catch (_) { setter = null; }
+    try {
+      input.focus();
+      // 只有输入框里已经有字时才先清空：清空会让 antd 重渲染、把 input 换掉，
+      // 后面那次赋值就落在已经脱离文档的旧节点上，等于没输（快手学校下拉踩过）
+      if (String(input.value || '')) {
+        if (setter) setter.call(input, ''); else input.value = '';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input = host.querySelector('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"])') || input;
+        try { input.focus(); } catch (_) { /* ignore */ }
+      }
+      if (setter) setter.call(input, String(text)); else input.value = String(text);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', bubbles: true }));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /** 下拉当前显示的文字（antd / Element / 自绘都能读到） */
+  function customSelectText(host) {
+    if (!host) return '';
+    var sel = host.querySelector('.ant-select-selection-item, .el-select__selected-item');
+    if (sel) return String(sel.textContent || '').replace(/\s+/g, ' ').trim();
+    // antd 选了就有 .ant-select-selection-item；没有就是没选。
+    // 别拿搜索框里的字冒充结果——点了选项但没提交时，搜索框还留着刚输的词
+    if (host.className && /ant-select/.test(String(host.className))) return '';
+    var inp = host.querySelector('input');
+    if (inp && inp.value) return String(inp.value).replace(/\s+/g, ' ').trim();
+    return String(host.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  }
+
+  function normText(t) {
+    return String(t || '').toLowerCase().replace(/\s+/g, '').replace(/[()（）\[\]【】·,，.。/\-]/g, '');
+  }
+
+  /**
+   * 选完之后核对：读回来的文字得跟要填的值对得上。
+   * 快手那个学校下拉会在筛选重排的瞬间把点击落到别的行（点成了「斯威本科技大学」），
+   * 与其把错值留在页面上，不如判失败、让它在「未填」清单里露出来。
+   */
+  function optionTextPlausible(shown, value) {
+    var a = normText(shown);
+    if (!a) return false;
+    var w = normText(value);
+    if (!w) return false;
+    if (a === w || a.indexOf(w) !== -1 || w.indexOf(a) !== -1) return true;
+    return false;
+  }
+
+  function clearCustomSelect(host) {
+    if (!host) return false;
+    var btn = host.querySelector('.ant-select-clear, .el-select__clear, .el-select__caret.is-reverse, [class*="clear"]');
+    if (btn) {
+      simulateClick(btn);
+      return true;
+    }
+    var inp = host.querySelector('input');
+    if (!inp) return false;
+    try {
+      inp.focus();
+      inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', keyCode: 8, bubbles: true }));
+      inp.dispatchEvent(new KeyboardEvent('keyup', { key: 'Backspace', keyCode: 8, bubbles: true }));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /** 选项全是 +86/+1 这类区号时，别把手机号往里填 */
+  function isDialCodeList(opts) {
+    if (!opts || !opts.length) return false;
+    for (var i = 0; i < opts.length; i++) {
+      if (!/^\s*\+\d{1,4}/.test(String(opts[i].text || ''))) return false;
+    }
+    return true;
+  }
+
   function fillCustomSelect(host, value, key) {
     if (isPhoenixHost(host)) return fillPhoenixHost(host, value, key);
     return new Promise(function (resolve) {
       if (!host || !value) { resolve(false); return; }
       if (customSelectLooksFilled(host)) { resolve(false); return; }
       // 单选/多选组不是下拉：别在这里耗 2s 等一个永远不出现的弹层
-      if (host.querySelector('input[type=radio], input[type=checkbox]')) { resolve(false); return; }
+      if (host.querySelector('input[type="radio"], input[type="checkbox"]')) { resolve(false); return; }
+      // 先关掉别的下拉，否则会把别人家的选项当成自己的（快手的排名下拉就这么串过）
+      closeOpenDropdowns();
       openCustomSelect(host);
-      // 弹层是异步渲染的，慢页面（BYD 实测）要 1.5s 才可见：轮询到选项出现为止，
-      // 固定等 320ms 会让每次下拉都白等一轮、直接失败
+
       var waited = 0;
       var reopened = false;
+      var typed = false;
+      var opened = false;     // 点不开时用 ArrowDown 兜底展开（rc-select 认这个）
+      var searched = false;   // 已经输过搜索词
+      var retyped = false;    // 列表出来之后补输过一次
+      var sigAtType = '';     // 输搜索词那一刻的选项指纹（远程搜索要等列表真的变了）
+
+      function candidates() {
+        return hostDropdownOptions(host) || collectOpenDropdownOptions();
+      }
+
+      // 记住「打开之前就在页面上的弹层」，只认新出现的那个
+
+
+      function signature(opts) {
+        return (opts || []).map(function (o) { return String(o.text || ''); }).join('|');
+      }
+
       function poll() {
-        var scoped = hostDropdownOptions(host);
-        if (scoped) { finish(scoped); return; }
-        var opts = collectOpenDropdownOptions();
-        if (opts.length) { finish(opts); return; }
-        if (waited >= 1800) { closeOpenDropdowns(); resolve(false); return; }
-        if (!reopened && waited >= 900) {
+        var opts = candidates();
+        var sig = signature(opts);
+        if (opts.length && isDialCodeList(opts) && !/^\s*\+/.test(String(value))) {
+          // 区号下拉（+86 / +82 …）不是给手机号用的，宁可不填
+          closeOpenDropdowns();
+          resolve(false);
+          return;
+        }
+        if (opts.length) {
+          var matched = M.findBestOption
+            ? M.findBestOption(opts, value)
+            : (M.matchSelectOption && M.matchSelectOption(opts, value));
+          if (matched) { pick(opts, matched); return; }
+          if (searched && sigAtType && sig !== sigAtType) {
+            // 搜过了、列表也真的变了（远程搜索回来了）还是没有 → 这个下拉确实没这个值
+            closeOpenDropdowns();
+            resolve(false);
+            return;
+          }
+          // 弹层还没开就先输了搜索词：等列表出来再补输一次，否则永远等不到筛选结果
+          if (searched && !sigAtType && !retyped) {
+            retyped = true;
+            sigAtType = sig;
+            typeIntoSearch(host, value);
+          }
+          // 远程搜索（快手学校/专业）1.5s 才回来：输了没反应就再输一次，别提前放弃
+          if (searched && sigAtType && sig === sigAtType && !retyped && waited >= 1500) {
+            retyped = true;
+            typeIntoSearch(host, value);
+          }
+        }
+        // 没匹配上：试「输入搜索」（学校 / 专业这类可搜索下拉）
+        // 合成点击有时打不开 antd 的下拉（快手的「专业」就是这样）：
+        // 聚焦后用方向键展开，rc-select 认这个键
+        if (!opened && !opts.length && waited >= 300) {
+          opened = true;
+          var fi = host.querySelector('input:not([type="hidden"])');
+          if (fi) {
+            try { fi.focus(); } catch (_) { /* ignore */ }
+            ['keydown', 'keyup'].forEach(function (t) {
+              try {
+                fi.dispatchEvent(new KeyboardEvent(t, { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40, bubbles: true }));
+              } catch (_) { /* ignore */ }
+            });
+          }
+        }
+        if (!typed && waited >= 420 && String(value).length > 1) {
+          typed = true;
+          searched = true;
+          sigAtType = sig;
+          typeIntoSearch(host, value);
+        }
+        if (waited >= (searched ? 4200 : 3000)) {
+          closeOpenDropdowns();
+          resolve(false);
+          return;
+        }
+        if (!reopened && waited >= 1200 && !typed) {
           reopened = true;
           openCustomSelect(host);
         }
@@ -1134,27 +1374,34 @@
       }
       setTimeout(poll, 180);
 
-      function finish(opts) {
+      function pick(opts, matched) {
         if (!opts || !opts.length) { resolve(false); return; }
-        var matched = M.findBestOption
-          ? M.findBestOption(opts, value)
-          : (M.matchSelectOption && M.matchSelectOption(opts, value));
-        if (!matched) { resolve(false); return; }
+        var want = matched || opts[0];
         var wantNorm = M.normalizeOptionText
-          ? M.normalizeOptionText(matched.text || matched.value)
-          : String(matched.text || matched.value || '').toLowerCase();
+          ? M.normalizeOptionText(want.text || want.value)
+          : String(want.text || want.value || '').toLowerCase();
         var hit = null;
         for (var i = 0; i < opts.length; i++) {
           var tn = M.normalizeOptionText
             ? M.normalizeOptionText(opts[i].text)
             : String(opts[i].text || '').toLowerCase();
-          if (tn === wantNorm || opts[i].text === matched.text) { hit = opts[i]; break; }
+          if (tn === wantNorm || opts[i].text === want.text) { hit = opts[i]; break; }
         }
-        if (!hit) hit = opts[0];
+        if (!hit) hit = want;
+        var wantText = String(want.text || want.value || '');
+        // 点之前先核对一遍：拿不准的宁可不点，别把「斯威本科技大学」这种填进学校
+        if (!optionTextPlausible(wantText, value)) { closeOpenDropdowns(); resolve(false); return; }
         simulateClick(hit.el);
         setTimeout(function () {
-          resolve(customSelectLooksFilled(host) || true);
-        }, 200);
+          // 这里千万别 closeOpenDropdowns()：rc-select 的 Esc 会把旧值还原，
+          // 刚选好的学校就被撤回去了（快手实测）
+          var shown = customSelectText(host);
+          // 只跟「要填的值」比：跟匹配到的选项比等于自证，斯威本科技大学就是这么混过去的
+          if (optionTextPlausible(shown, value)) { resolve(true); return; }
+          // 选歪了：撤掉，按失败处理（宁可空着，也别留个错的）
+          clearCustomSelect(host);
+          resolve(false);
+        }, 260);
       }
     });
   }
@@ -2801,7 +3048,9 @@
       var struct = detectStructuredField(el);
       // 分区兜底优先：语言技能里的「获得时间」全局会落到 certDate（证书时间），
       // 在这种分区里应该用 englishDate
-      var key = struct ? struct.key : (sectionFallbackKey(el) || matchKeyForElement(el));
+      var key = struct
+        ? struct.key
+        : (compoundEduKey(getLabelText(el)) || sectionFallbackKey(el) || matchKeyForElement(el));
       if (!key) continue;
       var counterKey = occurrenceKey(key, getLabelText(el));
       var count = struct ? 0 : (keyCounts[counterKey] || 0);
@@ -3138,6 +3387,26 @@
     var lab = item && item.querySelector ? item.querySelector('.el-form-item__label, label') : null;
     if (lab && /^\s*[*＊]/.test(String(lab.textContent || ''))) return true;
     return false;
+  }
+
+  /**
+   * 「最高学历学校 / 最高学历专业 / 最高学历毕业日期」这类组合标签，
+   * 关键词匹配会先撞到「学历」→ highestDegree（快手实测：学校被塞了「本科」）。
+   * 组合词优先，先按后半截判断。
+   */
+  function compoundEduKey(label) {
+    var t = String(label || '').replace(/\s+/g, '');
+    if (!t) return '';
+    if (/最高学历|最高学位|学历信息/.test(t)) {
+      if (/学校|院校/.test(t)) return 'school';
+      if (/专业/.test(t)) return 'major';
+      if (/学院/.test(t)) return 'college';
+      if (/日期|时间|毕业/.test(t)) return 'eduEnd';
+      return '';
+    }
+    if (/^(毕业|就读)(学校|院校)$/.test(t)) return 'school';
+    if (/^(毕业|就读)专业$/.test(t)) return 'major';
+    return '';
   }
 
   var SECTION_WORD_RE = /个人|基本信息|教育|工作|实习|项目|校园|语言|获奖|证书|技能|附件|上传|申请|授权|说明|经历|背景|其他|自我评价|联系方式|家庭/;
