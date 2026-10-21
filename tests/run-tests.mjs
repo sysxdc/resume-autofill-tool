@@ -1693,9 +1693,58 @@ test('v1.5.0: demo/dropdowns.html 存在且含四类组件', () => {
   assert.ok(/活体验证|手动/.test(html));
 });
 
-test('v1.5.5: manifest 1.5.5', () => {
+test('v1.5.6: manifest 1.5.6', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(pkg.version, '1.5.5');
+  assert.equal(pkg.version, '1.5.6');
+});
+
+console.log('v1.5.6 北森 Phoenix 适配');
+
+test('v1.5.6: 预计报到时间 / 紧急联系电话 各归其键', () => {
+  assert.equal(Match.matchFieldKey('预计报到时间'), 'expectedStartDate');
+  assert.equal(Match.matchFieldKey('报到时间'), 'expectedStartDate');
+  assert.equal(Match.matchFieldKey('紧急联系电话'), 'emergencyContactPhone');
+  assert.equal(Match.matchFieldKey('应急联系电话'), 'emergencyContactPhone');
+  // 申请人的手机号仍应是 phone，别被紧急联系人规则抢走
+  assert.equal(Match.matchFieldKey('手机号码'), 'phone');
+});
+
+test('v1.5.6: 有 label 包装的容器也能取到标签（form-item token）', () => {
+  const src = fs.readFileSync(path.join(root, 'shared/match.js'), 'utf8');
+  assert.ok(/classHasToken\(getElClassName\(node\), 'form-item'\)/.test(src), 'form-item 应用精确 token');
+  assert.ok(/\.closest\('\.form-item'\)/.test(src), 'closest 应优先精确 .form-item');
+  assert.ok(!/closest\('\[class\*="form-item"\]'\)\s*;/.test(src), '不应只用模糊选择器收尾');
+});
+
+test('v1.5.6: Phoenix 弹层用「本次新出现」判定', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/async function phoenixOpenPanel/.test(src), '应有 phoenixOpenPanel');
+  assert.ok(/before\.indexOf\(now\[i\]\) === -1/.test(src), '应按差集找新弹层');
+  assert.ok(/phoenixVisiblePanels/.test(src), '应有可见弹层集合');
+  assert.ok(/phoenix-select--active/.test(src), '应用 --active 判断开合');
+});
+
+test('v1.5.6: 勾选热区是 svg，simulateClick 必须派发 click 事件', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/\.icon-container svg/.test(src), '应优先点 svg');
+  assert.ok(/new MouseEvent\('click', \{ bubbles: true \}\)/.test(src), 'simulateClick 应派发 click');
+  assert.ok(/phoenixPanelSelectedCount/.test(src), '应校验已选计数');
+  assert.ok(/phoenix-calendar-month-panel-month/.test(src), '年月面板应点月份单元格');
+  assert.ok(/phoenix-calendar-month-panel-year-select-content/.test(src), '年月面板应能翻年');
+});
+
+test('v1.5.6: 多段计数按 key+标签 分桶', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function occurrenceKey\(key, label\)/.test(src), '应有 occurrenceKey');
+  assert.ok(/keyCounts\[counterKey\]/.test(src), '主循环应写 counterKey');
+  assert.ok(/keyCounts\[hCounterKey\]/.test(src), '宿主循环应写 hCounterKey');
+  assert.ok(!/keyCounts\[key\]/.test(src), '不应再按裸 key 计数');
+});
+
+test('v1.5.6: 面试站点不做猜测式硬填', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/interviewCity/.test(src), '应有面试站点保守校验');
+  assert.ok(/hit\.text\.length > raw\.length \+ 3/.test(src), '选项比城市名长太多应跳过');
 });
 
 

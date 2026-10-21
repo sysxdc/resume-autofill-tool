@@ -2,6 +2,7 @@
  * 共享字段匹配逻辑：关键词、同义、模糊评分、姓名拆分、profile 取值、select 匹配、label 可见文本。
  * 浏览器挂到 ResumeAutofillMatch；Node 通过 module.exports 引入。
  *
+ * v1.5.6: 北森 Phoenix —— form-item 精确容器 token、预计报到时间、紧急联系电话专键。
  * v1.5.0: 更多 CN ATS 同义、标签噪声归一、选项/YesNo 纯函数导出；多段 occurrence 取值。
  * v1.3.0: playoffer 全量字段关键词 / FIELD_ORDER；紧急联系人拆分；地址/技能别名；证明人/家庭 denylist。
  * v1.2.4: D9 毕业时间→eduEnd + 拆分失败跳过；D10 相邻年/月 placeholder 与附近日期组标签。
@@ -142,7 +143,8 @@
     ],
     emergencyContactPhone: [
       'emergencycontactphone', 'emergency_contact_phone', '紧急联系人电话', '紧急联系人手机',
-      '紧急联络人电话', '紧急联系人号码', '应急联系人电话'
+      '紧急联络人电话', '紧急联系人号码', '应急联系人电话', '紧急联系电话', '紧急联络电话',
+      '紧急联系手机', '应急联系电话'
     ],
     emergencyContact: [
       'emergencycontact', 'emergency_contact', 'emergencyphone', '紧急联系人',
@@ -446,7 +448,8 @@
       'currentindustry', 'current_industry', '目前行业', '当前行业'
     ],
     expectedStartDate: [
-      'expectedstartdate', 'expected_start_date', '预计入职时间', '期望入职时间', '预计到岗', '期望到岗时间'
+      'expectedstartdate', 'expected_start_date', '预计入职时间', '期望入职时间', '预计到岗', '期望到岗时间',
+      '预计报到时间', '报到时间', '预计报到'
     ],
     jobTarget: [
       'jobtarget', 'job_target', 'desiredposition', 'desired_position', 'targetrole',
@@ -1825,10 +1828,12 @@
       function (node) { return classHasToken(getElClassName(node), 'el-form-item'); },
       function (node) { return classHasToken(getElClassName(node), 'semi-form-field'); },
       function (node) { return classIncludes(getElClassName(node), 'formily-item'); },
+      // 北森 Phoenix：容器类名就是 form-item，标签在 .form-item__title > label 里
+      function (node) { return classHasToken(getElClassName(node), 'form-item'); },
       function (node) {
         var cn = getElClassName(node);
         return classIncludes(cn, 'form-item') && !classIncludes(cn, 'form-item-label') &&
-          !classIncludes(cn, 'form-item-control');
+          !classIncludes(cn, 'form-item-control') && !classIncludes(cn, 'form-item__');
       }
     ];
 
@@ -1839,7 +1844,8 @@
           el.closest('.el-form-item') ||
           el.closest('.semi-form-field') ||
           el.closest('.formily-item') ||
-          el.closest('[class*="form-item"]');
+          el.closest('.form-item') ||
+          el.closest('[class*="form-item"]:not([class*="form-item__"])');
       } catch (_) { container = null; }
     }
     if (!container) {
