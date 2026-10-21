@@ -283,6 +283,34 @@
       }
       node = node.parentElement;
     }
+    // v1.5.12：没有区块标题的 ATS（wecruit / antd 表单）用同一组字段里的兄弟标签推断
+    var bySiblings = sectionContextBySiblingLabels(el);
+    if (bySiblings) return bySiblings;
+    return '';
+  }
+
+  /** 用「同一组字段里还有哪些标签」判断这块是教育 / 工作 / 项目 */
+  function sectionContextBySiblingLabels(el) {
+    if (!el || !el.closest) return '';
+    var node = el.closest('.ant-form-item, .form-item, .field, .row, tr');
+    for (var up = 0; up < 3 && node; up++) {
+      var scope = node.parentElement;
+      if (!scope) break;
+      var items = scope.querySelectorAll('.ant-form-item, .form-item, .field, tr');
+      // 只在「一段」这种小容器里推断，别把整页当一块
+      if (items.length > 0 && items.length <= 14) {
+        var labels = [];
+        Array.prototype.forEach.call(scope.querySelectorAll('label'), function (lab) {
+          var t = String(lab.textContent || '').replace(/\s+/g, '').trim();
+          if (t) labels.push(t);
+        });
+        var joined = labels.join('|');
+        if (/学校|院校|院系|所学专业|就读/.test(joined)) return 'edu';
+        if (/企业名称|公司名称|工作描述|所在部门|工作内容|职位名称/.test(joined)) return 'work';
+        if (/项目名称|项目描述|项目职责/.test(joined)) return 'project';
+      }
+      node = scope.closest('.ant-form-item, .form-item, .field, .row, tr');
+    }
     return '';
   }
 
@@ -440,7 +468,7 @@
     }
     var node = el;
     for (var up = 0; up < 6 && node && node.parentElement; up++) {
-      var head = node.querySelector ? node.querySelector(':scope > legend, :scope > h2, :scope > h3, :scope > h4, :scope > summary, :scope > .section-title, :scope > .ant-card-head-title, :scope > .panel-heading') : null;
+      var head = node.querySelector ? node.querySelector(':scope > legend, :scope > h2, :scope > h3, :scope > h4, :scope > summary, :scope > .section-title, :scope > .ant-card-head-title, :scope > .panel-heading, :scope > .edit-resume-form-item-title, :scope > [class*="form-item-title"], :scope > [class*="section-title"]') : null;
       var htxt = head ? String(head.textContent || '').replace(/\s+/g, ' ').trim() : '';
       if (htxt && htxt.length <= 24) {
         for (var j = 0; j < ADD_SECTION_RULES.length; j++) {
@@ -468,6 +496,9 @@
       if (k.indexOf(sectionName + ':') === 0) n += 1;
     }
     if (n) return n;
+    // v1.5.12：快手 —— educations_0_xxx / interShips_0_xxx，按前缀 + 序号去重
+    var byIdPrefix = countIndexedRows(rule.key);
+    if (byIdPrefix) return byIdPrefix;
     // v1.5.5：北森 Phoenix —— 每条记录是一个独立 .form，与区块标题共用一个 id
     var phoenixRows = countPhoenixRows(rule);
     if (phoenixRows) return phoenixRows;
@@ -481,6 +512,29 @@
       return rows ? rows.length : 0;
     }
     return 0;
+  }
+
+  // 分区记录的 id 前缀（快手：educations_0_companyName、interShips_0_companyName）
+  var SECTION_ROW_PREFIX = {
+    edu: /^(educations?|educationbackgrounds?)$/i,
+    work: /^(workships?|workexperiences?|works?)$/i,
+    intern: /^(internships?|interships?|practices?)$/i,
+    project: /^(projects?|projectexperiences?)$/i,
+    award: /^(awards?|competitionawards?|honors?)$/i,
+    campus: /^(campusexperiences?|activities?)$/i
+  };
+
+  function countIndexedRows(key) {
+    var re = SECTION_ROW_PREFIX[key];
+    if (!re) return 0;
+    var seen = {};
+    var nodes = document.querySelectorAll('[id]');
+    for (var i = 0; i < nodes.length; i++) {
+      var m = String(nodes[i].id || '').match(/^(.+?)_(\d+)_/);
+      if (!m || !re.test(m[1])) continue;
+      seen[m[1] + ':' + m[2]] = 1;
+    }
+    return Object.keys(seen).length;
   }
 
   /** 区块标题匹配 rule，内部每条记录是一个 .list-form-container */
@@ -515,6 +569,12 @@
     var list = profile && Array.isArray(profile[rule.listKey]) ? profile[rule.listKey] : [];
     if (list.length) return list.length;
     // 没有多段数据时，若扁平字段有值就展开 1 条
+    if (rule.key === 'intern' && Array.isArray(profile && profile.workList)) {
+      var internLike = profile.workList.filter(function (w) {
+        return /实习|intern/i.test(String((w && (w.nature || w.type || w.position || w.title)) || ''));
+      });
+      if (internLike.length) return internLike.length;
+    }
     var flatBySection = { edu: 'school', work: 'company', intern: 'internCompany', project: 'projectName', award: 'awardName', campus: 'campusOrg' };
     var flat = profile ? profile[flatBySection[rule.key]] : '';
     return flat && String(flat).trim() ? 1 : 0;
@@ -583,6 +643,36 @@
     return { rule: rule, index: index };
   }
 
+  /** 从最近的 id 里读段序号（快手：educations_1_schoolName、interShips_0_companyName） */
+  function rowIndexFromIds(el) {
+    var node = el;
+    for (var up = 0; up < 10 && node; up++, node = node.parentElement) {
+      var own = String(node.id || '');
+      var m0 = own.match(/^[A-Za-z]+_(\d+)_/);
+      if (m0) return parseInt(m0[1], 10);
+      var ids = node.querySelectorAll ? node.querySelectorAll('[id]') : [];
+      for (var i = 0; i < ids.length; i++) {
+        var m = String(ids[i].id || '').match(/^[A-Za-z]+_(\d+)_/);
+        if (m) return parseInt(m[1], 10);
+      }
+    }
+    return -1;
+  }
+
+  /** 分区标题不在 .resume-section 里时（快手 .edit-resume-form-item-title）的兜底 */
+  function rangeContextLoose(el) {
+    var rule = null;
+    var node = el;
+    for (var up = 0; up < 10 && node && !rule; up++, node = node.parentElement) {
+      if (!node.querySelector) continue;
+      var t = node.querySelector('.edit-resume-form-item-title, [class*="form-item-title"], .section-gorgeously-title, .section-title, legend, h2, h3');
+      if (t) rule = ruleForText(nodeText(t));
+    }
+    if (!rule || !RANGE_SECTION_MAP[rule.key]) return null;
+    var idx = rowIndexFromIds(el);
+    return { rule: rule, index: idx < 0 ? 0 : idx };
+  }
+
   /** 「2023-09」→ Date；缺日时，起点补 1 号，终点补当月最后一天 */
   function rangeDateOf(value, isEnd) {
     var parts = parseDateParts(value);
@@ -605,6 +695,13 @@
    * 只有提交成功（v-model 已更新）才算填上，避免「看起来有值、表单其实没收到」。
    */
   async function fillRangeEditor(editor, startVal, endVal) {
+    // antd 的 RangePicker 两个 input 都是 readonly：只能点面板（快手教育经历的「起止时间」）
+    if (editor.classList && editor.classList.contains('ant-picker-range')) {
+      try {
+        if (await fillAntdRangePicker(editor, startVal, endVal)) return true;
+      } catch (_) { /* ignore */ }
+      return false;
+    }
     var inputs = Array.prototype.filter.call(editor.querySelectorAll('input'), function (i) {
       return !i.disabled && !i.readOnly;
     });
@@ -651,7 +748,7 @@
         for (var h = 0; h < inputs.length; h++) handled.add(inputs[h]);
       }
       if (alreadyFilled) continue;
-      var ctx = rangeContext(ed);
+      var ctx = rangeContext(ed) || rangeContextLoose(ed);
       if (!ctx) continue;
       var map = RANGE_SECTION_MAP[ctx.rule.key];
       var list = profile && Array.isArray(profile[map.listKey]) ? profile[map.listKey] : [];
@@ -1027,6 +1124,19 @@
     '.ant-select-item, .dictionary-option, .option-item, .select-option, li.el-select-dropdown__item, ' +
     '[class*="sd-Menu-content-item"]';
 
+  /** 「广东省-阳江市-江城区」→ ['广东省', '广东省阳江市', '广东省阳江市江城区'] */
+  function regionPrefixVariants(value) {
+    var v = String(value || '').replace(/[-–—\s]+/g, '');
+    var out = [];
+    var re = /(省|自治区|特别行政区|市|自治州|区|县|旗)/g;
+    var m;
+    while ((m = re.exec(v))) {
+      var seg = v.slice(0, m.index + m[0].length);
+      if (seg && seg.length >= 2) out.push(seg);
+    }
+    return out;
+  }
+
   /** 关掉已经展开的下拉，避免它的选项污染下一个字段的匹配 */
   function closeOpenDropdowns() {
     var open = Array.prototype.filter.call(
@@ -1320,6 +1430,15 @@
           var matched = M.findBestOption
             ? M.findBestOption(opts, value)
             : (M.matchSelectOption && M.matchSelectOption(opts, value));
+          // 籍贯这类「省 / 市」两级下拉拿到的是整串，按行政区后缀切出能对上的那一段
+          if (!matched) {
+            var variants = regionPrefixVariants(value);
+            for (var vi = variants.length - 1; vi >= 0 && !matched; vi--) {
+              var text = variants[vi];
+              var hit = opts.filter(function (o) { return String(o.text || '').replace(/\s+/g, '') === text; })[0];
+              if (hit) matched = hit;
+            }
+          }
           if (matched) { pick(opts, matched); return; }
           if (searched && sigAtType && sig !== sigAtType) {
             // 搜过了、列表也真的变了（远程搜索回来了）还是没有 → 这个下拉确实没这个值
@@ -2719,8 +2838,155 @@
     return false;   // 日面板交给通用网格逻辑
   }
 
+  /** antd 范围选择器里左右两个面板 */
+  function antdSubPanels() {
+    var dd = antdPanel();
+    if (!dd) return [];
+    return Array.prototype.filter.call(dd.querySelectorAll('.ant-picker-panel'), isVisibleEl);
+  }
+
+  /**
+   * 在 antd 日历里点上某一天。
+   * antd v5 的日格子带 title="YYYY-MM-DD"，按 title 找最省事；
+   * 当前不在那一页时先翻年/月（年面板点年、月面板点月、日面板翻月）。
+   * @param {Element|null} scope 指定面板（范围选择器有左右两个），null = 取最后打开的弹层
+   */
+  async function antdPickDay(scope, y, m, d) {
+    var target = y + '-' + ('0' + m).slice(-2) + '-' + ('0' + d).slice(-2);
+    var pinned = !!scope;
+    for (var guard = 0; guard < 40; guard++) {
+      var panel = (pinned && scope && scope.isConnected) ? scope : antdPanel();
+      if (!panel) return false;
+      var cell = panel.querySelector('.ant-picker-cell[title="' + target + '"]');
+      if (cell) {
+        if (/ant-picker-cell-disabled/.test(String(cell.className))) return false;
+        simulateClick(cell);
+        await sleep(260);
+        return true;
+      }
+      var cells = antdCells(panel);
+      if (cells.some(function (c) { return /^\d{4}\s*年$/.test(c.text); })) {
+        if (!(await antdGotoYear(panel, y, 10))) return false;
+        var py = (pinned && scope && scope.isConnected) ? scope : antdPanel();
+        if (!py || !antdClickCell(py, y + '年')) return false;
+        await sleep(240);
+        continue;
+      }
+      if (cells.some(function (c) { return /^\d{1,2}\s*月$/.test(c.text); })) {
+        var hv = antdHeaderView(panel);
+        if (hv.y && hv.y !== y) await antdGotoYear(panel, y, 1);
+        var pm = (pinned && scope && scope.isConnected) ? scope : antdPanel();
+        if (!pm || !antdClickCell(pm, m + '月')) return false;
+        await sleep(240);
+        continue;
+      }
+      var hv2 = antdHeaderView(panel);
+      if (!hv2.y) return false;
+      // 跨年时先点「年份」进年面板，一下跳到位；逐月翻 3 年得点 30 多次，太慢
+      var yearBtn = panel.querySelector('.ant-picker-header-year-btn');
+      if (yearBtn && isVisibleEl(yearBtn) && hv2.y !== y) {
+        simulateClick(yearBtn);
+        await sleep(200);
+        continue;
+      }
+      var wantIdx = y * 12 + m;
+      var curIdx = hv2.y * 12 + (hv2.m || 1);
+      if (wantIdx === curIdx) return false;   // 已经在目标月却没有这一天
+      var btn = panel.querySelector(wantIdx > curIdx ? '.ant-picker-header-next-btn' : '.ant-picker-header-prev-btn');
+      if (!btn || !isVisibleEl(btn)) return false;
+      simulateClick(btn);
+      await sleep(140);
+    }
+    return false;
+  }
+
+  /** 单个 antd 日期框：打开弹层 → 点到目标日 → 核对输入框 */
+  async function tryAntdDayCell(el, desired) {
+    var p = parseDateParts(desired);
+    if (!p) return false;
+    var y = parseInt(p.y, 10);
+    var m = parseInt(p.m, 10);
+    var d = p.d ? parseInt(p.d, 10) : 1;
+    if (!y || !m) return false;
+    if (!antdPanel()) {
+      openPicker(el);
+      if (!(await waitForAntdPanel(1000))) return false;
+    }
+    var ok = await antdPickDay(null, y, m, d);
+    if (!ok) return false;
+    return dateValueMatches(el.value, desired);
+  }
+
+  /**
+   * antd 范围选择器（.ant-picker-range，快手教育经历的「起止时间」）：
+   * 两个 input 都是 readonly，只能点面板：先在左面板点开始日，再在右面板点结束日。
+   */
+  async function fillAntdRangePicker(editor, startVal, endVal) {
+    var ins = editor.querySelectorAll('input');
+    if (ins.length < 2) return false;
+    var start = rangeDateOf(startVal, false);
+    var end = rangeDateOf(endVal, true);
+    if (!start || !end || end.getTime() < start.getTime()) return false;
+    closeAllAntdPanels();
+    await sleep(160);
+    openPicker(ins[0]);
+    if (!(await waitForAntdPanel(1100))) return false;
+    var okStart = await antdPickDay(antdSubPanels()[0] || null, start.getFullYear(), start.getMonth() + 1, start.getDate());
+    if (!okStart) return false;
+    // 选完开始日，焦点会自动跳到结束日，右面板跟着翻页
+    await sleep(240);
+    var panels = antdSubPanels();
+    var right = panels.length > 1 ? panels[panels.length - 1] : null;
+    var okEnd = await antdPickDay(right, end.getFullYear(), end.getMonth() + 1, end.getDate());
+    await sleep(200);
+    closeAllAntdPanels();
+    if (!okEnd) return false;
+    var a = String(ins[0].value || '').trim();
+    var b = String(ins[1].value || '').trim();
+    return !!a && !!b && dateValueMatches(a, formatDateYmd(start)) && dateValueMatches(b, formatDateYmd(end));
+  }
+
+  /** 拿 React 通过 DOM 挂上来的 props（React 16/17: __reactEventHandlers$，18+: __reactProps$） */
+  function reactPropsOf(node) {
+    if (!node) return null;
+    try {
+      var keys = Object.keys(node);
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        if (k.indexOf('__reactProps$') === 0 || k.indexOf('__reactEventHandlers$') === 0) {
+          var p = node[k];
+          if (p && typeof p === 'object') return p;
+        }
+      }
+    } catch (_) { /* ignore */ }
+    return null;
+  }
+
+  /**
+   * 直接调组件自己的事件处理函数。
+   * antd 的 Picker 只在「真点击」的 mousedown 里 open()，合成事件它不认（快手实测），
+   * 但 props 上的 onMouseDown 就是它注册的那个函数，调它和真点击等价。
+   */
+  function fireReactHandler(node, name) {
+    var props = reactPropsOf(node);
+    if (!props || typeof props[name] !== 'function') return false;
+    var fake = {
+      bubbles: true, cancelable: true, target: node, currentTarget: node, nativeEvent: {},
+      preventDefault: function () {}, stopPropagation: function () {},
+      isDefaultPrevented: function () { return false; }, isPropagationStopped: function () { return false; },
+      persist: function () {}
+    };
+    try { props[name](fake); return true; } catch (_) { return false; }
+  }
+
   /** 打开只读控件的弹层：先 focus（Element 的 el-date-picker 监听 focus），再 click，再点右侧日历图标 */
   function openPicker(el) {
+    // antd：合成事件打不开日历，直接调它自己的 onMouseDown（等于真点击）
+    if (isAntdPickerEl(el)) {
+      try { if (el.focus) el.focus(); } catch (_) { /* ignore */ }
+      var root = (el.closest && el.closest('.ant-picker')) || el;
+      if (fireReactHandler(root, 'onMouseDown')) return;
+    }
     try { if (el.focus) el.focus(); } catch (_) { /* ignore */ }
     try {
       el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
@@ -2825,6 +3091,12 @@
         var antdOk = false;
         try { antdOk = await tryAntdPanel(el, desired); } catch (e) { antdOk = false; }
         if (antdOk && dateValueMatches(el.value, desired)) { resolve(true); return; }
+        // antd v5 日面板：格子带 title="YYYY-MM-DD"，直接按 title 点（2026 快手）
+        if (!antdOk || !dateValueMatches(el.value, desired)) {
+          var dayOk = false;
+          try { dayOk = await tryAntdDayCell(el, desired); } catch (_) { dayOk = false; }
+          if (dayOk && dateValueMatches(el.value, desired)) { resolve(true); return; }
+        }
         var pid = parts ? findDatePanel(parts.y) : null;
         if (parts && pid) {
           // ② 日历网格（‹‹ ‹ 十月 2026 › ›› + 星期表头）走翻月 + 点日；其余走年/月/日分栏
@@ -3065,6 +3337,16 @@
         continue;
       }
       if (fieldLooksFilled(el)) continue;
+      // antd 的日期框是受控组件：往 input 里写字不会提交，只能点面板选日期
+      if (el.closest && el.closest('.ant-picker') && !el.closest('.ant-picker-range')) {
+        var dOk = false;
+        try { dOk = await fillReadonlyPickerAntd(el, value); } catch (_) { dOk = false; }
+        if (dOk) {
+          filled += 1;
+          if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
+          continue;
+        }
+      }
       // 自定义下拉宿主：走 click → option 路径
       var customHost = findCustomSelectHost(el);
       if (customHost && isPhoenixHost(customHost) && customHost.isConnected === false) continue;

@@ -1997,6 +1997,41 @@ test('v1.5.12: 选之前核对、选之后复核，宁可不填', () => {
   assert.ok(!/simulateClick\(hit\.el\);[\s\S]{0,120}closeOpenDropdowns\(\);[\s\S]{0,80}customSelectText/.test(src), '选完不能按 Esc（会还原旧值）');
 });
 
+console.log('v1.5.13 快手：实习分区展开 / antd 日期框');
+
+test('v1.5.13: 「添加」按钮能认出 .edit-resume-form-item-title 这类标题', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/edit-resume-form-item-title/.test(src), '分区标题选择器');
+  assert.ok(/\[class\*="form-item-title"\]/.test(src), '同类标题类名');
+});
+
+test('v1.5.13: 分区行数按 id 前缀统计（interShips_0_ / educations_0_）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function countIndexedRows/.test(src), '要有按 id 前缀计数');
+  assert.ok(/interships/.test(src), '实习前缀');
+  assert.ok(/educations\?/.test(src), '教育前缀');
+  assert.ok(/countIndexedRows\(rule\.key\)/.test(src), '接进 countSectionRows');
+});
+
+test('v1.5.13: 实习分区可从 workList 里挑实习条目展开', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/rule\.key === 'intern'/.test(src), '实习分区特判');
+  assert.ok(/实习\|intern/.test(src), '按实习关键词筛 workList');
+});
+
+test('v1.5.13: antd 日期框走面板（React props 触发 + title 点日）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function reactPropsOf/.test(src), '要能拿到 React props');
+  assert.ok(/__reactEventHandlers\$/.test(src) && /__reactProps\$/.test(src), '两代 key 都认');
+  assert.ok(/function fireReactHandler/.test(src), '要能直接调组件 handler');
+  assert.ok(/function antdPickDay/.test(src), '按天点选');
+  assert.ok(/\.ant-picker-cell\[title="' \+ target/.test(src), '按 title 找日格子');
+  assert.ok(/ant-picker-header-year-btn/.test(src), '跨年先点年份');
+  assert.ok(/closest\('\.ant-picker'\) && !el\.closest\('\.ant-picker-range'\)/.test(src), '单日期框单独处理');
+  assert.ok(/function fillAntdRangePicker/.test(src), '范围控件走面板');
+  assert.ok(/function rowIndexFromIds/.test(src) && /function rangeContextLoose/.test(src), '范围控件定位分区/段序');
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
