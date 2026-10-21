@@ -214,6 +214,12 @@ resume-autofill-tool/
     于是第二段的「开始时间 / 结束时间」不再被判成泛化的 `startDate/endDate`。
   - **省市级联**：`籍贯` 是 `.cascader-plugins-wrap` 里的两个下拉，档案里是「广东省-阳江市-江城区」，
     新增按行政区后缀切前缀，第一级能落到「广东省」。
+  - **学校（远程搜索）**：下拉初值是「暂无数据」，输入校名后才有选项；**鼠标点选项不提交**，
+    要键盘逐条 `ArrowDown` 到高亮的正是目标再 `Enter`（盲按第一下会选中列表第一条，籍贯曾因此填成「上海」）。
+  - **专业（弹窗选择器）**：点输入框弹 `ant-modal`，里面是 `请输入专业名称` + `span.school-item` 列表，
+    现在会搜关键词 → 点匹配项 → 点「选择」。没选中的弹窗会被关掉，否则遮罩会把后面的下拉点击全吞掉。
+  - **「已填」误判**：v3 下拉的隐藏 input 里存着 `0/660/411987` 这种编码值，原来会被当成「已经填过」直接跳过；
+    现在 v3 只认 `.ant-select-selection-selected-value`。这一条就是「学校怎么都不填」的直接原因。
 - **诊断**：悬浮窗把最近一次填充结果（`filled` / `filledKeys` / `skipped`）挂在宿主节点的 `dataset.lastResult` 上，
   页面里读 `document.getElementById('__ra_panel_host__').dataset.lastResult` 就能看到「这个字段为什么没填」。
 

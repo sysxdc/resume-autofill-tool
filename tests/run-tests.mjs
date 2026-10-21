@@ -2076,6 +2076,15 @@ test('v1.5.15: 中华英才网 wecruit（antd v3）可控组件', () => {
   assert.ok(src.includes('function regionPrefixVariants'), '行政区前缀切分');
   // 无名单选组的标题在另一列（.ant-form-item-label）
   assert.ok(/closest\('\.ant-form-item, \.form-item, \.field, \.form-row, tr'\)/.test(src), 'radio 组标题兜底');
+  // 远程搜索下拉：鼠标点选项不提交，键盘逐条 ArrowDown 到目标再 Enter
+  assert.ok(src.includes('function v3KeyboardPick'), 'v3 键盘选中');
+  assert.ok(/ant-select-dropdown-menu-item-active/.test(src), '按高亮项判定，避免盲按选中第一条');
+  // 专业 / 学校这类「点输入框弹 ant-modal」的选择器
+  assert.ok(src.includes('function fillAntdModalPicker'), '弹窗选择器');
+  assert.ok(src.includes('function fillModalPickers'), '弹窗选择器预扫描');
+  assert.ok(/\.school-item/.test(src), '弹窗选项类名');
+  // v3 的「是否已填」只认已选值，隐藏 input 里的编码（0/660/411987）不算
+  assert.ok(/isAntdV3SelectHost\(host\)\)\s*\{\s*return !!antdV3SelectedText/.test(src), 'v3 已填判定');
 });
 
 console.log('');

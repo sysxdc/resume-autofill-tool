@@ -745,6 +745,81 @@
     return !!String(inputs[0].value || '').trim() && !!String(inputs[1].value || '').trim();
   }
 
+  // —————— v1.5.16：Moka 的「年 + 月」下拉对（毕业时间 / 就读时间 / 起止时间）——————
+  // 它们不是日历，是一堆 sd-Dropdown 自绘下拉，placeholder 是「年」「月」；
+  // 一个字段块里可能有 4 个（起止）或 2 个（单个月）。
+  var YM_SECTION_MAP = [
+    { re: /教育背景/, listKey: 'eduList', startKey: 'eduStart', endKey: 'eduEnd' },
+    { re: /实习经历/, listKey: 'workList', startKey: 'startDate', endKey: 'workEnd' },
+    { re: /工作经历/, listKey: 'workList', startKey: 'startDate', endKey: 'workEnd' },
+    { re: /项目经验|项目经历/, listKey: 'projectList', startKey: 'projectStart', endKey: 'projectEnd' },
+    { re: /获奖经历/, listKey: 'awardList', startKey: 'awardDate', endKey: '' }
+  ];
+
+  function ymSectionOf(blockEl) {
+    var head = String((blockEl && blockEl.textContent) || '').replace(/\s+/g, ' ').trim().slice(0, 8);
+    for (var i = 0; i < YM_SECTION_MAP.length; i++) {
+      if (YM_SECTION_MAP[i].re.test(head)) return YM_SECTION_MAP[i];
+    }
+    return null;
+  }
+
+  async function fillYearMonthPairs(profile, filledKeys) {
+    var filled = 0;
+    var blocks = Array.prototype.slice.call(document.querySelectorAll('[class*="apply-block"]'));
+    for (var bi = 0; bi < blocks.length; bi++) {
+      var blockEl = blocks[bi];
+      var sec = ymSectionOf(blockEl);
+      if (!sec) continue;
+      var groups = blockEl.querySelectorAll('[class*="apply-fields"]');
+      for (var gi = 0; gi < groups.length; gi++) {
+        var group = groups[gi];
+        var fields = group.querySelectorAll('[class*="apply-field"]');
+        for (var fi = 0; fi < fields.length; fi++) {
+          var field = fields[fi];
+          var title = String((field.querySelector('[class*="title-"]') || {}).textContent || '').replace(/\s+/g, ' ').trim();
+          if (!/时间|起止/.test(title)) continue;
+          var yms = Array.prototype.filter.call(field.querySelectorAll('input'), function (i) {
+            var ph = String(i.getAttribute('placeholder') || '');
+            return ph === '年' || ph === '月';
+          });
+          if (yms.length < 2) continue;
+          var list = profile && Array.isArray(profile[sec.listKey]) ? profile[sec.listKey] : [];
+          var item = list[gi] || null;
+          var start = item && item.start ? String(item.start) : (M.profileValue(profile, sec.startKey) || '');
+          var end = sec.endKey ? (item && item.end ? String(item.end) : (M.profileValue(profile, sec.endKey) || '')) : '';
+          if (!start) continue;
+          var sp = parseDateParts(start);
+          var ep = end && end !== '至今' ? parseDateParts(end) : null;
+          if (!sp) continue;
+          var wants;
+          if (yms.length >= 4) {
+            wants = [sp.y, String(parseInt(sp.m, 10)), ep ? ep.y : '', ep ? String(parseInt(ep.m, 10)) : ''];
+          } else {
+            wants = [sp.y, String(parseInt(sp.m, 10))];
+          }
+          var ok = 0;
+          for (var wi = 0; wi < wants.length && wi < yms.length; wi++) {
+            if (!wants[wi]) continue;
+            var host = findCustomSelectHost(yms[wi]);
+            if (!host) continue;
+            if (customSelectLooksFilled(host)) { ok += 1; continue; }
+            try {
+              if (await fillCustomSelect(host, wants[wi], sec.startKey)) ok += 1;
+            } catch (_) { /* ignore */ }
+          }
+          if (ok) {
+            filled += 1;
+            [sec.startKey, sec.endKey].forEach(function (k) {
+              if (k && filledKeys.indexOf(k) === -1) filledKeys.push(k);
+            });
+          }
+        }
+      }
+    }
+    return filled;
+  }
+
   /** 页面上的范围日期控件：按分区/段序取 eduList[i].start/end 等 */
   async function fillRangeEditors(profile, handled, filledKeys) {
     var editors = Array.prototype.filter.call(document.querySelectorAll(RANGE_EDITOR_SEL), isVisibleEl);
@@ -876,9 +951,11 @@
   }
 
   // 自定义下拉内部的搜索输入框：由 fillCustomSelect 负责「输入 + 选选项」，主循环不能再往里写
+  // 注意：Moka 的 sd-Select 不要放进来 —— 它的 input 就是字段本身，
+  // 放进这里会让 iterFillableFields 直接过滤掉整个字段（既填不上、也不出现在「未填」里）
   var INNER_SELECT_SEARCH_SEL =
     '.ant-select, .el-select, .ant-cascader-picker, .cascader-plugins-wrap, ' +
-    '.dictionary-selector, .phoenix-select, [class*="sd-Select-container"]';
+    '.dictionary-selector, .phoenix-select';
 
   function isSkippable(el) {
     var t = (el.type || '').toLowerCase();
@@ -1262,6 +1339,10 @@
 
   function customSelectLooksFilled(host) {
     if (!host) return false;
+    // antd v3：只认 .ant-select-selection-selected-value，隐藏 input 里的编码值不算
+    if (typeof isAntdV3SelectHost === 'function' && isAntdV3SelectHost(host)) {
+      return !!antdV3SelectedText(host);
+    }
     var txt = '';
     var selected = host.querySelector(
       '.el-select__selected-item, .el-input__inner, .ant-select-selection-selected-value, ' +
@@ -1271,8 +1352,16 @@
       txt = String(selected.textContent || selected.value || '').replace(/\s+/g, ' ').trim();
     }
     if (!txt) {
-      var inp = host.querySelector('input');
-      if (inp) txt = String(inp.value || '').replace(/\s+/g, ' ').trim();
+      // 只看可见的搜索框；隐藏 input 里常存的是「0/660/411987」这种编码值，不代表已选
+      var inps = host.querySelectorAll('input');
+      for (var ii = 0; ii < inps.length; ii++) {
+        var cand = inps[ii];
+        if (/hidden/i.test(String(cand.type || ''))) continue;
+        var cv = String(cand.value || '').replace(/\s+/g, ' ').trim();
+        if (!cv || /^\d+(\/\d+)+$/.test(cv)) continue;
+        txt = cv;
+        break;
+      }
     }
     if (txt && !/请选择|请输入|请填写|填写|select|choose|--/i.test(txt)) return true;
     // Moka 这类自绘下拉把选中值渲染成 span，input.value 一直是空的
@@ -1445,9 +1534,11 @@
     if (!host || !value) return false;
     if (antdV3SelectedText(host)) return false;
     var want = String(value).replace(/\s+/g, '');
-    var tries = [String(value)].concat(regionPrefixVariants(value).reverse());
+    var tries = [String(value)].concat(regionPrefixVariants(value)).slice(0, 3);
+    var deadline = Date.now() + 4500;
 
     for (var t = 0; t < tries.length; t++) {
+      if (Date.now() > deadline) break;
       var target = tries[t];
       if (!target) continue;
       var sel = host.querySelector('.ant-select-selection');
@@ -1458,7 +1549,10 @@
       }
       var dd = dropdownForV3Select(sel);
       var items = dd ? Array.prototype.slice.call(dd.querySelectorAll('li.ant-select-dropdown-menu-item')) : [];
-      items = items.filter(function (li) { return !/disabled/.test(String(li.className)); });
+      items = items.filter(function (li) {
+        if (/disabled/.test(String(li.className))) return false;
+        return !/暂无数据|无数据|无匹配|加载中|loading/i.test(String(li.textContent || ''));
+      });
 
       if (!items.length) {
         // 远程搜索（学校/专业这类）：输入关键词等结果
@@ -1490,11 +1584,41 @@
           return t2.indexOf(wantNorm) !== -1;
         })[0];
       }
-      if (!hit) continue;
+      if (!hit) {
+        // 没有可点的项：远程搜索下拉仍然能用键选取到
+        var kb = await v3KeyboardPick(host, sel, wantNorm);
+        if (kb) { highlight(host); return true; }
+        continue;
+      }
+      // 实测 wecruit 这类 v3 远程搜索下拉：点选项不提交，键盘 ArrowDown + Enter 才提交；
+      // 有搜索框就先走键盘，没有再退回鼠标点
+      if (await v3KeyboardPick(host, sel, wantNorm)) { highlight(host); return true; }
       try { hit.click(); } catch (_) { simulateClick(hit); }
       await sleep(320);
       if (antdV3SelectedText(host)) { highlight(host); return true; }
     }
+    return false;
+  }
+
+  /** v3 下拉的键盘选中：逐条 ArrowDown，直到高亮项是目标再 Enter（盲按会选中列表第一条） */
+  async function v3KeyboardPick(host, sel, wantNorm) {
+    var search = host.querySelector('.ant-select-search__field');
+    if (!search || !wantNorm) return false;
+    try {
+      search.focus();
+      for (var k = 0; k < 12; k++) {
+        search.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, which: 40, bubbles: true }));
+        await sleep(60);
+        var dd = dropdownForV3Select(sel);
+        var act = dd ? dd.querySelector('.ant-select-dropdown-menu-item-active') : null;
+        var actText = act ? String(act.textContent || '').replace(/\s+/g, '') : '';
+        if (actText && (actText === wantNorm || actText.indexOf(wantNorm) !== -1)) {
+          search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+          await sleep(460);
+          return !!antdV3SelectedText(host);
+        }
+      }
+    } catch (_) { /* ignore */ }
     return false;
   }
 
@@ -1513,6 +1637,103 @@
   function antdV3PanelIsOpen(sel) {
     var dd = dropdownForV3Select(sel);
     return !!(dd && isVisibleEl(dd) && dd.querySelector('li.ant-select-dropdown-menu-item'));
+  }
+
+  /** 弹窗选择器：点输入框 → ant-modal 里搜关键词 → 点 .school-item → 点「选择」 */
+  function visibleAntdModal() {
+    var list = Array.prototype.filter.call(document.querySelectorAll('.ant-modal'), isVisibleEl);
+    return list.length ? list[list.length - 1] : null;
+  }
+
+  async function fillAntdModalPicker(input, value, key) {
+    if (!input || !value) return false;
+    if (String(input.value || '').trim()) return false;
+    try { input.click(); } catch (_) { simulateClick(input); }
+    var modal = null;
+    for (var w = 0; w < 12 && !modal; w++) {
+      await sleep(180);
+      var m = visibleAntdModal();
+      if (m && m.querySelector('.school-item, .school-form, input[placeholder*="专业"], input[placeholder*="学校"]')) modal = m;
+    }
+    if (!modal) return false;
+    var want = String(value).replace(/\s+/g, '');
+    var search = modal.querySelector('.search-bar input, input[placeholder*="专业"], input[placeholder*="学校"]');
+    if (search && want) {
+      try {
+        var desc = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+        if (desc && desc.set) desc.set.call(search, want);
+        else search.value = want;
+        search.dispatchEvent(new Event('input', { bubbles: true }));
+      } catch (_) { /* ignore */ }
+      await sleep(1300);
+    }
+    var items = Array.prototype.slice.call(modal.querySelectorAll('.school-item'));
+    var best = null;
+    var bestScore = -1;
+    items.forEach(function (it) {
+      var t = String(it.textContent || '').replace(/\s+/g, '');
+      if (!t) return;
+      var score = 0;
+      if (t === want) score = 5;
+      else if (t.indexOf(want) === 0) score = 4;
+      else if (t.indexOf(want) !== -1) score = 3;
+      if (!score) return;
+      // 「计算机科学与技术(计算机类)(普通本科)」这种带补充说明的：本科/研究生要跟档案对得上
+      if (/本科/.test(t)) score += 1;
+      if (score > bestScore) { bestScore = score; best = it; }
+    });
+    if (!best) return false;
+    try { best.click(); } catch (_) { simulateClick(best); }
+    await sleep(260);
+    var confirm = null;
+    Array.prototype.forEach.call(modal.querySelectorAll('button'), function (b) {
+      if (/^(选择|确定|确认)$/.test(String(b.textContent || '').trim())) confirm = b;
+    });
+    if (confirm) {
+      try { confirm.click(); } catch (_) { simulateClick(confirm); }
+      await sleep(600);
+    }
+    if (String(input.value || '').trim()) { highlight(input); return true; }
+    return false;
+  }
+
+  /** 预扫描这类「弹窗选择器」输入框：label 是专业/学校，且 placeholder 写着「请选择」 */
+  async function fillModalPickers(profile, handled, filledKeys) {
+    var items = Array.prototype.slice.call(document.querySelectorAll('.ant-form-item'));
+    var filled = 0;
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i];
+      var lab = it.querySelector('label');
+      var label = lab ? String(lab.textContent || '').replace(/\s+/g, '').replace(/\*/g, '').trim() : '';
+      if (!label) continue;
+      var key = M.matchFieldKey(label, { context: detectSectionContext(it) });
+      if (key !== 'major' && key !== 'school') continue;
+      var inp = it.querySelector('input.ant-input:not([type="hidden"])');
+      if (!inp) continue;
+      if (handled) { if (handled.has(inp)) continue; handled.add(inp); }
+      if (String(inp.value || '').trim()) continue;
+      var ph = String(inp.getAttribute('placeholder') || '');
+      if (!/请选择|选择专业|选择学校/.test(ph)) continue;
+      var val = M.profileValueForOccurrence
+        ? M.profileValueForOccurrence(profile, key, 0)
+        : M.profileValue(profile, key);
+      if (!val) continue;
+      var ok = false;
+      try { ok = await fillAntdModalPicker(inp, val, key); } catch (_) { ok = false; }
+      if (ok) {
+        filled += 1;
+        if (filledKeys && filledKeys.indexOf(key) === -1) filledKeys.push(key);
+      }
+      // 没选中的弹窗要关掉，否则遮罩会把后面的下拉点击全吞掉
+      var leftover = visibleAntdModal();
+      if (leftover) {
+        Array.prototype.forEach.call(leftover.querySelectorAll('button'), function (b) {
+          if (/^取\s*消$/.test(String(b.textContent || '').trim())) { try { b.click(); } catch (_) { /* ignore */ } }
+        });
+        await sleep(220);
+      }
+    }
+    return filled;
   }
 
   function fillCustomSelect(host, value, key) {
@@ -3615,6 +3836,10 @@
     // 起止时间合体的控件要在逐 input 匹配之前处理，否则两个 input 会被各写一份
     if (opts.allowCustomSelect !== false) {
       try { filled += await fillRangeEditors(profile, handled, filledKeys); } catch (_) { /* ignore */ }
+      // Moka 的年/月自绘下拉对（毕业时间 / 就读时间 / 起止时间）
+      try { filled += await fillYearMonthPairs(profile, filledKeys); } catch (_) { /* ignore */ }
+      // antd 弹窗选择器（专业 / 学校）：点输入框弹 modal，常规写值写不进去
+      try { filled += await fillModalPickers(profile, handled, filledKeys); } catch (_) { /* ignore */ }
     }
     var els = iterFillableFields();
     for (var idx = 0; idx < els.length; idx++) {
@@ -3855,6 +4080,8 @@
           }
         }
         if (!hLabel) continue;
+        // antd 的必填星号在 label 里（"学校*"），不清理会匹配不上
+        hLabel = String(hLabel).replace(/\*/g, '').replace(/（必填）|\(必填\)|必填/g, '').replace(/\s+/g, ' ').trim();
         var hKey = M.matchFieldKey(hLabel, {});
         if (!hKey) continue;
         var hCounterKey = occurrenceKey(hKey, hLabel);
