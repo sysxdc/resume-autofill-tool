@@ -256,7 +256,15 @@
           <label>结束日期<input type="text" name="endDate" placeholder="与工作结束可互为别名" /></label>
           <label>工作城市<input type="text" name="workCity" placeholder="" /></label>
           <label>工作行业<input type="text" name="industry" placeholder="" /></label>
-          <label>工作性质<input type="text" name="jobType" placeholder="" /></label>
+          <label>工作性质
+            <select name="workNature">
+              <option value="">（按职位自动推断）</option>
+              <option value="全职">全职</option>
+              <option value="实习">实习</option>
+              <option value="兼职">兼职</option>
+            </select>
+          </label>
+          <label>求职意向-工作类型<input type="text" name="jobType" placeholder="全职 / 实习" /></label>
           <label>用工性质<input type="text" name="employmentType" placeholder="" /></label>
           <label>月薪<input type="text" name="monthlySalary" placeholder="" /></label>
           <label>年薪<input type="text" name="annualSalary" placeholder="" /></label>

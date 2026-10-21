@@ -142,7 +142,8 @@
     ],
     emergencyContactPhone: [
       'emergencycontactphone', 'emergency_contact_phone', '紧急联系人电话', '紧急联系人手机',
-      '紧急联络人电话', '紧急联系人号码', '应急联系人电话'
+      '紧急联络人电话', '紧急联系人号码', '应急联系人电话', '紧急联系电话', '紧急联络电话',
+      '紧急联系手机', '应急联系电话'
     ],
     emergencyContact: [
       'emergencycontact', 'emergency_contact', 'emergencyphone', '紧急联系人',
@@ -275,11 +276,17 @@
     enrollmentType: ['enrollmenttype', 'enrollment_type', '招生类别'],
     isTongzhao: ['istongzhao', '是否统招', '统招'],
     gpa: [
-      'gpa', 'grade point', '平均绩点', '学分绩点', '成绩绩点'
+      'gpa', 'grade point', '平均绩点', '学分绩点', '成绩绩点', '绩点', '平均分', '加权平均分', 'average score'
     ],
     failedCourses: ['failedcourses', 'failed_courses', '挂科数', '不及格门数'],
-    classRank: ['classrank', 'class_rank', '班级排名', '年级排名'],
-    majorRank: ['majorrank', 'major_rank', '专业排名'],
+    classRank: ['classrank', 'class_rank', '班级排名', '班排名'],
+    majorRank: [
+      'majorrank', 'major_rank', '专业排名', '成绩排名', '学业排名', '综合排名', '综测排名',
+      '年级排名', '排名', '名次', 'rank in major', 'class rank'
+    ],
+    gpaRank: [
+      'gparank', 'gpa_rank', 'gpa排名', '绩点排名', '学分绩排名', '绩点名次', 'gpa percentile'
+    ],
     majorClassSize: ['majorclasssize', 'major_class_size', '专业人数', '专业总人数'],
     eduCertNo: ['educertno', 'edu_cert_no', '学历证书编号', '毕业证编号'],
     degreeCertNo: ['degreecertno', 'degree_cert_no', '学位证书编号', '学位证编号'],
@@ -345,9 +352,13 @@
     industry: [
       'industry', 'sector', '所属行业', '行业', '从事行业', '工作行业'
     ],
+    workNature: [
+      'worknature', 'work_nature', '工作性质', '任职性质', '工作形式', '用工形式',
+      '雇佣形式', '全职/实习/兼职', '在职状态'
+    ],
     jobType: [
       'jobtype', 'job_type', 'worktype',
-      '工作性质', '职位类型', '全职兼职', '用工类型', '工作类型', '雇佣类型', '任职类型'
+      '职位类型', '全职兼职', '用工类型', '工作类型', '雇佣类型', '任职类型'
     ],
     employmentType: [
       'employmenttype', 'employment_type', '用工性质'
@@ -446,7 +457,8 @@
       'currentindustry', 'current_industry', '目前行业', '当前行业'
     ],
     expectedStartDate: [
-      'expectedstartdate', 'expected_start_date', '预计入职时间', '期望入职时间', '预计到岗', '期望到岗时间'
+      'expectedstartdate', 'expected_start_date', '预计入职时间', '期望入职时间', '预计到岗', '期望到岗时间',
+      '预计报到时间', '报到时间', '预计报到'
     ],
     jobTarget: [
       'jobtarget', 'job_target', 'desiredposition', 'desired_position', 'targetrole',
@@ -571,7 +583,7 @@
     'expectedIndustry', 'currentIndustry', 'expectedStartDate',
     'expectedAnnualSalary', 'currentSalary', 'expectedSalary',
     'hasRelativeAtCompany', 'jobTarget',
-    'gradYear', 'gpa', 'eduStart', 'eduEnd', 'degreeAwardDate', 'dualDegree',
+    'gradYear', 'gpaRank', 'gpa', 'eduStart', 'eduEnd', 'degreeAwardDate', 'dualDegree',
     'isUpgradeFromCollege', 'majorCategory', 'schoolCity', 'schoolType', 'eduStatus', 'eduYears',
     'studyMode', 'eduMode', 'enrollmentType', 'isTongzhao',
     'failedCourses', 'classRank', 'majorRank', 'majorClassSize',
@@ -591,7 +603,7 @@
     'socialOrg', 'socialRole', 'socialStart', 'socialEnd', 'socialContent',
     'refereeName', 'refereeContact', 'refereeTitle',
     'leaveReason', 'achievements', 'workDescription', 'companySize', 'workOverseas',
-    'workCity', 'industry', 'employmentType', 'jobType',
+    'workCity', 'industry', 'workNature', 'employmentType', 'jobType',
     'monthlySalary', 'annualSalary', 'workEnd', 'endDate',
     'company', 'title', 'years', 'startDate',
     'noticePeriod', 'earliestStart', 'availability', 'workAuth', 'referralSource',
@@ -918,7 +930,9 @@
       { re: /入学|开始|起始|就读起|start/i, key: 'eduStart' },
       { re: /毕业|结束|截止|graduat|\bend\b/i, key: 'eduEnd' },
       { re: /班级排名|班排名/, key: 'classRank' },
-      { re: /专业排名|年级排名|综合排名|排名|\brank\b/i, key: 'majorRank' },
+      // 绩点排名必须排在泛「绩点」/泛「排名」之前，否则 绩点排名 会被判成 gpa 或 majorRank
+      { re: /绩点排名|gpa排名|学分绩排名|gpa\s*rank/i, key: 'gpaRank' },
+      { re: /专业排名|年级排名|综合排名|成绩排名|排名|rank/i, key: 'majorRank' },
       { re: /专业|major/i, key: 'major' },
       { re: /学历|学位|degree/i, key: 'eduDegree' },
       { re: /学院/, key: 'department' },
@@ -1215,6 +1229,7 @@
     workEnd: ['workList', 'end'],
     endDate: ['workList', 'end'],
     workCity: ['workList', 'city'],
+    workNature: ['workList', 'nature'],
     workDescription: ['workList', 'description'],
     projectName: ['projectList', 'name'],
     projectRole: ['projectList', 'role'],
@@ -1236,6 +1251,125 @@
       }
     }
     return profileValue(profile, key);
+  }
+
+
+  /**
+   * 排名解析：把任意写法归一成 {ordinal, total, percent, band}
+   * 支持 "15/120" "15名/共120人" "第15名" "12.5%" "前20%" "top 50%" "50%".
+   */
+  function parseRank(input) {
+    var raw = String(input == null ? '' : input).trim();
+    if (!raw) return null;
+    var out = { raw: raw, ordinal: 0, total: 0, percent: 0, band: '' };
+    var m = raw.match(/(\d+(?:\.\d+)?)\s*(?:名)?\s*[/／]\s*(?:共)?\s*(\d+(?:\.\d+)?)\s*(?:名|人)?/);
+    if (m) {
+      out.ordinal = parseFloat(m[1]);
+      out.total = parseFloat(m[2]);
+      if (out.total > 0) out.percent = (out.ordinal / out.total) * 100;
+      return out;
+    }
+    m = raw.match(/(?:前|top\s*|约)?\s*(\d+(?:\.\d+)?)\s*%/i);
+    if (m) {
+      out.percent = parseFloat(m[1]);
+      if (out.percent >= 100) out.percent = 99.9;
+      return out;
+    }
+    m = raw.match(/第\s*(\d+(?:\.\d+)?)\s*名/);
+    if (m) {
+      out.ordinal = parseFloat(m[1]);
+      return out;
+    }
+    m = raw.match(/(\d+(?:\.\d+)?)\s*名/);
+    if (m) {
+      out.ordinal = parseFloat(m[1]);
+      return out;
+    }
+    return out.ordinal || out.percent ? out : null;
+  }
+
+  /** 把百分比归到常见区间文案：前10% / 10%-20% / 前20% / 前50% ... */
+  function rankBandTexts(percent) {
+    var p = Number(percent);
+    if (!isFinite(p) || p <= 0) return [];
+    var bands = [10, 20, 30, 50];
+    var out = [];
+    bands.forEach(function (b) {
+      if (p <= b) {
+        out.push('前' + b + '%');
+        out.push('Top ' + b + '%');
+        out.push('top' + b + '%');
+      }
+    });
+    // 命中所在的区间（10%-20% 这类），两个方向都试
+    for (var i = 1; i < bands.length; i++) {
+      if (p > bands[i - 1] && p <= bands[i]) {
+        out.push(bands[i - 1] + '%-' + bands[i] + '%');
+        out.push(bands[i - 1] + '% - ' + bands[i] + '%');
+        out.push(bands[i - 1] + '~' + bands[i] + '%');
+      }
+    }
+    out.push(p + '%');
+    out.push(String(Math.round(p)) + '%');
+    return out;
+  }
+
+  /**
+   * 同一份排名在不同控件里的候选写法（按「先精确、后换算」排序）。
+   * 用于：下拉区间 / 纯数字框 / "x/y" 文本框 / 百分比框。
+   */
+  function rankValueCandidates(input) {
+    var r = parseRank(input);
+    if (!r) return [];
+    var out = [r.raw];
+    if (r.ordinal && r.total) {
+      out.push(r.ordinal + '/' + r.total);
+      out.push(r.ordinal + '/共' + r.total);
+      out.push('第' + r.ordinal + '名');
+      out.push(String(r.ordinal));
+    }
+    if (r.percent) {
+      out = out.concat(rankBandTexts(r.percent));
+    }
+    var seen = {};
+    return out.filter(function (v) {
+      var k = String(v);
+      if (!k || seen[k]) return false;
+      seen[k] = 1;
+      return true;
+    });
+  }
+
+  /** GPA 解析：3.0/4.5 → {value:3, scale:4.5}；3.8 → {value:3.8}；85/100 → {value:85, scale:100} */
+  function parseGpa(input) {
+    var raw = String(input == null ? '' : input).trim();
+    if (!raw) return null;
+    var m = raw.match(/(\d+(?:\.\d+)?)\s*[/／]\s*(\d+(?:\.\d+)?)/);
+    if (m) return { raw: raw, value: parseFloat(m[1]), scale: parseFloat(m[2]) };
+    m = raw.match(/(\d+(?:\.\d+)?)/);
+    if (m) return { raw: raw, value: parseFloat(m[1]), scale: 0 };
+    return null;
+  }
+
+  function gpaValueCandidates(input) {
+    var g = parseGpa(input);
+    if (!g) return [];
+    var out = [g.raw];
+    if (g.scale) {
+      out.push(String(g.value));
+      out.push(String(g.value) + '/' + String(g.scale));
+    }
+    // 满分 4.5 的 3.0 → 百分制 66.7，只在页面要百分制时才有意义，放最后
+    if (g.scale && g.scale !== 100) {
+      out.push(String(Math.round((g.value / g.scale) * 100)));
+    }
+    var seen = {};
+    return out.filter(function (v) {
+      var k = String(v);
+      if (!k || seen[k]) return false;
+      seen[k] = 1;
+      return true;
+    });
   }
 
   function profileValue(profile, key) {
@@ -1316,10 +1450,27 @@
       if (jt) return jt;
       return (profile.employmentType && String(profile.employmentType).trim()) || '';
     }
+    // 工作性质：显式值 > 该段写的是实习 > 求职意向的工作类型
+    if (key === 'workNature') {
+      var wn = profile.workNature && String(profile.workNature).trim();
+      if (wn) return wn;
+      var wl = Array.isArray(profile.workList) ? profile.workList : [];
+      var first = wl[0] || null;
+      if (first) {
+        if (first.nature && String(first.nature).trim()) return String(first.nature).trim();
+        if (/实习/.test(String(first.title || '')) || /实习/.test(String(first.company || ''))) return '实习';
+      }
+      if (/实习/.test(String(profile.title || ''))) return '实习';
+      return (profile.jobType && String(profile.jobType).trim()) || '';
+    }
     // 工作描述 ↔ 业绩
     if (key === 'workDescription') {
       var wd = profile.workDescription && String(profile.workDescription).trim();
       if (wd) return wd;
+      var wl0 = Array.isArray(profile.workList) ? profile.workList[0] : null;
+      if (wl0 && wl0.description && String(wl0.description).trim()) return String(wl0.description).trim();
+      var il0 = Array.isArray(profile.internList) ? profile.internList[0] : null;
+      if (il0 && il0.description && String(il0.description).trim()) return String(il0.description).trim();
       return (profile.achievements && String(profile.achievements).trim()) || '';
     }
     // 紧急联系人：组合回退
@@ -1369,7 +1520,17 @@
       return (profile.degree && String(profile.degree).trim()) || '';
     }
     var v = profile[key];
-    return v != null ? String(v).trim() : '';
+    var flat = v != null ? String(v).trim() : '';
+    if (flat) return flat;
+    // 扁平字段为空时，回落到列表首条（工作描述这类值只存在 workList[0] 里很常见）
+    var lm = LIST_OCCURRENCE_MAP[key];
+    if (lm) {
+      var arr = profile[lm[0]];
+      if (Array.isArray(arr) && arr.length && arr[0] && arr[0][lm[1]]) {
+        return String(arr[0][lm[1]]).trim();
+      }
+    }
+    return '';
   }
 
   function expandDegreeSynonyms(value) {
@@ -1825,10 +1986,12 @@
       function (node) { return classHasToken(getElClassName(node), 'el-form-item'); },
       function (node) { return classHasToken(getElClassName(node), 'semi-form-field'); },
       function (node) { return classIncludes(getElClassName(node), 'formily-item'); },
+      // 北森 Phoenix：容器类名就是 form-item，标签在 .form-item__title > label 里
+      function (node) { return classHasToken(getElClassName(node), 'form-item'); },
       function (node) {
         var cn = getElClassName(node);
         return classIncludes(cn, 'form-item') && !classIncludes(cn, 'form-item-label') &&
-          !classIncludes(cn, 'form-item-control');
+          !classIncludes(cn, 'form-item-control') && !classIncludes(cn, 'form-item__');
       }
     ];
 
@@ -1839,7 +2002,8 @@
           el.closest('.el-form-item') ||
           el.closest('.semi-form-field') ||
           el.closest('.formily-item') ||
-          el.closest('[class*="form-item"]');
+          el.closest('.form-item') ||
+          el.closest('[class*="form-item"]:not([class*="form-item__"])');
       } catch (_) { container = null; }
     }
     if (!container) {
@@ -2257,6 +2421,11 @@
     parseYesNo: parseYesNo,
     LIST_OCCURRENCE_MAP: LIST_OCCURRENCE_MAP,
     profileValueForOccurrence: profileValueForOccurrence,
+    parseRank: parseRank,
+    rankBandTexts: rankBandTexts,
+    rankValueCandidates: rankValueCandidates,
+    parseGpa: parseGpa,
+    gpaValueCandidates: gpaValueCandidates,
     isOtherPersonContactContext: isOtherPersonContactContext,
     isApplicantOnlyKeyBlocked: isApplicantOnlyKeyBlocked,
     extractDatePart: extractDatePart,

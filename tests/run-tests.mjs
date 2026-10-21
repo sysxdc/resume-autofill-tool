@@ -1605,7 +1605,8 @@ test('v1.5.0: 语义模糊 — 新 CN ATS 同义', () => {
   assert.equal(Match.matchFieldKey('紧急联系人姓名'), 'emergencyContactName');
   assert.equal(Match.matchFieldKey('应急联系人电话'), 'emergencyContactPhone');
   assert.equal(Match.matchFieldKey('到岗时间'), 'availability');
-  assert.equal(Match.matchFieldKey('工作性质'), 'jobType');
+  assert.equal(Match.matchFieldKey('工作性质'), 'workNature');  // v1.5.6：工作经历里的性质≠求职意向的工作类型
+  assert.equal(Match.matchFieldKey('工作类型'), 'jobType');
   assert.equal(Match.matchFieldKey('雇佣类型'), 'jobType');
 });
 
@@ -1693,9 +1694,56 @@ test('v1.5.0: demo/dropdowns.html 存在且含四类组件', () => {
   assert.ok(/活体验证|手动/.test(html));
 });
 
-test('v1.5.5: manifest 1.5.5', () => {
+test('v1.5.6: 排名解析与区间换算', () => {
+  const r1 = Match.parseRank('15/120');
+  assert.equal(r1.ordinal, 15);
+  assert.equal(r1.total, 120);
+  assert.ok(Math.abs(r1.percent - 12.5) < 0.001, '15/120 应换算成 12.5%');
+  const c = Match.rankValueCandidates('15/120');
+  assert.equal(c[0], '15/120', '原始写法优先');
+  assert.ok(c.includes('前20%'), '候选里要有 前20%');
+  assert.equal(Match.parseRank('第8名').ordinal, 8);
+  assert.equal(Match.parseRank('abc'), null);
+});
+
+test('v1.5.6: GPA 3.0/4.5', () => {
+  const g = Match.parseGpa('3.0/4.5');
+  assert.equal(g.value, 3);
+  assert.equal(g.scale, 4.5);
+  assert.equal(Match.gpaValueCandidates('3.0/4.5')[0], '3.0/4.5');
+});
+
+test('v1.5.6: 成绩排名/绩点排名/工作性质的键位', () => {
+  assert.equal(Match.matchFieldKeyScored('成绩排名', { context: 'edu' }).key, 'majorRank');
+  assert.equal(Match.matchFieldKeyScored('绩点排名', { context: 'edu' }).key, 'gpaRank');
+  assert.equal(Match.matchFieldKeyScored('绩点', { context: 'edu' }).key, 'gpa');
+  assert.equal(Match.matchFieldKeyScored('工作性质', {}).key, 'workNature');
+  assert.equal(Match.matchFieldKeyScored('工作类型', {}).key, 'jobType');
+});
+
+test('v1.5.6: 工作描述为空回落到 workList[0]', () => {
+  const p = { workDescription: '', workList: [{ company: 'X', description: '来自列表的描述' }] };
+  assert.equal(Match.profileValue(p, 'workDescription'), '来自列表的描述');
+  assert.equal(Match.profileValue({ workDescription: '显式值', workList: [{ description: '列表值' }] }, 'workDescription'), '显式值');
+});
+
+test('v1.5.6: 「至今」走开关，不写进日期框', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function isCurrentJobValue/.test(src));
+  assert.ok(/function clickCurrentJobToggle/.test(src));
+  assert.ok(/function looksLikeDateInput/.test(src));
+  assert.ok(/current_job_no_toggle/.test(src));
+});
+
+test('v1.5.6: 工作性质按该段职位推断', () => {
+  assert.equal(Match.profileValue({ workList: [{ title: '实习生' }] }, 'workNature'), '实习');
+  assert.equal(Match.profileValue({ workList: [{ title: '工程师' }], jobType: '全职' }, 'workNature'), '全职');
+  assert.equal(Match.profileValue({ workList: [{ title: '工程师', nature: '兼职' }] }, 'workNature'), '兼职');
+});
+
+test('v1.5.6: manifest 1.5.6', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(pkg.version, '1.5.5');
+  assert.equal(pkg.version, '1.5.6');
 });
 
 

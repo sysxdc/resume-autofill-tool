@@ -65,7 +65,7 @@
     'internDescription', 'internLeaveReason',
     // —— 工作经历（主条目） ——
     'company', 'companySize', 'workOverseas', 'title', 'startDate', 'workEnd', 'endDate',
-    'workCity', 'industry', 'jobType', 'employmentType',
+    'workCity', 'industry', 'workNature', 'jobType', 'employmentType',
     'monthlySalary', 'annualSalary',
     'refereeName', 'refereeContact', 'refereeTitle',
     'achievements', 'workDescription', 'leaveReason',
@@ -137,7 +137,7 @@
   /** 数组第一条 → 扁平主条目字段名映射 */
   var MAIN_ENTRY_MAP = {
     eduList: { school: 'school', department: 'department', major: 'major', degree: 'eduDegree', start: 'eduStart', end: 'eduEnd', city: 'schoolCity' },
-    workList: { company: 'company', title: 'title', start: 'startDate', end: 'workEnd', city: 'workCity' },
+    workList: { company: 'company', title: 'title', start: 'startDate', end: 'workEnd', city: 'workCity', nature: 'workNature' },
     projectList: { name: 'projectName', role: 'projectRole', start: 'projectStart', end: 'projectEnd', tech: 'techSkills', description: 'projectDesc' }
   };
 

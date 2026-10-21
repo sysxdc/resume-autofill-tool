@@ -3,6 +3,7 @@
  * 依赖 shared/match.js（须在 manifest content_scripts 中先于本文件加载）。
  * FILL_FORM / SCAN_FIELDS / COLLECT_FIELDS / APPLY_MAPPINGS
  * 不自动提交；不填 password/file；不盲勾 checkbox。
+ * v1.5.5: 北森 Phoenix 网申（phoenix-select 下拉/日期、字典与地区弹层、div radio）+ 按需点「添加」展开分区。
  * v1.3.7: Ant Design DatePicker（年/月面板 + 年月值 YYYY-MM）。
  * v1.3.6: focus 展开弹层（Element el-date-picker）+ 只读框直写兜底。
  * v1.3.5: 年/月/日 三件套（原生 select 组）、分页下拉、滚轮选列、英文表头。
@@ -198,7 +199,24 @@
    * v1.5.2：区块上下文（教育 / 实习 / 工作 / 项目 / 校园）。
    * 「城市」在同一份表单的教育块与工作块含义不同，仅靠标签无法区分。
    */
+  function sectionContextFromText(text) {
+    if (!text || text.length > 24) return '';
+    // 「工作/实习经历」是混合段：按工作段处理（workList 是主档），只有纯实习段才算 intern
+    if (/实习/.test(text) && !/工作/.test(text)) return 'intern';
+    if (/教育|学历|学习经历|院校|在校|就读/.test(text)) return 'edu';
+    if (/工作|职业|任职|履历|工作经验/.test(text)) return 'work';
+    if (/项目/.test(text)) return 'project';
+    if (/校园|社团|学生工作|社会实践/.test(text)) return 'campus';
+    return '';
+  }
+
   function detectSectionContext(el) {
+    // v1.5.5：北森 Phoenix 的区块标题在 .form 的孪生 div 上（同 id），不在祖先链里
+    var phoenixForm = el && el.closest ? el.closest('.form[id*="_Recruitment_"]') : null;
+    if (phoenixForm) {
+      var pCtx = sectionContextFromText(phoenixFormTitle(phoenixForm));
+      if (pCtx) return pCtx;
+    }
     var node = el;
     for (var up = 0; up < 7 && node && node.parentElement; up++) {
       var text = '';
@@ -211,11 +229,8 @@
         if (head) text = String(head.textContent || '').replace(/\s+/g, ' ').trim();
       }
       if (text && text.length <= 24) {
-        if (/实习/.test(text)) return 'intern';
-        if (/教育|学历|学习经历|院校|在校|就读/.test(text)) return 'edu';
-        if (/工作|职业|任职|履历|工作经验/.test(text)) return 'work';
-        if (/项目/.test(text)) return 'project';
-        if (/校园|社团|学生工作|社会实践/.test(text)) return 'campus';
+        var ctx = sectionContextFromText(text);
+        if (ctx) return ctx;
       }
       node = node.parentElement;
     }
@@ -253,7 +268,9 @@
       startdate: { field: 'start', key: 'startDate' },
       enddate: { field: 'end', key: 'workEnd' },
       city: { field: 'city', key: 'workCity' },
-      worktype: { field: 'nature', key: 'workType' },
+      worktype: { field: 'nature', key: 'workNature' },
+      employmenttype: { field: 'nature', key: 'workNature' },
+      nature: { field: 'nature', key: 'workNature' },
       description: { field: 'description', key: 'workDescription' },
       workdescription: { field: 'description', key: 'workDescription' },
       workcontent: { field: 'description', key: 'workDescription' },
@@ -297,7 +314,7 @@
     var key = hit.key;
     if (raw === 'startdate' || raw === 'enddate') {
       var ph = String(el.getAttribute('placeholder') || '');
-      if (/毕业|结束|截止|离职|离校/.test(ph)) { field = 'end'; key = section === 'education' ? 'eduEnd' : (section === 'work' ? 'workEnd' : key); }
+      if (/毕业|结束|截止|离职|离校|至今|结束时间/.test(ph)) { field = 'end'; key = section === 'education' ? 'eduEnd' : (section === 'work' ? 'workEnd' : key); }
       else if (/入学|开始|入职|起始/.test(ph)) { field = 'start'; key = section === 'education' ? 'eduStart' : (section === 'work' ? 'startDate' : key); }
     }
     return { listKey: STRUCT_LIST_KEY[section], index: index, field: field, key: key };
@@ -343,6 +360,9 @@
       if (!t || t.length > 16) return;
       if (!ADD_BUTTON_RE.test(t)) return;
       if (isUnsafeAddButton(t)) return;
+      // 同一按钮的文字常被 span 包一层：内层与父节点文案完全相同时只留外层
+      var p = n.parentElement;
+      if (p && String(p.textContent || '').replace(/\s+/g, ' ').trim() === t) return;
       if (!isVisibleEl(n)) return;
       out.push({ el: n, text: t });
     });
@@ -384,6 +404,9 @@
       if (k.indexOf(sectionName + ':') === 0) n += 1;
     }
     if (n) return n;
+    // v1.5.5：北森 Phoenix —— 每条记录是一个独立 .form，与区块标题共用一个 id
+    var phoenixRows = countPhoenixRows(rule);
+    if (phoenixRows) return phoenixRows;
     // 退路：按常见列表容器估算
     var box = document.querySelector('[class*="' + rule.key + '"][class*="list"], [data-section*="' + rule.key + '"]');
     if (box) {
@@ -391,6 +414,20 @@
       return rows ? rows.length : 0;
     }
     return 0;
+  }
+
+  function countPhoenixRows(rule) {
+    var forms = document.querySelectorAll('.form[id*="_Recruitment_"]');
+    var best = 0;
+    for (var i = 0; i < forms.length; i++) {
+      var f = forms[i];
+      if (!phoenixFormTitle(f) || !rule.re.test(phoenixFormTitle(f))) continue;
+      var esc = window.CSS && CSS.escape ? CSS.escape(f.id) : f.id;
+      var same = 0;
+      try { same = document.querySelectorAll('[id="' + esc + '"].form').length; } catch (_) { same = 0; }
+      if (same > best) best = same;
+    }
+    return best;
   }
 
   function desiredRowsFor(profile, rule) {
@@ -590,6 +627,79 @@
     hasChronicIllness: 1, hasCriminalRecord: 1, hasStudyAbroad: 1
   };
 
+
+  /** 「至今 / 现在 / present / 在职」这类不是日期，代表“当前仍在职” */
+  function isCurrentJobValue(v) {
+    return /^(至今|现在|今|目前|在职|实习中|在岗|present|now|current|till now|to date)$/i.test(String(v || '').trim());
+  }
+
+
+  /** 日期类输入框（type=date/month、placeholder 带年/月/日、只读 picker）不该写入“至今” */
+  function looksLikeDateInput(el) {
+    if (!el) return false;
+    var type = String(el.type || '').toLowerCase();
+    if (type === 'date' || type === 'month' || type === 'datetime-local') return true;
+    if (el.readOnly) return true;
+    var ph = String(el.getAttribute && el.getAttribute('placeholder') || '');
+    if (/年|月|日|yyyy|yyyy-mm|mm\/dd|日期|date/i.test(ph)) return true;
+    if (isReadonlyPicker(el)) return true;
+    return false;
+  }
+
+  /** 排名 / 绩点在区间下拉里的候选写法（原始值优先） */
+  function valueCandidates(key, value) {
+    var out = [String(value == null ? '' : value)];
+    try {
+      if (M.rankValueCandidates && (key === 'majorRank' || key === 'classRank' || key === 'gpaRank')) {
+        out = out.concat(M.rankValueCandidates(value));
+      }
+      if (M.gpaValueCandidates && key === 'gpa') {
+        out = out.concat(M.gpaValueCandidates(value));
+      }
+    } catch (e) { /* ignore */ }
+    var seen = {};
+    return out.filter(function (v) {
+      var k = String(v);
+      if (!k || seen[k]) return false;
+      seen[k] = 1;
+      return true;
+    });
+  }
+
+  /**
+   * 在字段附近找「至今 / 在职 / 目前」开关并勾上。
+   * 找不到就返回 false（调用方会跳过，而不是把“至今”写进日期框）。
+   */
+  function clickCurrentJobToggle(el) {
+    if (!el || !el.parentElement) return false;
+    var node = el;
+    for (var up = 0; up < 4 && node && node.parentElement; up++) {
+      node = node.parentElement;
+      var boxes = node.querySelectorAll('input[type="checkbox"], [role="switch"], [role="checkbox"], .ant-checkbox, .ant-switch, .el-checkbox');
+      for (var i = 0; i < boxes.length; i++) {
+        var b = boxes[i];
+        if (!isVisibleEl(b)) continue;
+        var txt = String(b.parentElement ? b.parentElement.textContent : b.textContent || '').replace(/\s+/g, '');
+        var near = txt || String(b.getAttribute('aria-label') || '') + String(b.title || '');
+        // 控件自身没有文案时，看它所在 label/兄弟文本
+        if (!/至今|在职|目前|现在|present|current|now/i.test(near)) {
+          var row = b.closest('label, .ant-checkbox-wrapper, .el-checkbox, li, div');
+          var rowTxt = row ? String(row.textContent || '').replace(/\s+/g, '') : '';
+          if (!/至今|在职|目前|现在|present|current|now/i.test(rowTxt)) continue;
+        }
+        var cb = b.tagName.toLowerCase() === 'input' ? b : b.querySelector('input[type="checkbox"]');
+        if (cb) {
+          if (cb.checked) return true;
+          simulateClick(cb);
+          return true;
+        }
+        simulateClick(b);
+        return true;
+      }
+    }
+    return false;
+  }
+
   function isReadonlyPicker(el) {
     if (!el || el.disabled || !el.readOnly) return false;
     var t = (el.type || 'text').toLowerCase();
@@ -609,7 +719,7 @@
   // ————— v1.5.0：自定义下拉适配器（Element / Ant / dictionary / listbox）—————
 
   var CUSTOM_SELECT_HOST =
-    '.el-select, .ant-select, .dictionary-selector, .form-select, [role="combobox"]';
+    '.el-select, .ant-select, .dictionary-selector, .form-select, .phoenix-select, [role="combobox"]';
   var DROPDOWN_OPTION_SEL =
     '[role="option"], .el-select-dropdown__item, .el-option, .ant-select-item-option, ' +
     '.ant-select-item, .dictionary-option, .option-item, .select-option, li.el-select-dropdown__item';
@@ -661,7 +771,8 @@
    * 写自定义下拉：点击展开 → 按文案匹配选项 → 点击。
    * 纯匹配逻辑复用 M.findBestOption / matchSelectOption。
    */
-  function fillCustomSelect(host, value) {
+  function fillCustomSelect(host, value, key) {
+    if (isPhoenixHost(host)) return fillPhoenixHost(host, value, key);
     return new Promise(function (resolve) {
       if (!host || !value) { resolve(false); return; }
       if (customSelectLooksFilled(host)) { resolve(false); return; }
@@ -703,6 +814,331 @@
         }, 200);
       }
     });
+  }
+
+  // ————— v1.5.5：北森 Phoenix（zhiye.com / 北森云网申）组件适配 —————
+  // 页面结构：.form-root > .ux-standard-form > .form#GUID_Recruitment_* > .form-item--phoenix
+  // 控件：select / date 都是 .phoenix-select（无 name/id，靠 .form-item__text 标签）；
+  //       radio 是纯 div 的 .phoenix-radio-group；民族=字典弹层，籍贯=地区弹层。
+  var PHOENIX_LIST_SEL = '.phoenix-selectList';
+  var PHOENIX_ITEM_SEL = '.phoenix-selectList__listItem';
+  var PHOENIX_DATE_SEL = '.phoenix-date-picker';
+  var PHOENIX_DICT_SEL = '.constant-main-selector-container';
+  var PHOENIX_AREA_SEL = '.area-selector-container';
+
+  function isPhoenixHost(host) {
+    return !!(host && host.classList && host.classList.contains('phoenix-select'));
+  }
+
+  /** 最后一个可见节点（弹层可能残留多个已关闭副本） */
+  function lastVisible(sel, root) {
+    var nodes = (root || document).querySelectorAll(sel);
+    var hit = null;
+    for (var i = 0; i < nodes.length; i++) {
+      if (isVisibleEl(nodes[i])) hit = nodes[i];
+    }
+    return hit;
+  }
+
+  function phoenixHostFilled(host) {
+    if (!host) return false;
+    var input = host.querySelector('input');
+    var v = input ? String(input.value || '').trim() : '';
+    if (!v) {
+      var tip = host.querySelector('.phoenix-select__tipEle');
+      if (tip) v = String(tip.textContent || '').trim();
+    }
+    return !!v && !/^请选择$/.test(v);
+  }
+
+  /** 只写值 + input/change（不触发 blur，避免弹层提前关闭） */
+  function setInputRaw(el, value) {
+    if (!el || el.disabled || el.readOnly) return false;
+    var proto = el.tagName.toLowerCase() === 'textarea'
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype;
+    var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (desc && desc.set) desc.set.call(el, value);
+    else el.value = value;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  }
+
+  function pressEnter(el) {
+    try {
+      el.focus();
+      ['keydown', 'keypress', 'keyup'].forEach(function (t) {
+        el.dispatchEvent(new KeyboardEvent(t, {
+          key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true
+        }));
+      });
+    } catch (_) { /* ignore */ }
+  }
+
+  function closePhoenixPanels() {
+    // 点回处于 active 的宿主最稳（合成 Escape 对部分组件无效）
+    var active = document.querySelector('.phoenix-select--active');
+    if (active) {
+      simulateClick(active.querySelector('.phoenix-select__input') || active);
+      return;
+    }
+    var panel = lastVisible(PHOENIX_LIST_SEL) || lastVisible(PHOENIX_DATE_SEL) ||
+      lastVisible(PHOENIX_DICT_SEL) || lastVisible(PHOENIX_AREA_SEL);
+    if (!panel) return;
+    var target = panel.querySelector('input') || panel;
+    try { target.focus(); } catch (_) { /* ignore */ }
+    try {
+      target.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true
+      }));
+    } catch (_) { /* ignore */ }
+  }
+
+  /** 弹层里的「确定」（字典 / 地区选择器） */
+  function phoenixPanelConfirm(panel) {
+    var nodes = panel.querySelectorAll('.phoenix-button__content');
+    for (var i = 0; i < nodes.length; i++) {
+      if (/^(确定|确认|完成|ok)$/i.test(String(nodes[i].textContent || '').trim())) {
+        simulateClick(nodes[i]);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** findBestOption 会去掉 el 字段，这里按文案再映射回原节点 */
+  function phoenixPick(opts, value) {
+    if (!opts || !opts.length) return null;
+    var texts = opts.map(function (o) { return o.text; });
+    var matched = M.findBestOption ? M.findBestOption(texts, value) : null;
+    if (!matched) return null;
+    var want = String(matched.text || matched.value || '');
+    for (var i = 0; i < opts.length; i++) {
+      if (opts[i].text === want) return opts[i];
+    }
+    return null;
+  }
+
+  var PHOENIX_PANEL_SEL =
+    '.phoenix-selectList, .phoenix-date-picker, .constant-main-selector-container, .area-selector-container';
+
+  /** 轮询等待：弹层/选项都是异步渲染的，固定 sleep 不够稳 */
+  async function waitUntil(fn, timeoutMs, stepMs) {
+    var step = stepMs || 100;
+    var waited = 0;
+    while (waited <= timeoutMs) {
+      try { if (fn()) return true; } catch (_) { /* ignore */ }
+      await sleep(step);
+      waited += step;
+    }
+    try { return !!fn(); } catch (_) { return false; }
+  }
+
+  function phoenixVisiblePanels() {
+    return Array.prototype.filter.call(document.querySelectorAll(PHOENIX_PANEL_SEL), function (n) {
+      return isVisibleEl(n);
+    });
+  }
+
+  /** 点开宿主，返回「这次新出现的」弹层；上一个字段残留的弹层不算 */
+  async function phoenixOpenPanel(host) {
+    var before = phoenixVisiblePanels();
+    var opener = host.querySelector('.phoenix-select__input') || host;
+    simulateClick(opener);
+    var found = null;
+    await waitUntil(function () {
+      var now = phoenixVisiblePanels();
+      for (var i = 0; i < now.length; i++) {
+        if (before.indexOf(now[i]) === -1) { found = now[i]; return true; }
+      }
+      return false;
+    }, 1800, 150);
+    return found;
+  }
+
+  function phoenixReadItems(root, itemSel) {
+    var nodes = root.querySelectorAll(itemSel);
+    var out = [];
+    for (var i = 0; i < nodes.length; i++) {
+      var t = String(nodes[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (t) out.push({ el: nodes[i], text: t });
+    }
+    return out;
+  }
+
+  /** 搜索后轮询直到出现匹配项（虚拟列表只渲染前几行，不搜就只能看到头部） */
+  async function phoenixFindInList(root, itemSel, value) {
+    var waited = 0;
+    var hit = null;
+    while (waited <= 1000) {
+      hit = phoenixPick(phoenixReadItems(root, itemSel), value);
+      if (hit) return hit;
+      await sleep(150);
+      waited += 150;
+    }
+    return null;
+  }
+
+  /** 字典 / 地区弹层：搜索 → 勾选图标（圆形单选） → 确定 */
+  async function fillPhoenixPanel(host, value, panel) {
+    if (!panel) return false;
+    var isArea = panel.classList.contains('area-selector-container');
+    var itemSel = isArea ? '.area-item-container' : '.list-item-container';
+    var search = panel.querySelector('.content-search input, .area-search-input input');
+    var raw = String(value).replace(/\s+/g, '');
+    var texts = [raw];
+    if (raw.length > 2) texts.push(raw.slice(0, 2));
+    texts.push('');
+    for (var s = 0; s < texts.length; s++) {
+      if (search) {
+        setInputRaw(search, texts[s]);
+        await sleep(250);
+      }
+      var hit = await phoenixFindInList(panel, itemSel, value);
+      if (!hit) continue;
+      // 勾选热区在 svg 图标上（合成 click 点在容器上不生效）
+      simulateClick(hit.el.querySelector('.icon-container svg') ||
+        hit.el.querySelector('.icon-container') || hit.el);
+      await sleep(250);
+      phoenixPanelConfirm(panel);
+      if (await waitUntil(function () { return phoenixHostFilled(host); }, 1200, 150)) return true;
+    }
+    closePhoenixPanels();
+    return false;
+  }
+
+  /**
+   * 普通下拉：搜索 → 点选项（虚拟列表，只渲染可见行）
+   * key 仅用于个别字段的保守校验（面试站点不能拿「广州」命中「广州美术学院」）。
+   */
+  async function fillPhoenixList(host, value, panel, key) {
+    if (!panel) return false;
+    var search = panel.querySelector('.phoenix-input__input');
+    var raw = String(value).replace(/\s+/g, '');
+    var texts = [raw];
+    if (raw.length > 2) texts.push(raw.slice(0, 2));
+    texts.push('');
+    for (var s = 0; s < texts.length; s++) {
+      if (search) {
+        setInputRaw(search, texts[s]);
+        await sleep(250);
+      }
+      var hit = await phoenixFindInList(panel, PHOENIX_ITEM_SEL, value);
+      if (!hit) continue;
+      if (key === 'interviewCity' && hit.text.length > raw.length + 3) continue;
+      simulateClick(hit.el.querySelector('.phoenix-selectList__singleLabel') || hit.el);
+      if (await waitUntil(function () { return phoenixHostFilled(host); }, 1200, 150)) return true;
+    }
+    closePhoenixPanels();
+    return false;
+  }
+
+  /** 日期：日历面板里的 .phoenix-calendar-input 可直接键入 + Enter 提交 */
+  async function fillPhoenixDate(host, value, panel) {
+    var parts = parseDateParts(value);
+    if (!panel || !parts) return false;
+    var input = panel.querySelector('.phoenix-calendar-input');
+    if (!input) return false;
+    var mm = ('0' + parts.m).slice(-2);
+    var dd = ('0' + (parts.d || '1')).slice(-2);
+    setInputRaw(input, parts.y + '-' + mm + '-' + dd);
+    await sleep(200);
+    pressEnter(input);
+    if (await waitUntil(function () { return phoenixHostFilled(host); }, 1200, 150)) return true;
+    closePhoenixPanels();
+    return false;
+  }
+
+  /**
+   * 北森 Phoenix 宿主：点开 → 识别本次弹层类型（日期 / 字典 / 地区 / 普通下拉）
+   */
+  async function fillPhoenixHost(host, value, key) {
+    if (!host || !value) return false;
+    if (host.isConnected === false) return false;
+    if (phoenixHostFilled(host)) return false;
+    // 已经打开的先点回去，避免 toggle 反向
+    if (host.classList.contains('phoenix-select--active')) {
+      simulateClick(host.querySelector('.phoenix-select__input') || host);
+      await waitUntil(function () { return !host.classList.contains('phoenix-select--active'); }, 700, 100);
+    }
+    var panel = await phoenixOpenPanel(host);
+    if (!panel) return false;
+    if (panel.classList.contains('phoenix-date-picker')) {
+      return fillPhoenixDate(host, value, panel);
+    }
+    if (panel.classList.contains('constant-main-selector-container') ||
+        panel.classList.contains('area-selector-container')) {
+      return fillPhoenixPanel(host, value, panel);
+    }
+    return fillPhoenixList(host, value, panel, key);
+  }
+
+  /** 应届/往届这类「是/否 ⇄ 两态词」的值映射 */
+  var CHOICE_VALUE_MAP = {
+    isFreshGraduate: { yes: '应届', no: '往届' }
+  };
+
+  function phoenixChoiceValue(key, value, optionTexts) {
+    var map = CHOICE_VALUE_MAP[key];
+    var v = String(value || '').trim();
+    if (!map || optionTexts.join(' ').indexOf(map.yes) === -1) return v;
+    var yn = M.parseYesNo ? M.parseYesNo(v) : null;
+    if (yn === 'Yes') return map.yes;
+    if (yn === 'No') return map.no;
+    return v;
+  }
+
+  /** 北森 Phoenix radio：纯 div 组，选中态是 .phoenix-radio--checked */
+  function fillPhoenixRadioGroups(profile, keyCounts, filledKeys) {
+    var filled = 0;
+    var groups = Array.from(document.querySelectorAll('.phoenix-radio-group')).filter(function (g) {
+      return isVisibleEl(g);
+    });
+    groups.forEach(function (group) {
+      if (group.querySelector('.phoenix-radio--checked')) return;
+      var item = group.closest ? group.closest('.form-item') : null;
+      var labelEl = item ? item.querySelector('.form-item__text') : null;
+      var label = labelEl ? String(labelEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
+      if (!label) return;
+      var scored = M.matchFieldKeyScored ? M.matchFieldKeyScored(label, {}) : null;
+      var key = scored && scored.key;
+      if (!key || !RADIO_SAFE_KEYS[key]) return;
+      if (keyCounts['radio:' + key]) return;
+      var gval = M.profileValue(profile, key);
+      if (!gval) return;
+      var opts = Array.from(group.querySelectorAll('.phoenix-radio')).map(function (r) {
+        return { el: r, text: String(r.textContent || '').replace(/\s+/g, ' ').trim() };
+      }).filter(function (o) { return o.text; });
+      if (!opts.length) return;
+      var want = phoenixChoiceValue(key, gval, opts.map(function (o) { return o.text; }));
+      var matched = phoenixPick(opts, want);
+      if (!matched) return;
+      simulateClick(matched.el);
+      if (matched.el.classList.contains('phoenix-radio--checked')) {
+        keyCounts['radio:' + key] = 1;
+        filled += 1;
+        if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
+        highlight(matched.el);
+      }
+    });
+    return filled;
+  }
+
+  /** 北森分区标题：标题 div 与 .form 共用同一个 id（GUID_Recruitment_*） */
+  function phoenixFormTitle(form) {
+    if (!form || !form.id || form.id.indexOf('_Recruitment_') === -1) return '';
+    var sel = '[id="' + (window.CSS && CSS.escape ? CSS.escape(form.id) : form.id) + '"]';
+    var nodes;
+    try { nodes = document.querySelectorAll(sel); } catch (_) { return ''; }
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n === form) continue;
+      if (n.classList && n.classList.contains('form')) continue;
+      var t = String(n.textContent || '').replace(/\s+/g, ' ').trim();
+      if (t && t.length <= 24) return t;
+    }
+    return '';
   }
 
   /** 收集 radio 组的候选标题：表单标签 → 行首兄弟文本 → 父容器去选项文本 → name */
@@ -1952,15 +2388,28 @@
       if (fieldLooksFilled(el)) continue;
       // 自定义下拉宿主：走 click → option 路径
       var customHost = findCustomSelectHost(el);
+      if (customHost && isPhoenixHost(customHost) && customHost.isConnected === false) continue;
       if (customHost && el.tagName.toLowerCase() !== 'select') {
         if (customSelectLooksFilled(customHost)) continue;
         try {
-          var cOk = await fillCustomSelect(customHost, value);
+          var cOk = await fillCustomSelect(customHost, value, key);
+          if (!cOk) {
+            var cAlts = valueCandidates(key, value);
+            for (var ci = 1; ci < cAlts.length && !cOk; ci++) {
+              cOk = await fillCustomSelect(customHost, cAlts[ci], key);
+              if (cOk) value = cAlts[ci];
+            }
+          }
           if (cOk) {
             filled += 1;
             keyCounts[key] = count + 1;
             if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
             highlight(el);
+            continue;
+          }
+          // Phoenix 宿主的真值只在 React 状态里，绝不能直接写 input.value
+          if (isPhoenixHost(customHost)) {
+            if (skipped.length < 12) skipped.push({ key: key, reason: 'phoenix_fill_failed' });
             continue;
           }
         } catch (_) { /* fall through */ }
@@ -1971,6 +2420,26 @@
         profileKey: key,
         adjacentPairRole: adjacentRole || undefined
       };
+
+      // 「至今 / 在职 / present」不是日期：找附近的开关（checkbox / switch）勾上，绝不写进日期框
+      if (isCurrentJobValue(value)) {
+        var toggled = clickCurrentJobToggle(el);
+        if (toggled) {
+          filled += 1;
+          keyCounts[key] = count + 1;
+          if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
+          highlight(el);
+        } else if (!looksLikeDateInput(el) && setNativeValue(el, String(value).trim())) {
+          // 没有「至今」开关、但这是个普通文本框（结束时间）→ 直接写“至今”
+          filled += 1;
+          keyCounts[key] = count + 1;
+          if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
+          highlight(el);
+        } else if (skipped.length < 12) {
+          skipped.push({ key: key, reason: 'current_job_no_toggle' });
+        }
+        continue;
+      }
 
       // v1.5.2：整组优先 —— 在把值拆成“年/月/日部件”之前，先用完整日期尝试年/月/日控件，
       // 否则部件值（如 "9"）无法组成日期，整组永远不会被尝试，只剩半截填充。
@@ -2041,6 +2510,15 @@
         if (!ok) skipped.push({ key: key, reason: 'readonly_picker_not_found' });
       } else {
         ok = setNativeValue(el, value);
+        if (!ok && el.tagName && el.tagName.toLowerCase() === 'select') {
+          // 排名/绩点常常是区间下拉：15/120 要换算成「前20%」才匹配得上
+          var alts = valueCandidates(key, value);
+          for (var ai = 0; ai < alts.length && !ok; ai++) {
+            if (alts[ai] === value) continue;
+            ok = setNativeValue(el, alts[ai]);
+            if (ok) value = alts[ai];
+          }
+        }
         if (!ok) skipped.push({ key: key, reason: 'set_value_failed' });
       }
 
@@ -2074,6 +2552,7 @@
         }
       });
       filled += fillNamedRadioGroups(profile, keyCounts, filledKeys);
+      filled += fillPhoenixRadioGroups(profile, keyCounts, filledKeys);
     }
 
     // 无关联 input 的自定义下拉宿主（仅展示层）
@@ -2118,6 +2597,9 @@
         } catch (_) { /* ignore */ }
       }
     }
+
+    // 别把弹层留在页面上
+    try { closePhoenixPanels(); } catch (_) { /* ignore */ }
 
     return { filled: filled, expanded: expanded, filledKeys: filledKeys, skipped: skipped, forced: forced };
   }
