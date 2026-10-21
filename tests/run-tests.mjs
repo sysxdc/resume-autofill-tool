@@ -1309,6 +1309,28 @@ test('v1.3.5: 分页下拉 / 滚轮 / 英文表头', () => {
   assert.ok(/monthOnly/.test(src), '只按月翻的日历应放宽迭代上限');
 });
 
+
+console.log('v1.3.6 focus 展开 + 直写兜底');
+
+test('v1.3.6: 打开弹层要 focus（Element el-date-picker 监听 focus）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function openPicker/.test(src), '应有统一的 openPicker');
+  assert.ok(/el\.focus\(\)/.test(src), '应先 focus');
+  assert.ok(/FocusEvent\('focusin'/.test(src), '应派发 focusin');
+  assert.ok(/el-icon-date|\[class\*="date-icon"\]/.test(src), '应点右侧日历图标兜底');
+  assert.ok(/openPicker\(el\)/.test(src), '打开/重开弹层都应走 openPicker');
+});
+
+test('v1.3.6: 只读框按 data-fmt 直写兜底', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function formatDateByHint/.test(src), '应按 data-fmt 格式化');
+  assert.ok(/data-fmt/.test(src), '应读取 data-fmt');
+  assert.ok(/function forceSetReadonly/.test(src), '应有直写兜底');
+  assert.ok(/getOwnPropertyDescriptor\(Object\.getPrototypeOf\(el\), 'value'\)/.test(src), '应用原生 setter 以触达框架');
+  assert.ok(/resolve\(forceSetReadonly\(el, desired\) \? 'forced' : false\)/.test(src), '失败时返回 forced 标记');
+  assert.ok(/forced: result\.forced \|\| \[\]/.test(src), '应答应透传 forced');
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

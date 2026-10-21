@@ -3,6 +3,7 @@
  * 依赖 shared/match.js（须在 manifest content_scripts 中先于本文件加载）。
  * FILL_FORM / SCAN_FIELDS / COLLECT_FIELDS / APPLY_MAPPINGS
  * 不自动提交；不填 password/file；不盲勾 checkbox。
+ * v1.3.6: focus 展开弹层（Element el-date-picker）+ 只读框直写兜底。
  * v1.3.5: 年/月/日 三件套（原生 select 组）、分页下拉、滚轮选列、英文表头。
  * v1.3.4: 日历网格型日期面板（翻月 + 点日，最外层面板判定）。
  * v1.3.3: 多表格日期面板（年/月/日 分组识别 + 确定按钮）。
@@ -954,9 +955,59 @@
     return [];
   }
 
+  /** 打开只读控件的弹层：先 focus（Element 的 el-date-picker 监听 focus），再 click，再点右侧日历图标 */
+  function openPicker(el) {
+    try { if (el.focus) el.focus(); } catch (_) { /* ignore */ }
+    try {
+      el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+      el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    } catch (_) { /* 老浏览器不支持 FocusEvent */ }
+    simulateClick(el);
+    var box = el.parentElement;
+    if (box) {
+      var icon = box.querySelector('i[class*="date"], .el-input__icon, [class*="date-icon"]');
+      if (icon) {
+        setTimeout(function () { try { simulateClick(icon); } catch (_) { /* ignore */ } }, 140);
+      }
+    }
+  }
+
+  /** 按 data-fmt / placeholder 格式化日期 */
+  function formatDateByHint(el, desired) {
+    var p = parseDateParts(desired);
+    if (!p) return String(desired);
+    var fmt = String(el.getAttribute('data-fmt') || el.getAttribute('format') || el.getAttribute('data-format') || '');
+    var mm = ('0' + p.m).slice(-2);
+    var dd = ('0' + p.d).slice(-2);
+    if (/yyyy\/MM\/dd/i.test(fmt)) return p.y + '/' + mm + '/' + dd;
+    if (/yyyy年MM月dd日/.test(fmt)) return p.y + '年' + mm + '月' + dd + '日';
+    if (/yyyy-MM-dd/i.test(fmt)) return p.y + '-' + mm + '-' + dd;
+    if (/yyyy-MM/i.test(fmt)) return p.y + '-' + mm;
+    if (/^yyyy$/i.test(fmt)) return p.y;
+    return desired;
+  }
+
+  /** 最后一招：只读框直接写值（readonly 只挡用户输入，挡不住脚本），并派发 input/change/blur */
+  function forceSetReadonly(el, desired) {
+    var v = formatDateByHint(el, desired);
+    try {
+      var desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), 'value');
+      if (desc && desc.set) desc.set.call(el, v);
+      else el.value = v;
+    } catch (_) {
+      el.value = v;
+    }
+    try {
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true }));
+    } catch (_) { /* ignore */ }
+    return String(el.value || '').trim() !== '';
+  }
+
   function fillReadonlyPicker(el, desired) {
     var before = String(el.value || '');
-    simulateClick(el);
+    openPicker(el);
     return new Promise(function (resolve) {
       setTimeout(async function () {
         // ① 先试「年 / 月 / 日」多表格日期面板
@@ -969,22 +1020,23 @@
             : await tryDatePanel(el, desired);
           if (panelOk && dateValueMatches(el.value, desired)) { resolve(true); return; }
           // 面板路径失败：重开再走普通候选路径
-          simulateClick(el);
+          openPicker(el);
           await sleep(300);
         }
         var cands = pickVisibleCandidates(desired);
         if (!cands.length) {
           cands = await pageUntilFound(desired);
         }
-        if (!cands.length) { resolve(false); return; }
+        if (!cands.length) { resolve(forceSetReadonly(el, desired) ? 'forced' : false); return; }
         var i = 0;
         var tryNext = function () {
           if (i >= cands.length) {
             // 全部失败：尽量还原原值，避免留下错值
             if (String(el.value || '') !== before) {
-              try { simulateClick(el); } catch (_) { /* ignore */ }
+              try { openPicker(el); } catch (_) { /* ignore */ }
             }
-            resolve(false);
+            // 最后一招：只读框直写（该站点是 jQuery 表单，保存时读 input.value）
+            resolve(forceSetReadonly(el, desired) ? 'forced' : false);
             return;
           }
           simulateClick(cands[i].el);
@@ -1088,6 +1140,7 @@
     var opts = options || {};
     var filled = 0;
     var filledKeys = [];
+    var forced = [];
     var skipped = [];
     var keyCounts = {};
     var els = iterFillableFields();
@@ -1149,6 +1202,7 @@
           continue;
         }
         ok = await fillReadonlyPicker(el, value);
+        if (ok === 'forced') forced.push(key);
         if (!ok) skipped.push({ key: key, reason: 'readonly_picker_not_found' });
       } else {
         ok = setNativeValue(el, value);
@@ -1184,7 +1238,7 @@
       });
     }
 
-    return { filled: filled, filledKeys: filledKeys, skipped: skipped };
+    return { filled: filled, filledKeys: filledKeys, skipped: skipped, forced: forced };
   }
 
   /**
@@ -1261,7 +1315,8 @@
       ok: true,
       filled: result.filled,
       filledKeys: result.filledKeys,
-      skipped: result.skipped || []
+      skipped: result.skipped || [],
+      forced: result.forced || []
     };
   }
 
