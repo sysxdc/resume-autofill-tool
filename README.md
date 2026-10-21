@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.5.17**
+当前版本：**1.5.18**
 
 ## 功能概览
 
@@ -151,8 +151,8 @@ node tests/run-dom-tests.mjs    # 只跑真实浏览器里的控件行为基线
 
 | 套件 | 断言什么 | 能不能证明「填得对」 |
 |---|---|---|
-| `tests/run-tests.mjs`（180 项） | 关键词/模糊评分、denylist、`profileValue`、select 匹配、AI merge 纯函数、manifest 结构 | **不能**，只做 smoke：防手滑删类名/常量 |
-| `tests/run-dom-tests.mjs`（9 项 + `fixtures/dom/*.html`） | 真实 Chromium 里「怎么打开 / 怎么写进去 / 回读是什么 / 有什么坑」 | 能，这是唯一的行为证据 |
+| `tests/run-tests.mjs`（186 项） | 关键词/模糊评分、denylist、`profileValue`、select 匹配、AI merge 纯函数、manifest 结构 | **不能**，只做 smoke：防手滑删类名/常量 |
+| `tests/run-dom-tests.mjs`（20 项 + `fixtures/dom/*.html`） | 真实 Chromium 里「怎么打开 / 怎么写进去 / 回读是什么 / 有什么坑」 | 能，这是唯一的行为证据 |
 | `tests/resume-parser.test.mjs`（20 项） | 简历文本 → 结构化 profile | 能（解析域） |
 
 ### 为什么要有 DOM 基线
@@ -221,6 +221,26 @@ resume-autofill-tool/
 - **北森「面试站点」不会硬填**：选项常是「XX 大学（线下站）」这类宣讲站点，档案里没有对应数据，
   宁可不填也不猜；提交前手动选一下。
 
+## 日期策略层（`shared/date-strategies.js`）
+
+能力层回答「期望值/回读值差到什么程度」，策略层回答「按什么顺序试、每步怎么验、失败了记什么」：
+
+```js
+S.fillDate(input, '2024-03-15', { perStrategyMs: 4000 })
+// → { ok, level:'exact'|'day-approx'|'month-only'|'mismatch', strategy:'grid-click',
+//     attempts:[{id:'native-input',level:'n/a'}, {id:'panel-nav',level:'exact'}], value }
+```
+
+- **顺序固定**：`native-input → native-selects → fiber-props → panel-input → panel-nav → keyboard-pick → grid-click → confirm`
+- **每步写完立刻回读判级**：`exact` 立即停；可接受但非 `exact` 记 best 后继续找更精确的；全失败 → `ok:false` **留空**
+- **同槽位可叠加**：内置实现先跑，返回 `false` 才跑注册进来的 → antd 的 `panel-nav` 不会顶掉通用「年/月/日表格」，反之亦然
+- **站点扩展只写策略，不改顺序**：`autofill.js` 里 `S.register('panel-nav', tryAntdPanel)` 这样一行即可
+- **预算护栏**：`perStrategyMs` 上限 + 模块活动预算，翻月/翻年这类长循环必须尊重它
+  （曾因为一个难缠控件吃掉全部预算，把 7 个日期字段拖到整轮超时）
+
+`content/autofill.js` 里原先 20 多个并列 `tryXxx` 的顺序判断已收敛到这一处：
+`fillReadonlyPickerAntd` 现在是「打开面板 → `S.fillDate(4 个槽位)` → 不行再走候选路径」。
+
 ## 日期能力层（`shared/date-capability.js`）
 
 日期控件是网申里最花的一类：同一个「2023-09」，有的站点要选年月、有的必须选到某天、
@@ -250,6 +270,24 @@ Date.STRATEGY_ORDER            // native-input → native-selects → fiber-prop
 （`#__ra_panel_host__.dataset.lastResult`），降级不再静默。
 
 ## Changelog
+
+### 1.5.18
+
+- **新增日期策略层** `shared/date-strategies.js`：`fillDate()` 按 `STRATEGY_ORDER` 依次试、
+  每步回读判级、`exact` 即停、可接受非精确记 best、全失败留空；`register()` 让站点特有实现
+  （antd v3 面板 / fiber 直写 / antd 面板 / 日格）挂到固定槽位，同槽位内置在前、注册在后。
+- **收编原 `autofill.js` 里的日期工具**：`findDatePanel` / `numericGroups` / `clickPanelItem` /
+  `clickPanelConfirm` / `gridHeader` / `pickArrow` / `setPanelPeriod` / `gridNavigate` /
+  `gridClickDay` / `isCalendarGrid` / `expandToActionableHost` / `looksLikeWeekHeader` 统一搬进策略层，
+  页面侧改为委托（保留旧函数名，调用点不动）。
+- `fillReadonlyPickerAntd` 的 4 段 if 链换成一次 `S.fillDate(['fiber-props','panel-input','panel-nav','grid-click'])`。
+- **修掉一个会挂死整轮填充的缺陷**：只读控件的异步策略链里如果抛异常，`resolve` 永远不会被调用，
+  悬浮窗就停在「正在填写…」。现在整段包了 try/catch，异常时记录 `dateTries` 并 `resolve(false)`。
+- 预算护栏：`perStrategyMs`（默认 4000ms）+ 模块活动预算，翻月/翻年循环必须提前退出。
+- DOM 基线 14 → **20 条**：新增 6 条直接跑 `fillDate` 的用例——三个原生 select 合起来判级、
+  年/月/日表格、英文日历翻月、网格年+月箭头、**只有年月的面板搞不定就留空（零错填）**、
+  **注册一个站点策略后同一个控件就能填**。
+- 真实 wecruit 回归：17–18 项照旧填上（页面自带值的字段会被跳过，计数会浮动），`degradedDates` 为空。
 
 ### 1.5.17
 

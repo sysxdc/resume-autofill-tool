@@ -26,6 +26,8 @@
   var M = globalThis.ResumeAutofillMatch;
   // 日期能力层：统一模型 / 精度判级 / 控件探测 / 策略顺序（shared/date-capability.js）
   var D = globalThis.ResumeAutofillDate || null;
+  // 日期策略层：按固定顺序试 + 每步回读判级（shared/date-strategies.js）
+  var S = globalThis.ResumeAutofillDateStrategies || null;
   if (!M) {
     console.warn('[简历填写工具] ResumeAutofillMatch 未加载');
     return;
@@ -2476,6 +2478,9 @@
 
   // ————— v1.3.3：多表格日期面板（年/月/日 分栏）—————
 
+  // 最近一次日期策略尝试（诊断用；fillReadonlyPickerAntd 写入、fill() 读出来）
+  var lastDateTries = [];
+
   var DATE_PANEL_SEL = '.layui-laydate, .laydate, .el-picker-panel, .el-date-picker, ' +
     '.ant-picker-dropdown, .flatpickr-calendar, [class*="datepicker"], [class*="date-picker"], ' +
     '[class*="datePicker"], [class*="calendar"], [class*="DatePicker"]';
@@ -2511,6 +2516,7 @@
 
   /** 列表容器常与“确定/箭头”同父：往上找带按钮的容器，最多 2 层 */
   function expandToActionableHost(host) {
+    if (S) return S.expandToActionableHost(host);
     var h = host;
     for (var up = 0; up < 2 && h && h.parentElement; up++) {
       var hasBtn = h.querySelectorAll('button, [class*="arrow"], [role="button"]').length > 0;
@@ -2527,6 +2533,7 @@
 
   /** 可见的日期面板：先按常见类名找；找不到就按“含年份文本的可见 table/ul”兜底 */
   function findDatePanel(yearText) {
+    if (S) return S.findDatePanel(yearText);
     var byClass = [];
     try {
       Array.prototype.forEach.call(document.querySelectorAll(DATE_PANEL_SEL), function (n) {
@@ -2605,6 +2612,7 @@
 
   /** 在面板里点一个“文本等于目标数字”的叶子项（年/月/日通用） */
   function clickPanelItem(scope, text, hintRe) {
+    if (S) return S.clickPanelItem(scope, text, hintRe);
     if (!scope) return false;
     var want = String(text || '').trim();
     if (!want) return false;
@@ -2635,6 +2643,7 @@
 
   /** 面板里的确认按钮（确定/确认/完成/OK）——有些日期面板点完还要确认 */
   function clickPanelConfirm(scope) {
+    if (S) return S.clickPanelConfirm(scope);
     var root = scope || document;
     var nodes = root.querySelectorAll('button, a, span, div, input[type=button]');
     for (var i = 0; i < nodes.length; i++) {
@@ -2815,6 +2824,7 @@
     'july', 'august', 'september', 'october', 'november', 'december'];
 
   function looksLikeWeekHeader(txt) {
+    if (S) return S.looksLikeWeekHeader(txt);
     var t = String(txt || '');
     if (/日\s*一\s*二\s*三\s*四\s*五\s*六/.test(t)) return true;
     var m = t.match(/sun|mon|tue|wed|thu|fri|sat|su|mo|tu|we|th|fr|sa/gi) || [];
@@ -2824,6 +2834,7 @@
   }
 
   function isCalendarGrid(panel) {
+    if (S) return S.isCalendarGrid(panel);
     if (!panel) return false;
     if (panel.querySelector('td.prev-month, td.next-month, td.current, .el-date-table, .laydate-theme-grid')) return true;
     var dayBtn = panel.querySelector('td[class*="available"], td[class*="disabled"]');
@@ -2851,6 +2862,7 @@
   }
 
   function gridHeader(panel) {
+    if (S) return S.gridHeader(panel);
     var txt = '';
     var heads = panel.querySelectorAll('[class*="header"], [class*="title"], .laydate-header');
     for (var i = 0; i < heads.length; i++) txt += ' ' + String(heads[i].textContent || '');
@@ -2880,6 +2892,7 @@
 
   /** 找翻页箭头：unit=year 用双箭头(d-arrow-*)，unit=month 用单箭头(arrow-*) */
   function pickArrow(panel, dir, unit) {
+    if (S) return S.pickArrow(panel, dir, unit);
     var suffix = dir < 0 ? 'left' : 'right';
     var cls = unit === 'year' ? '.d-arrow-' + suffix : '.arrow-' + suffix;
     var byCls = panel.querySelector(cls);
@@ -2903,6 +2916,7 @@
 
   /** 面板自带「年 / 月」下拉或年份输入框时直接设值（flatpickr / laydate 风格） */
   function setPanelPeriod(panel, y, m) {
+    if (S) return S.setPanelPeriod(panel, y, m);
     var changed = false;
     try {
       Array.prototype.forEach.call(panel.querySelectorAll('select'), function (sel) {
@@ -2964,6 +2978,7 @@
   }
 
   function gridClickDay(panel, day) {
+    if (S) return S.gridClickDay(panel, day);
     var cells = panel.querySelectorAll('td');
     var fallback = null;
     for (var i = 0; i < cells.length; i++) {
@@ -2981,29 +2996,12 @@
   }
 
   async function tryCalendarGrid(el, desired) {
-    var parts = parseDateParts(desired);
-    if (!parts) return false;
-    var panel = findDatePanel(parts.y);
-    if (!panel) return false;
-    var navOk = await gridNavigate(panel, parseInt(parts.y, 10), parseInt(parts.m, 10));
-    if (!navOk) return false;
-    await sleep(150);
-    panel = findDatePanel(parts.y) || panel;
-    if (parts.d) {
-      var dayOk = gridClickDay(panel, parseInt(parts.d, 10));
-      if (!dayOk) return false;
-    }
-    await sleep(220);
-    if (!dateValueMatches(el.value, desired)) {
-      var again = findDatePanel(parts.y);
-      if (again) clickPanelConfirm(again);
-      await sleep(260);
-    }
-    return true;
+    return S ? S.fillDate(el, desired, { order: ['grid-click'] }).then(function (r) { return !!r.ok; }) : false;
   }
 
   /** 把面板里的数字列表分组：年份组(>=1900) / 月份组(<=12) / 日期组(<=31) */
   function numericGroups(root) {
+    if (S) return S.numericGroups(root);
     var groups = [];
     if (!root || !root.querySelectorAll) return groups;
     var sel = 'table, ul, ol, dl, [class*="list"], [role="listbox"], [class*="column"], [class*="col"]';
@@ -3027,42 +3025,7 @@
 
   /** 依次点 年 → 月 → 日；每步按“分组类型”重新定位（面板常被整体重渲染） */
   async function tryDatePanel(el, desired) {
-    var parts = parseDateParts(desired);
-    if (!parts) return false;
-    var root = findDatePanel(parts.y);
-    if (!root) return false;
-    // 上溯到能同时看到多组数字列表的祖先（多表格面板的公共容器）
-    var scope = root;
-    for (var u = 0; u < 4 && scope.parentElement; u++) {
-      var types = {};
-      numericGroups(scope).forEach(function (g) { types[g.type] = 1; });
-      if (Object.keys(types).length >= 2) break;
-      scope = scope.parentElement;
-    }
-    var step = function (text, type) {
-      var groups = numericGroups(scope).filter(function (g) { return g.type === type; });
-      for (var i = 0; i < groups.length; i++) {
-        if (clickPanelItem(groups[i].el, text, null)) return true;
-      }
-      return false;
-    };
-    var g0 = numericGroups(scope).map(function (g) { return g.type + ':' + g.count; });
-    var okY = step(parts.y, 'year');
-    if (!okY) return false;
-    await sleep(220);
-    var okM = step(parts.m, 'month');
-    if (!okM) return false;
-    await sleep(220);
-    if (parts.d) {
-      var okD = step(parts.d, 'day');
-      if (!okD) return false;
-    }
-    await sleep(180);
-    if (!dateValueMatches(el.value, desired)) {
-      if (!clickPanelConfirm(scope)) clickPanelConfirm(findDatePanel(parts.y) || scope);
-    }
-    await sleep(300);
-    return true;
+    return S ? S.fillDate(el, desired, { order: ['panel-nav'] }).then(function (r) { return !!r.ok; }) : false;
   }
 
   /** 目标是否已是完整日期（允许 1998-05-20 / 1998/5/20 / 1998年05月20日） */
@@ -3653,6 +3616,7 @@
       closeAllAntdPanels();
       setTimeout(function () { openPicker(el); }, 160);
       setTimeout(async function () {
+        try {
         // ⓿ Ant Design 面板：先等弹层挂载再判定年/月/日模式
         var waited = await waitForAntdPanel(900);
         if (!waited) {
@@ -3669,31 +3633,20 @@
           resolve(false);
           return;
         }
-        // (0) antd v3 日历（.ant-calendar）：面板输入框 / 年面板 / 月面板
-        if (waited && isAntdV3Picker(el)) {
-          var v3ok = false;
-          try { v3ok = await tryAntdV3Calendar(el, desired); } catch (_) { v3ok = false; }
-          if (v3ok && dateValueMatches(el.value, desired)) { resolve(true); return; }
-        }
-        // ① 先试「年 / 月 / 日」多表格日期面板
         var parts = parseDateParts(desired);
-        var antdOk = false;
-        try { antdOk = await tryAntdPanel(el, desired); } catch (e) { antdOk = false; }
-        if (antdOk && dateValueMatches(el.value, desired)) { resolve(true); return; }
-        // antd v5 日面板：格子带 title="YYYY-MM-DD"，直接按 title 点（2026 快手）
-        if (!antdOk || !dateValueMatches(el.value, desired)) {
-          var dayOk = false;
-          try { dayOk = await tryAntdDayCell(el, desired); } catch (_) { dayOk = false; }
-          if (dayOk && dateValueMatches(el.value, desired)) { resolve(true); return; }
-        }
-        var pid = parts ? findDatePanel(parts.y) : null;
-        if (parts && pid) {
-          // ② 日历网格（‹‹ ‹ 十月 2026 › ›› + 星期表头）走翻月 + 点日；其余走年/月/日分栏
-          var panelOk = isCalendarGrid(pid)
-            ? await tryCalendarGrid(el, desired)
-            : await tryDatePanel(el, desired);
-          if (panelOk && dateValueMatches(el.value, desired)) { resolve(true); return; }
-          // 面板路径失败：重开再走普通候选路径
+        // 面板已打开：按策略层固定顺序试（fiber 直写 → v3 面板 → antd 面板 → 日格 → 通用面板/网格），
+        // 每步写完立刻回读判级，exact 即停；顺序由 STRATEGY_ORDER 决定，这里不再硬编码先后。
+        if (waited && S && S.fillDate) {
+          var res = null;
+          try {
+            res = await S.fillDate(el, desired, {
+              order: ['fiber-props', 'panel-input', 'panel-nav', 'grid-click'],
+              budgetMs: 9000
+            });
+          } catch (_) { res = null; }
+          if (res) lastDateTries = res.attempts || [];
+          if (res && res.ok) { resolve(true); return; }
+          // 策略层没搞定：antd 受控组件直写不可靠，重开面板再走候选路径
           openPicker(el);
           await sleep(300);
         }
@@ -3726,6 +3679,13 @@
           }, 300);
         };
         tryNext();
+        } catch (err) {
+          // 策略链里任何异常都不许挂死整轮填充（之前少这层，抛错后 resolve 永不调用 → 「正在填写…」卡死）
+          try { if (S) lastDateTries.push({ id: 'error', level: String((err && err.message) || err).slice(0, 60) }); } catch (_) { /* ignore */ }
+          try { el.blur(); } catch (_) { /* ignore */ }
+          try { closeAllAntdPanels(); } catch (_) { /* ignore */ }
+          resolve(false);
+        }
       }, 640);
     });
   }
@@ -3934,6 +3894,7 @@
     var filled = 0;
     var filledKeys = [];
     var degradedDates = [];
+    lastDateTries = [];
     var forced = [];
     var skipped = [];
     var keyCounts = {};
@@ -4251,7 +4212,7 @@
 
     return {
       filled: filled, expanded: expanded, filledKeys: filledKeys, skipped: skipped,
-      degradedDates: degradedDates, forced: forced, timedOut: timedOut
+      degradedDates: degradedDates, dateTries: lastDateTries, forced: forced, timedOut: timedOut
     };
   }
 
@@ -4548,6 +4509,25 @@
       scan: function () { return handleScan(); }
     };
   } catch (_) { /* ignore */ }
+
+  // ── 站点特有日期策略注册（顺序表槽位：fiber-props / panel-input / panel-nav / grid-click）──
+  // 通用实现（年/月/日表格、日历网格、原生 select）在 shared/date-strategies.js 里；
+  // 这里只补 antd 系需要「组件内部值」和「框架类名」的部分。
+  if (S && S.register) {
+    S.register('fiber-props', function (el, desired) {
+      try { return fillAntdPickerByModel(el, desired, desired); } catch (_) { return false; }
+    });
+    S.register('panel-input', function (el, desired) {
+      if (!isAntdV3Picker(el)) return false;
+      return tryAntdV3Calendar(el, desired);
+    });
+    S.register('panel-nav', function (el, desired) {
+      try { return tryAntdPanel(el, desired); } catch (_) { return false; }
+    });
+    S.register('grid-click', function (el, desired) {
+      try { return tryAntdDayCell(el, desired); } catch (_) { return false; }
+    });
+  }
 
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     if (message && message.type === 'FILL_FORM') {

@@ -2206,6 +2206,23 @@ test('v1.5.17 autofill 已接入能力层（不是各写一份）', () => {
   assert.ok(js.indexOf('shared/date-capability.js') < js.indexOf('content/autofill.js'), '能力层先于 autofill 注入');
 });
 
+test('v1.5.18 日期策略层：顺序 / 注册 / 判别', () => {
+  const S = require(path.join(root, 'shared/date-strategies.js'));
+  assert.equal(typeof S.fillDate, 'function');
+  assert.equal(typeof S.register, 'function');
+  // 顺序表来自能力层，两层不能各存一份
+  assert.deepEqual(S.STRATEGY_ORDER, DateCap.STRATEGY_ORDER);
+  // 内置四类通用策略必须在册
+  const avail = S.available();
+  ['native-input', 'native-selects', 'panel-nav', 'grid-click'].forEach((id) => {
+    assert.ok(avail[id] && avail[id].length >= 1, '内置策略 ' + id);
+  });
+  // 注册：合法槽位可叠加，非法 id 拒收
+  assert.equal(S.register('panel-nav', async () => true), true);
+  assert.equal(S.available()['panel-nav'].length, 2, '同槽位可叠加（内置在前）');
+  assert.equal(S.register('not-a-slot', async () => true), false, '顺序表外的 id 不收');
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

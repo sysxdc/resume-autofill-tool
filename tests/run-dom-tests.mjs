@@ -309,6 +309,7 @@ const CASES = [
 
 // ── 能力层用例：在真实控件上验证 probeControl / matchLevel ──
 const CAP_SCRIPT = path.join(__dirname, '..', 'shared', 'date-capability.js');
+const STRAT_SCRIPT = path.join(__dirname, '..', 'shared', 'date-strategies.js');
 
 const CAP_CASES = [
   {
@@ -380,6 +381,101 @@ const CAP_CASES = [
   },
 ];
 
+// ── 策略层用例：让 fillDate 直接驱动这些真实控件（这是「我们的代码」而不只是契约）──
+const FILL_CASES = [
+  {
+    name: 'fill:r3 三个原生 select（年/月不补零、日补零）',
+    file: 'r3-ymd-selects.html',
+    async run(page) {
+      const r = await page.evaluate(async () => {
+        const S = window.ResumeAutofillDateStrategies;
+        const out = await S.fillDate(document.querySelector('#by'), '1985-09-21');
+        return { out, y: document.querySelector('#by').value, m: document.querySelector('#bm').value, d: document.querySelector('#bd').value };
+      });
+      eq(r.y, '1985', '年');
+      eq(r.m, '9', '月');
+      eq(r.d, '21', '日');
+      eq(r.out.ok, true, 'ok');
+      eq(r.out.level, 'exact', '三个 select 合起来判级');
+      eq(r.out.strategy, 'native-selects', '命中的策略');
+    },
+  },
+  {
+    name: 'fill:datepanel-replica 年表/月表/日表（table-panel）',
+    file: 'datepanel-replica.html',
+    async run(page) {
+      await nativeClick(page, '#birthday');
+      ok(await visible(page, '#dpPanel'), '面板打开');
+      const r = await page.evaluate(async () => window.ResumeAutofillDateStrategies.fillDate(document.querySelector('#birthday'), '2004-09-21'));
+      eq(await value(page, '#birthday'), '2004-09-21', '回读');
+      eq(r.level, 'exact', '判级');
+      eq(r.strategy, 'panel-nav', '命中表格面板策略');
+    },
+  },
+  {
+    name: 'fill:r1 英文日历（grid-click 翻月 + 点日 + OK）',
+    file: 'r1-en-datepicker.html',
+    async run(page) {
+      await nativeClick(page, '#bd');
+      ok(await visible(page, '#dp'), '面板打开');
+      const r = await page.evaluate(async () => window.ResumeAutofillDateStrategies.fillDate(document.querySelector('#bd'), '2000-06-21', { perStrategyMs: 8000 }));
+      eq(await value(page, '#bd'), '2000-06-21', '回读');
+      eq(r.level, 'exact', '判级');
+    },
+  },
+  {
+    name: 'fill:calendargrid 年箭头 + 月箭头 + 点日（grid-click）',
+    file: 'calendargrid-replica.html',
+    async run(page) {
+      await nativeClick(page, '#bd');
+      ok(await visible(page, '#picker'), '面板打开');
+      const r = await page.evaluate(async () => window.ResumeAutofillDateStrategies.fillDate(document.querySelector('#bd'), '2027-01-21', { perStrategyMs: 8000 }));
+      eq(await value(page, '#bd'), '2027-01-21', '回读');
+      eq(r.level, 'exact', '判级');
+    },
+  },
+  {
+    name: 'fill:r11 只有年月的面板 —— 通用策略搞不定就留空，不许乱填',
+    file: 'r11-antd-month.html',
+    async run(page) {
+      await page.focus('#enroll');
+      ok(await visible(page, '#dd'), '面板打开');
+      const r = await page.evaluate(async () => window.ResumeAutofillDateStrategies.fillDate(document.querySelector('#enroll'), '2021-09'));
+      eq(await value(page, '#enroll'), '', '没填上就留空（零错填）');
+      ok(r.ok === false, '如实报告失败');
+      ok(r.attempts.length > 0, '有尝试记录：' + JSON.stringify(r.attempts));
+    },
+  },
+  {
+    name: 'fill:r11 注册一个站点策略后就能填（注册表扩展路径）',
+    file: 'r11-antd-month.html',
+    async run(page) {
+      await page.focus('#enroll');
+      ok(await visible(page, '#dd'), '面板打开');
+      const r = await page.evaluate(async () => {
+        const S = window.ResumeAutofillDateStrategies;
+        S.register('panel-nav', async (el) => {
+          // 站点策略：年视图箭头 + 点月份格
+          const hv = document.querySelector('#hv').textContent;
+          const cur = parseInt(hv, 10);
+          const want = 2021;
+          const btn = document.querySelector('.ant-picker-header-next-btn');
+          for (let i = 0; i < Math.abs(want - cur); i++) btn.click();
+          await new Promise((r) => setTimeout(r, 200));
+          const cells = Array.from(document.querySelectorAll('#tb td'));
+          if (cells[8]) cells[8].click();   // 3 列 × 3 行 → 第 9 个是 9 月
+          return true;
+        });
+        const out = await S.fillDate(document.querySelector('#enroll'), '2021-09');
+        return out;
+      });
+      eq(await value(page, '#enroll'), '2021-09', '回读');
+      eq(r.level, 'exact', '判级');
+      eq(r.strategy, 'panel-nav', '命中注册的策略');
+    },
+  },
+];
+
 // ── 运行 ──────────────────────────────────────────────────
 (async function main() {
   const filter = process.argv[2] || '';
@@ -388,7 +484,7 @@ const CAP_CASES = [
   let passed = 0;
   const failed = [];
 
-  for (const c of CASES.concat(CAP_CASES)) {
+  for (const c of CASES.concat(CAP_CASES).concat(FILL_CASES)) {
     if (filter && !c.name.includes(filter) && !c.file.includes(filter)) continue;
     const page = await browser.newPage();
     const pageErrors = [];
@@ -396,6 +492,7 @@ const CAP_CASES = [
     try {
       await page.goto(fileUrl(c.file));
       await page.addScriptTag({ path: CAP_SCRIPT });
+      await page.addScriptTag({ path: STRAT_SCRIPT });
       await c.run(page);
       if (pageErrors.length) throw new Fail('页面 JS 报错: ' + pageErrors.join('; '));
       passed++;
