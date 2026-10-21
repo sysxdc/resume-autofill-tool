@@ -3,6 +3,7 @@
  * 依赖 shared/match.js（须在 manifest content_scripts 中先于本文件加载）。
  * FILL_FORM / SCAN_FIELDS / COLLECT_FIELDS / APPLY_MAPPINGS
  * 不自动提交；不填 password/file；不盲勾 checkbox。
+ * v1.5.6: 北森 Phoenix 补齐（svg 勾选热区、弹层差集判定、年月面板、搜索重渲染等待、计数按 key+标签 分桶）。
  * v1.5.5: 北森 Phoenix 网申（phoenix-select 下拉/日期、字典与地区弹层、div radio）+ 按需点「添加」展开分区。
  * v1.3.7: Ant Design DatePicker（年/月面板 + 年月值 YYYY-MM）。
  * v1.3.6: focus 展开弹层（Element el-date-picker）+ 只读框直写兜底。
@@ -707,10 +708,12 @@
   }
 
   function simulateClick(el) {
+    if (!el) return;
+    // SVG 元素没有 el.click()，统一派发 click 事件（北森字典/地区的勾选热区就是 svg）
     try {
       el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
       el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-      el.click();
+      el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     } catch (_) {
       try { el.click(); } catch (e) { /* ignore */ }
     }
@@ -980,8 +983,21 @@
     return null;
   }
 
+  /** 弹层右侧的「已选 x/y」计数，用来确认勾选真的生效（-1 表示没这个区域） */
+  function phoenixPanelSelectedCount(panel) {
+    var right = panel.querySelector('.right-container');
+    if (!right) return -1;
+    var m = String(right.textContent || '').match(/已选(?:地区)?\s*(\d+)/);
+    return m ? parseInt(m[1], 10) : -1;
+  }
+
+  function phoenixIconOf(row) {
+    return row.querySelector('.icon-container svg') ||
+      row.querySelector('.icon-container') || row;
+  }
+
   /** 字典 / 地区弹层：搜索 → 勾选图标（圆形单选） → 确定 */
-  async function fillPhoenixPanel(host, value, panel) {
+  async function fillPhoenixPanel(host, value, panel, key) {
     if (!panel) return false;
     var isArea = panel.classList.contains('area-selector-container');
     var itemSel = isArea ? '.area-item-container' : '.list-item-container';
@@ -993,16 +1009,31 @@
     for (var s = 0; s < texts.length; s++) {
       if (search) {
         setInputRaw(search, texts[s]);
-        await sleep(250);
+        // 等列表按搜索词重渲染，否则点到的是即将被替换的旧行
+        await sleep(450);
       }
       var hit = await phoenixFindInList(panel, itemSel, value);
       if (!hit) continue;
-      // 勾选热区在 svg 图标上（合成 click 点在容器上不生效）
-      simulateClick(hit.el.querySelector('.icon-container svg') ||
-        hit.el.querySelector('.icon-container') || hit.el);
-      await sleep(250);
+      simulateClick(phoenixIconOf(hit.el));
+      var selected = false;
+      for (var t = 0; t < 5 && !selected; t++) {
+        await sleep(200);
+        selected = phoenixPanelSelectedCount(panel) > 0;
+      }
+      if (!selected) {
+        // 列表刚重渲染时第一次点可能落空，重取一行再点一次
+        hit = await phoenixFindInList(panel, itemSel, value);
+        if (hit) {
+          simulateClick(phoenixIconOf(hit.el));
+          for (var t2 = 0; t2 < 5 && !selected; t2++) {
+            await sleep(200);
+            selected = phoenixPanelSelectedCount(panel) > 0;
+          }
+        }
+      }
+      if (!selected) continue;
       phoenixPanelConfirm(panel);
-      if (await waitUntil(function () { return phoenixHostFilled(host); }, 1200, 150)) return true;
+      if (await waitUntil(function () { return phoenixHostFilled(host); }, 1500, 150)) return true;
     }
     closePhoenixPanels();
     return false;
@@ -1034,12 +1065,45 @@
     return false;
   }
 
+  /** 月份选择器（教育经历的起止时间）：翻年 → 点月份 */
+  async function fillPhoenixMonth(host, value, panel) {
+    var parts = parseDateParts(value);
+    if (!panel || !parts) return false;
+    var wantYear = parseInt(parts.y, 10);
+    var wantMonth = parseInt(parts.m, 10);
+    for (var guard = 0; guard < 60; guard++) {
+      var yearEl = panel.querySelector('.phoenix-calendar-month-panel-year-select-content');
+      var curYear = yearEl ? parseInt(String(yearEl.textContent || '').replace(/\D/g, ''), 10) : NaN;
+      if (!curYear || curYear === wantYear) break;
+      var btn = panel.querySelector(curYear < wantYear
+        ? '.phoenix-calendar-month-panel-next-year-btn'
+        : '.phoenix-calendar-month-panel-prev-year-btn');
+      if (!btn) break;
+      simulateClick(btn);
+      await sleep(180);
+    }
+    var cells = panel.querySelectorAll('.phoenix-calendar-month-panel-month');
+    var target = null;
+    for (var i = 0; i < cells.length; i++) {
+      var t = String(cells[i].textContent || '').replace(/\s+/g, '').trim();
+      if (t === wantMonth + '月') { target = cells[i]; break; }
+    }
+    if (!target) { closePhoenixPanels(); return false; }
+    simulateClick(target);
+    var ok = await waitUntil(function () { return phoenixHostFilled(host); }, 1200, 150);
+    if (ok) return true;
+    closePhoenixPanels();
+    return false;
+  }
+
   /** 日期：日历面板里的 .phoenix-calendar-input 可直接键入 + Enter 提交 */
   async function fillPhoenixDate(host, value, panel) {
     var parts = parseDateParts(value);
     if (!panel || !parts) return false;
+    if (panel.querySelector('.phoenix-calendar-month-calendar')) {
+      return fillPhoenixMonth(host, value, panel);
+    }
     var input = panel.querySelector('.phoenix-calendar-input');
-    if (!input) return false;
     var mm = ('0' + parts.m).slice(-2);
     var dd = ('0' + (parts.d || '1')).slice(-2);
     setInputRaw(input, parts.y + '-' + mm + '-' + dd);
@@ -1064,14 +1128,18 @@
     }
     var panel = await phoenixOpenPanel(host);
     if (!panel) return false;
-    if (panel.classList.contains('phoenix-date-picker')) {
-      return fillPhoenixDate(host, value, panel);
+    try {
+      if (panel.classList.contains('phoenix-date-picker')) {
+        return await fillPhoenixDate(host, value, panel);
+      }
+      if (panel.classList.contains('constant-main-selector-container') ||
+          panel.classList.contains('area-selector-container')) {
+        return await fillPhoenixPanel(host, value, panel, key);
+      }
+      return await fillPhoenixList(host, value, panel, key);
+    } catch (e) {
+      return false;
     }
-    if (panel.classList.contains('constant-main-selector-container') ||
-        panel.classList.contains('area-selector-container')) {
-      return fillPhoenixPanel(host, value, panel);
-    }
-    return fillPhoenixList(host, value, panel, key);
   }
 
   /** 应届/往届这类「是/否 ⇄ 两态词」的值映射 */
@@ -2356,6 +2424,14 @@
     var forced = [];
     var skipped = [];
     var keyCounts = {};
+    /**
+     * 同一个 key 可能被两个不同字段命中：基础信息的「毕业时间」和教育经历的「结束时间」
+     * 都映射到 eduEnd，若共用一个计数，「结束时间」会被当成第 2 段而取空值。
+     * 计数按 key + 标签 分桶：同名列（多段教育）仍按顺序取第 1/2 段。
+     */
+    function occurrenceKey(key, label) {
+      return key + '|' + String(label || '').replace(/\s+/g, '');
+    }
     var groupHandled = typeof WeakSet === 'function' ? new WeakSet() : null;
     // 站点会在填入后重建 DOM：第二遍重新扫描，把被替换过的新节点补填上
     var handled = typeof WeakSet === 'function' ? new WeakSet() : null;
@@ -2374,7 +2450,8 @@
       var struct = detectStructuredField(el);
       var key = struct ? struct.key : matchKeyForElement(el);
       if (!key) continue;
-      var count = struct ? 0 : (keyCounts[key] || 0);
+      var counterKey = occurrenceKey(key, getLabelText(el));
+      var count = struct ? 0 : (keyCounts[counterKey] || 0);
       if (!struct && count >= MAX_FILLS_PER_KEY) continue;
       var value = struct
         ? structuredValue(profile, struct)
@@ -2402,7 +2479,7 @@
           }
           if (cOk) {
             filled += 1;
-            keyCounts[key] = count + 1;
+            keyCounts[counterKey] = count + 1;
             if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
             highlight(el);
             continue;
@@ -2426,13 +2503,13 @@
         var toggled = clickCurrentJobToggle(el);
         if (toggled) {
           filled += 1;
-          keyCounts[key] = count + 1;
+          keyCounts[counterKey] = count + 1;
           if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
           highlight(el);
         } else if (!looksLikeDateInput(el) && setNativeValue(el, String(value).trim())) {
           // 没有「至今」开关、但这是个普通文本框（结束时间）→ 直接写“至今”
           filled += 1;
-          keyCounts[key] = count + 1;
+          keyCounts[counterKey] = count + 1;
           if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
           highlight(el);
         } else if (skipped.length < 12) {
@@ -2449,7 +2526,7 @@
           grpFirst.members.forEach(function (m) { if (groupHandled) groupHandled.add(m); });
           if (grpFirst.ok) {
             filled += 1;
-            keyCounts[key] = count + 1;
+            keyCounts[counterKey] = count + 1;
             if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
             grpFirst.members.forEach(function (m) { highlight(m); });
           } else if (skipped.length < 12) {
@@ -2477,7 +2554,7 @@
           grpRes.members.forEach(function (m) { if (groupHandled) groupHandled.add(m); });
           if (grpRes.ok) {
             filled += 1;
-            keyCounts[key] = count + 1;
+            keyCounts[counterKey] = count + 1;
             if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
             grpRes.members.forEach(function (m) { highlight(m); });
           } else if (skipped.length < 12) {
@@ -2524,7 +2601,7 @@
 
       if (ok) {
         filled += 1;
-        keyCounts[key] = count + 1;
+        keyCounts[counterKey] = count + 1;
         if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
         highlight(el);
       }
@@ -2580,17 +2657,18 @@
         if (!hLabel) continue;
         var hKey = M.matchFieldKey(hLabel, {});
         if (!hKey) continue;
-        var hCount = keyCounts[hKey] || 0;
+        var hCounterKey = occurrenceKey(hKey, hLabel);
+        var hCount = keyCounts[hCounterKey] || 0;
         if (hCount >= MAX_FILLS_PER_KEY) continue;
         var hVal = M.profileValueForOccurrence
           ? M.profileValueForOccurrence(profile, hKey, hCount)
           : M.profileValue(profile, hKey);
         if (!hVal) continue;
         try {
-          var hOk = await fillCustomSelect(host, hVal);
+          var hOk = await fillCustomSelect(host, hVal, hKey);
           if (hOk) {
             filled += 1;
-            keyCounts[hKey] = hCount + 1;
+            keyCounts[hCounterKey] = hCount + 1;
             if (filledKeys.indexOf(hKey) === -1) filledKeys.push(hKey);
             highlight(host);
           }

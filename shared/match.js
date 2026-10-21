@@ -2,6 +2,7 @@
  * 共享字段匹配逻辑：关键词、同义、模糊评分、姓名拆分、profile 取值、select 匹配、label 可见文本。
  * 浏览器挂到 ResumeAutofillMatch；Node 通过 module.exports 引入。
  *
+ * v1.5.6: 北森 Phoenix —— form-item 精确容器 token、预计报到时间、紧急联系电话专键。
  * v1.5.0: 更多 CN ATS 同义、标签噪声归一、选项/YesNo 纯函数导出；多段 occurrence 取值。
  * v1.3.0: playoffer 全量字段关键词 / FIELD_ORDER；紧急联系人拆分；地址/技能别名；证明人/家庭 denylist。
  * v1.2.4: D9 毕业时间→eduEnd + 拆分失败跳过；D10 相邻年/月 placeholder 与附近日期组标签。

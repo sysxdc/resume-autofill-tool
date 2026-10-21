@@ -11,6 +11,7 @@
 - **本地资料库**：选项页按 playoffer 风格折叠分区编辑（个人信息 / 求职意向 / 教育 / 实习 / 工作 / 项目 / 校园 / 社会实践 / 技能 / 证书 / 外语 / 家庭 / 获奖 / 专利 / 论文 / 培训）。
 - **多段经历编辑（1.5.0）**：选项页可增删改排序 `eduList` / `workList` / `projectList`；保存写入列表；主条目扁平字段仍兼容旧匹配。
 - **自定义下拉适配（1.5.0）**：原生 select、`.el-select`、`.ant-select`、`.dictionary-selector` / listbox 写路径；Yes/No radio 增强；见 `demo/dropdowns.html`。
+- **北森 Phoenix 网申（1.5.6）**：zhiye.com 的 `phoenix-select` 下拉 / 年月日期 / 字典与地区弹层 / div radio 全部走「点开弹层再选」；弹层按「本次新出现」判定、搜索后等重渲染、svg 勾选热区单独处理。组件结构与实测结论见 `docs/beisen-phoenix.md`。
 - **简历解析与多档案库（1.4.0）**：导入 PDF / DOCX / TXT / MD，本地解析成 profile 存进 IndexedDB，多份简历共存、一键切换应用。
 - **导入 / 导出 JSON**、**加载示例资料**、清空确认与保存反馈。
 - **兼容匹配（非完全匹配）**：关键词 + CN↔EN 同义 + Levenshtein / token 模糊评分；`autocomplete` 优先；保留 EEO / 法律问卷 denylist。
@@ -164,6 +165,7 @@ resume-autofill-tool/
 ├── demo/
 ├── docs/
 │   ├── playoffer-field-map.md    # CN 标签 → 键
+│   ├── beisen-phoenix.md         # 北森 Phoenix 组件结构 + 适配说明
 │   └── live-field-coverage.md
 ├── tests/
 │   ├── run-tests.mjs             # 匹配/填充/资源完整性
@@ -182,6 +184,8 @@ resume-autofill-tool/
 - SPA 动态渲染的表单若出现较晚，可刷新后再点填写。
 - 自定义 AI Base 若域名不在权限内：当前 `host_permissions` 为 `<all_urls>`；若你自行收窄权限，需为 API 域名补权限。
 - 证件号等敏感字段为选填；公共电脑请勿保存。
+- **北森「面试站点」不会硬填**：选项常是「XX 大学（线下站）」这类宣讲站点，档案里没有对应数据，
+  宁可不填也不猜；提交前手动选一下。
 
 ## Changelog
 
@@ -199,6 +203,20 @@ resume-autofill-tool/
 - **工作描述/项目描述回落到列表首条**：`workDescription` 扁平字段为空时用 `workList[0].description`，
   很多站点只有一个不分行的「工作描述」textarea。
 - 「工作/实习经历」混合标题按工作段处理（之前被判成实习段，公司/职位/起止时间取不到值）。
+- **北森 Phoenix 补齐**（`derucci1.zhiye.com/form` 实测 22 个字段一次填好）：下拉 / 年月日 / 年月面板 /
+  字典（民族）/ 地区（籍贯）/ div radio 全覆盖。细节见 `docs/beisen-phoenix.md`。
+  - 勾选热区是行内 `<svg>`：`svg.click()` 不存在，`simulateClick` 改为派发 `mousedown/mouseup/click`
+    三个 `MouseEvent`（之前字典、地区一直填不上）。
+  - 弹层判定改成「点击前后可见集合的差集」：弹层常驻 DOM、关闭后仍有尺寸，取 `lastVisible` 会把值写进
+    上一个字段（实测「开始时间」的 2023-09 写进了「预计报到时间」）。
+  - 教育经历的起止时间用**年月面板**（无输入框）：翻年 + 点月份；搜索类弹层在搜索后等 450ms 再取行，
+    并在点击后校验 `已选 x/y` 文案，没选中就重取行再点一次。
+  - 多段计数改为「键 + 标签」分桶：基础信息「毕业时间」和教育经历「结束时间」都映射 `eduEnd`，
+    原来第二次命中被当成第 2 段而取空值。
+- **映射补两条**：「预计报到时间 / 报到时间」→ `expectedStartDate`；「紧急联系电话 / 紧急联络电话 /
+  应急联系电话」→ `emergencyContactPhone`（否则被泛化的 `phone` 抢走，填成申请人手机号）。
+- **标签容器识别**：`form-item` 用精确 class token + `closest('.form-item')` 优先，避免
+  `.form-item__title` 被当容器导致取不到标签。
 
 ### 1.5.5
 
