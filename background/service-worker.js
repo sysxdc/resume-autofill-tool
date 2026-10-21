@@ -159,6 +159,11 @@ chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     sendResponse({ ok: true, version: manifest.version });
     return true;
   }
+  if (message && message.type === 'OPEN_OPTIONS') {
+    try { chrome.runtime.openOptionsPage(); } catch (_) { /* ignore */ }
+    sendResponse({ ok: true });
+    return false;
+  }
   if (message && message.type === 'GET_AI_STATUS') {
     chrome.storage.local.get('aiSettings', function (result) {
       var s = AI.normalizeAiSettings(result.aiSettings);
