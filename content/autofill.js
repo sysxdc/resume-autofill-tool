@@ -292,13 +292,13 @@
   /** 用「同一组字段里还有哪些标签」判断这块是教育 / 工作 / 项目 */
   function sectionContextBySiblingLabels(el) {
     if (!el || !el.closest) return '';
-    var node = el.closest('.ant-form-item, .form-item, .field, .row, tr');
-    for (var up = 0; up < 3 && node; up++) {
+    var node = el.closest('.ant-form-item, .form-item, .field, .row, tr') || el.parentElement;
+    for (var up = 0; up < 6 && node && node.parentElement; up++) {
       var scope = node.parentElement;
-      if (!scope) break;
-      var items = scope.querySelectorAll('.ant-form-item, .form-item, .field, tr');
-      // 只在「一段」这种小容器里推断，别把整页当一块
-      if (items.length > 0 && items.length <= 14) {
+      var items = scope.querySelectorAll('.ant-form-item, .form-item, .field, tr').length;
+      // 一段通常 2~14 个字段；到 40+ 说明已经上溯到整页，别再猜
+      if (items > 14) return '';
+      if (items >= 2) {
         var labels = [];
         Array.prototype.forEach.call(scope.querySelectorAll('label'), function (lab) {
           var t = String(lab.textContent || '').replace(/\s+/g, '').trim();
@@ -309,11 +309,10 @@
         if (/企业名称|公司名称|工作描述|所在部门|工作内容|职位名称/.test(joined)) return 'work';
         if (/项目名称|项目描述|项目职责/.test(joined)) return 'project';
       }
-      node = scope.closest('.ant-form-item, .form-item, .field, .row, tr');
+      node = scope;
     }
     return '';
   }
-
 
   // —————— v1.5.4：按 id 的语义路径做行级映射（ATS 常见：resumeEducationInfo_0_collegeName）——————
   var STRUCT_PATH_RE = /resume(education|work|project|paper|intern)info_(\d+)_([a-z]+)/i;
@@ -697,6 +696,17 @@
   async function fillRangeEditor(editor, startVal, endVal) {
     // antd 的 RangePicker 两个 input 都是 readonly：只能点面板（快手教育经历的「起止时间」）
     if (editor.classList && editor.classList.contains('ant-picker-range')) {
+      var rangeIns = editor.querySelectorAll('input');
+      // ① 直接改组件值（最可靠，不依赖点击）
+      try {
+        if (fillAntdPickerByModel(editor, startVal, endVal)) {
+          await sleep(220);
+          var ra = String(rangeIns[0].value || '').trim();
+          var rb = String(rangeIns[1].value || '').trim();
+          if (ra && rb) return true;
+        }
+      } catch (_) { /* ignore */ }
+      // ② 退回点日历
       try {
         if (await fillAntdRangePicker(editor, startVal, endVal)) return true;
       } catch (_) { /* ignore */ }
@@ -752,6 +762,10 @@
       if (!ctx) continue;
       var map = RANGE_SECTION_MAP[ctx.rule.key];
       var list = profile && Array.isArray(profile[map.listKey]) ? profile[map.listKey] : [];
+      // 实习分区常常只有 workList（实习写在 workList 里），不要因为 internList 为空就跳过
+      if (!list.length && (ctx.rule.key === 'intern' || ctx.rule.key === 'work') && Array.isArray(profile && profile.workList)) {
+        list = profile.workList;
+      }
       var item = list[ctx.index] || null;
       var start = item && item.start ? String(item.start).trim() : '';
       var end = item && item.end ? String(item.end).trim() : '';
@@ -861,8 +875,16 @@
       /search|keyword/i.test(name);
   }
 
+  // 自定义下拉内部的搜索输入框：由 fillCustomSelect 负责「输入 + 选选项」，主循环不能再往里写
+  var INNER_SELECT_SEARCH_SEL =
+    '.ant-select, .el-select, .ant-cascader-picker, .cascader-plugins-wrap, ' +
+    '.dictionary-selector, .phoenix-select, [class*="sd-Select-container"]';
+
   function isSkippable(el) {
     var t = (el.type || '').toLowerCase();
+    if (el.tagName && el.tagName.toLowerCase() === 'input' && el.closest && el.closest(INNER_SELECT_SEARCH_SEL)) {
+      return true;
+    }
     return (
       t === 'hidden' ||
       t === 'submit' ||
@@ -1096,6 +1118,24 @@
     return t === 'text' || t === 'search' || t === 'tel' || t === 'number';
   }
 
+  /** antd v3 的日期控件（.ant-calendar-picker + .ant-calendar-picker-container 面板） */
+  function isAntdV3Picker(el) {
+    try { return !!(el && el.closest && el.closest('.ant-calendar-picker')); } catch (_) { return false; }
+  }
+
+  /** 当前可见的 antd v3 日历面板（返回 .ant-calendar 根节点） */
+  function antdV3Panel() {
+    var list = [];
+    try {
+      Array.prototype.forEach.call(document.querySelectorAll('.ant-calendar-picker-container'), function (n) {
+        if (!isVisibleEl(n)) return;
+        var cal = n.querySelector('.ant-calendar');
+        if (cal) list.push(cal);
+      });
+    } catch (_) { /* ignore */ }
+    return list.length ? list[list.length - 1] : null;
+  }
+
   function simulateClick(el) {
     if (!el) return;
     // SVG 元素没有 el.click()，统一派发事件（北森字典/地区的勾选热区就是 svg）
@@ -1121,7 +1161,8 @@
     '[class*="sd-Select-container"]';  // Moka（app.mokahr.com）的自绘下拉
   var DROPDOWN_OPTION_SEL =
     '[role="option"], .el-select-dropdown__item, .el-option, .ant-select-item-option, ' +
-    '.ant-select-item, .dictionary-option, .option-item, .select-option, li.el-select-dropdown__item, ' +
+    '.ant-select-item, .ant-select-dropdown-menu-item, .dictionary-option, .option-item, .select-option, ' +
+    'li.el-select-dropdown__item, ' +
     '[class*="sd-Menu-content-item"]';
 
   /** 「广东省-阳江市-江城区」→ ['广东省', '广东省阳江市', '广东省阳江市江城区'] */
@@ -1223,7 +1264,8 @@
     if (!host) return false;
     var txt = '';
     var selected = host.querySelector(
-      '.el-select__selected-item, .el-input__inner, .ant-select-selection-item, .ant-select-selection-search-input, .selected-text, [class*="selected"]'
+      '.el-select__selected-item, .el-input__inner, .ant-select-selection-selected-value, ' +
+      '.ant-select-selection-item, .ant-select-selection-search-input, .selected-text, [class*="selected"]'
     );
     if (selected) {
       txt = String(selected.textContent || selected.value || '').replace(/\s+/g, ' ').trim();
@@ -1232,7 +1274,7 @@
       var inp = host.querySelector('input');
       if (inp) txt = String(inp.value || '').replace(/\s+/g, ' ').trim();
     }
-    if (txt && !/请选择|请输入|select|choose|--/i.test(txt)) return true;
+    if (txt && !/请选择|请输入|请填写|填写|select|choose|--/i.test(txt)) return true;
     // Moka 这类自绘下拉把选中值渲染成 span，input.value 一直是空的
     var hostText = String(host.textContent || '').replace(/\s+/g, ' ').trim();
     if (hostText && hostText.length <= 24 && !/请选择|请输入|可多选|最多|select|choose|--/i.test(hostText)) return true;
@@ -2704,6 +2746,14 @@
   /** 关掉已打开的 antd 面板：同一表单里多个日期框的弹层会同时挂在 body 上 */
   function closeAllAntdPanels() {
     try {
+      // antd v3 的日历不吃 Escape，点一下 body 才会走「点击外部关闭」
+      if (antdV3Panel()) {
+        document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+        document.body.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+        document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      }
+    } catch (_) { /* ignore */ }
+    try {
       document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
       document.body.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', keyCode: 27, bubbles: true }));
     } catch (_) { /* ignore */ }
@@ -2775,6 +2825,94 @@
       if (!btn) return false;
       simulateClick(btn);
       await sleep(yearStep >= 10 ? 140 : 120);
+    }
+    return false;
+  }
+
+  /**
+   * Ant Design v3 日历（.ant-calendar）：面板自带 .ant-calendar-input 可直接键入；
+   * 退化路径走「年份面板 → 月份面板 → 日格」。v3 的超级箭头只按年，翻上百个月点不动，
+   * 所以不能用通用 gridNavigate。
+   */
+  async function tryAntdV3Calendar(el, desired) {
+    var parts = parseDateParts(desired);
+    if (!parts) return false;
+    var panel = antdV3Panel();
+    if (!panel) return false;
+    var y = parseInt(parts.y, 10);
+    var m = parseInt(parts.m, 10);
+    var day = String(parts.d ? parseInt(parts.d, 10) : 1);
+
+    // (1) 面板输入框直写：v3 的 CalendarInput 认 Enter
+    var input = panel.querySelector('.ant-calendar-input');
+    if (input) {
+      var want = parts.y + '-' + ('0' + m).slice(-2) + '-' + ('0' + day).slice(-2);
+      try {
+        input.focus();
+        var desc = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+        if (desc && desc.set) desc.set.call(input, want);
+        else input.value = want;
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+      } catch (_) { /* ignore */ }
+      await sleep(120);
+      try {
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+      } catch (_) { /* ignore */ }
+      await sleep(320);
+      if (dateValueMatches(el.value, desired)) return true;
+    }
+
+    // (2) 年份 → 月份 → 日
+    panel = antdV3Panel() || panel;
+    var header = String((panel.querySelector('.ant-calendar-header') || {}).textContent || '');
+    var hm = header.match(/(\d{4})\s*年/);
+    if (!hm || parseInt(hm[1], 10) !== y) {
+      var yearSelect = panel.querySelector('.ant-calendar-year-select');
+      if (yearSelect) {
+        simulateClick(yearSelect);
+        await sleep(220);
+        var yearPanel = Array.prototype.filter.call(document.querySelectorAll('.ant-calendar-year-panel'), isVisibleEl).pop();
+        var yearCell = yearPanel && Array.prototype.filter.call(
+          yearPanel.querySelectorAll('.ant-calendar-year-panel-year'),
+          function (n) { return String(n.textContent || '').trim() === String(y) && !/disabled/.test(String(n.className)); }
+        )[0];
+        if (yearCell) { simulateClick(yearCell); await sleep(260); }
+      }
+    }
+
+    panel = antdV3Panel() || panel;
+    var h2 = String((panel.querySelector('.ant-calendar-header') || {}).textContent || '');
+    var mm = h2.match(/(\d{1,2})\s*月/);
+    if (!mm || parseInt(mm[1], 10) !== m) {
+      var monthSelect = panel.querySelector('.ant-calendar-month-select');
+      if (monthSelect) {
+        simulateClick(monthSelect);
+        await sleep(220);
+        var monthPanel = Array.prototype.filter.call(document.querySelectorAll('.ant-calendar-month-panel'), isVisibleEl).pop();
+        var monthCell = monthPanel && Array.prototype.filter.call(
+          monthPanel.querySelectorAll('.ant-calendar-month-panel-month'),
+          function (n) { return String(n.textContent || '').trim() === (m + '月') && !/disabled/.test(String(n.className)); }
+        )[0];
+        if (monthCell) { simulateClick(monthCell); await sleep(260); }
+      }
+    }
+
+    panel = antdV3Panel() || panel;
+    var dayCell = Array.prototype.filter.call(
+      panel.querySelectorAll('td.ant-calendar-cell'),
+      function (td) {
+        var cls = String(td.className || '');
+        return !/last-month|next-month|disabled/.test(cls) && isVisibleEl(td);
+      }
+    ).filter(function (td) {
+      return String((td.querySelector('.ant-calendar-date') || td).textContent || '').trim() === day;
+    })[0];
+    if (dayCell) {
+      simulateClick(dayCell);
+      await sleep(280);
+      return dateValueMatches(el.value, desired);
     }
     return false;
   }
@@ -2946,6 +3084,61 @@
     return !!a && !!b && dateValueMatches(a, formatDateYmd(start)) && dateValueMatches(b, formatDateYmd(end));
   }
 
+  /** DOM 节点上的 React fiber（16/17: __reactInternalInstance$，18: __reactFiber$） */
+  function fiberOfNode(node) {
+    if (!node) return null;
+    try {
+      var keys = Object.keys(node);
+      for (var i = 0; i < keys.length; i++) {
+        var k = keys[i];
+        if (k.indexOf('__reactInternalInstance$') === 0 || k.indexOf('__reactFiber$') === 0) return node[k];
+      }
+    } catch (_) { /* ignore */ }
+    return null;
+  }
+
+  /** 往上找 antd Picker 组件的 fiber props（特征：带 generateConfig 和 onChange） */
+  function pickerFiberProps(el) {
+    var fiber = fiberOfNode(el);
+    for (var i = 0; i < 40 && fiber; i++, fiber = fiber.return) {
+      var p = fiber.memoizedProps;
+      if (p && p.generateConfig && typeof p.onChange === 'function') return p;
+    }
+    return null;
+  }
+
+  function makePickerDate(gc, y, m, d) {
+    var out = gc.setYear(gc.getNow(), y);
+    out = gc.setMonth(out, m - 1);
+    out = gc.setDate(out, d);
+    return out;
+  }
+
+  /**
+   * 绕开日历直接改组件值：调它自己的 onChange（Form 就是靠这个存值的）。
+   * 快手教育经历的 RangePicker 两个 input 都 readonly，弹层还不认合成事件，
+   * 面板怎么点都打不开 —— 这条路不依赖任何点击。
+   */
+  function fillAntdPickerByModel(el, startVal, endVal) {
+    var props = pickerFiberProps(el);
+    if (!props || !props.generateConfig) return false;
+    var gc = props.generateConfig;
+    var isRange = !!(el.closest && el.closest('.ant-picker-range'));
+    var s = rangeDateOf(startVal, false);
+    if (!s) return false;
+    if (!isRange) {
+      var one = makePickerDate(gc, s.getFullYear(), s.getMonth() + 1, s.getDate());
+      try { props.onChange(one); } catch (_) { return false; }
+      return true;
+    }
+    var e = rangeDateOf(endVal, true);
+    if (!e || e.getTime() < s.getTime()) return false;
+    var sd = makePickerDate(gc, s.getFullYear(), s.getMonth() + 1, s.getDate());
+    var ed = makePickerDate(gc, e.getFullYear(), e.getMonth() + 1, e.getDate());
+    try { props.onChange([sd, ed]); } catch (_) { return false; }
+    return true;
+  }
+
   /** 拿 React 通过 DOM 挂上来的 props（React 16/17: __reactEventHandlers$，18+: __reactProps$） */
   function reactPropsOf(node) {
     if (!node) return null;
@@ -2981,10 +3174,17 @@
 
   /** 打开只读控件的弹层：先 focus（Element 的 el-date-picker 监听 focus），再 click，再点右侧日历图标 */
   function openPicker(el) {
+    // antd v3：只认「原生 click」（合成事件它不接）；面板开着时再点会关掉，所以先判重
+    if (isAntdV3Picker(el)) {
+      try { if (el.focus) el.focus(); } catch (_) { /* ignore */ }
+      if (antdV3Panel()) return;
+      try { el.click(); } catch (_) { simulateClick(el); }
+      return;
+    }
     // antd：合成事件打不开日历，直接调它自己的 onMouseDown（等于真点击）
     if (isAntdPickerEl(el)) {
       try { if (el.focus) el.focus(); } catch (_) { /* ignore */ }
-      var root = (el.closest && el.closest('.ant-picker')) || el;
+      var root = (el.closest && el.closest('.ant-picker, .ant-calendar-picker')) || el;
       if (fireReactHandler(root, 'onMouseDown')) return;
     }
     try { if (el.focus) el.focus(); } catch (_) { /* ignore */ }
@@ -3050,7 +3250,7 @@
     return new Promise(function (resolve) {
       var t0 = Date.now();
       (function poll() {
-        var p = antdPanel();
+        var p = antdPanel() || antdV3Panel();
         if (p) return resolve(p);
         if (Date.now() - t0 > ms) return resolve(null);
         setTimeout(poll, 60);
@@ -3083,8 +3283,14 @@
         if (!waited && isAntdPickerEl(el)) {
           try { el.blur(); } catch (_) { /* ignore */ }
           closeAllAntdPanels();
-          resolve(false);
+          resolve('dbg:no_panel');
           return;
+        }
+        // (0) antd v3 日历（.ant-calendar）：面板输入框 / 年面板 / 月面板
+        if (waited && isAntdV3Picker(el)) {
+          var v3ok = false;
+          try { v3ok = await tryAntdV3Calendar(el, desired); } catch (_) { v3ok = false; }
+          if (v3ok && dateValueMatches(el.value, desired)) { resolve(true); return; }
         }
         // ① 先试「年 / 月 / 日」多表格日期面板
         var parts = parseDateParts(desired);
@@ -3113,7 +3319,7 @@
           cands = await pageUntilFound(desired);
         }
         if (!cands.length) {
-          resolve(isAntdPickerEl(el) ? false : (forceSetReadonly(el, desired) ? 'forced' : false));
+          resolve(isAntdPickerEl(el) ? 'dbg:antd_no_cand' : (forceSetReadonly(el, desired) ? 'forced' : false));
           return;
         }
         var i = 0;
@@ -3340,7 +3546,13 @@
       // antd 的日期框是受控组件：往 input 里写字不会提交，只能点面板选日期
       if (el.closest && el.closest('.ant-picker') && !el.closest('.ant-picker-range')) {
         var dOk = false;
-        try { dOk = await fillReadonlyPickerAntd(el, value); } catch (_) { dOk = false; }
+        try {
+          if (fillAntdPickerByModel(el, value)) {
+            await sleep(180);
+            dOk = dateValueMatches(el.value, value);
+          }
+        } catch (_) { dOk = false; }
+        if (!dOk) { try { dOk = await fillReadonlyPickerAntd(el, value); } catch (_) { dOk = false; } }
         if (dOk) {
           filled += 1;
           if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
@@ -3465,10 +3677,12 @@
           ok = await fillReadonlyPicker(el, value);
         } catch (err) {
           ok = false;
-          if (skipped.length < 12) skipped.push({ key: key, reason: 'picker_error' });
+          if (skipped.length < 12) {
+            skipped.push({ key: key, reason: 'picker_error: ' + String((err && err.message) || err).slice(0, 60) });
+          }
         }
         if (ok === 'forced') forced.push(key);
-        if (!ok) skipped.push({ key: key, reason: 'readonly_picker_not_found' });
+        if (!ok) skipped.push({ key: key, reason: typeof ok === 'string' ? ok : 'readonly_picker_not_found' });
       } else {
         ok = commitFrameworkWidget(el, value) || setNativeValue(el, value);
         if (!ok && el.tagName && el.tagName.toLowerCase() === 'select') {

@@ -2032,6 +2032,32 @@ test('v1.5.13: antd 日期框走面板（React props 触发 + title 点日）', 
   assert.ok(/function rowIndexFromIds/.test(src) && /function rangeContextLoose/.test(src), '范围控件定位分区/段序');
 });
 
+console.log('v1.5.14 antd 日期框走组件 onChange');
+
+test('v1.5.14: 从 fiber 找 Picker 的 onChange（不依赖点击）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function fiberOfNode/.test(src), '要能拿到 fiber');
+  assert.ok(/__reactInternalInstance\$/.test(src) && /__reactFiber\$/.test(src), '两代 fiber key 都认');
+  assert.ok(/function pickerFiberProps/.test(src), '要往上找 Picker props');
+  assert.ok(/generateConfig/.test(src) && /memoizedProps/.test(src), '用 generateConfig 认 Picker');
+  assert.ok(/function makePickerDate/.test(src), '用 setYear/setMonth/setDate 造日期');
+  assert.ok(/function fillAntdPickerByModel/.test(src), '直接调 onChange');
+  assert.ok(/props\.onChange\(\[sd, ed\]\)/.test(src), '范围控件传数组');
+  assert.ok(/props\.onChange\(one\)/.test(src), '单日期传单个值');
+});
+
+test('v1.5.14: 先 onChange、失败再点日历（两条路都留着）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/fillAntdPickerByModel\(editor, startVal, endVal\)[\s\S]{0,400}fillAntdRangePicker/.test(src), '范围：先 model 后面板');
+  assert.ok(/fillAntdPickerByModel\(el, value\)[\s\S]{0,300}fillReadonlyPickerAntd/.test(src), '单日期：先 model 后面板');
+});
+
+test('v1.5.14: 范围控件在实习分区可回落到 workList', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/ctx\.rule\.key === 'intern' \|\| ctx\.rule\.key === 'work'/.test(src), '实习/工作分区回落');
+  assert.ok(/list = profile\.workList/.test(src), '用 workList 取这一段的起止');
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
