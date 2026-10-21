@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.5.20**
+当前版本：**1.5.21**
 
 ## 功能概览
 
@@ -139,6 +139,26 @@ cd resume-autofill-tool
 python3 -m http.server 8765
 # 浏览器打开 http://localhost:8765/demo/job-application.html
 ```
+
+## 多会话协作（同一 checkout）
+
+本仓库曾被两个会话在**同一个 checkout** 上交替提交（v1.5.14–v1.5.16 与 v1.5.17–v1.5.20 混在一条 HEAD 历史里）。
+那不会丢代码，但会让人误以为文件「莫名其妙变了」，也让「合并推送」变成猜谜。开工前先跑：
+
+```bash
+bash scripts/repo-state.sh
+```
+
+它会告诉你：当前分支与远端关系、未提交改动、**有几个 worktree 指向同一个 `.git`**、有没有 `.git/*.lock`、
+**哪些分支 ahead main（=别人的活还没合）**、最近 5 条提交、stash 状态。
+
+约定：
+
+- 写代码前跑一次；**看到别的 worktree 或 ahead main 的分支就先确认**，别直接在自己的分支上继续堆提交
+- 提交前 `git log -1` 看一眼父提交是不是自己上一条——不是的话，这个 checkout 被推进过，先重新确认改动范围
+- 一轮工作结束就 push，别长期把提交压在本地分支上（压得越久，并线时越难分辨谁动了什么）
+- 被放弃的临时改动用 `git stash` 时要留原因和恢复方式；确认已被后续实现覆盖后再 `stash drop`，
+  并把 stash 提交固定成 `refs/attic/<名字>` 以便反悔（`git update-ref` 一条命令就能恢复）
 
 ## 自动化测试
 
@@ -293,6 +313,15 @@ Date.STRATEGY_ORDER            // native-input → native-selects → fiber-prop
 （`#__ra_panel_host__.dataset.lastResult`），降级不再静默。
 
 ## Changelog
+
+### 1.5.21
+
+- 新增 `scripts/repo-state.sh`：开工前体检（worktree / 锁文件 / 分支 ahead main / 未提交改动 / stash），
+  README 补「多会话协作」约定——本仓库确实出现过两个会话在同一个 checkout 上交替提交。
+- 清理 `git stash`：两条 wip（`dropdownForHost`、`degree fix`）逐条比对确认已被后续实现覆盖
+  （`dropdownForHost` 等 10 个函数均在 HEAD；`LABEL_SKIP_TAGS` 的能力已由 `visibleLabelText` 内的
+  `SKIP_TAGS` 等价实现），先固定成 `refs/attic/stash-0-dropdownForHost`、
+  `refs/attic/stash-1-degree-fix` 再 drop，需要时可反悔恢复。
 
 ### 1.5.20
 
