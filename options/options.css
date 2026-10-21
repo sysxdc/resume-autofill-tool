@@ -225,3 +225,21 @@ details.section[open] > summary::before {
   padding: 1px 4px;
   border-radius: 3px;
 }
+
+/* ————— v1.4.0 简历库 ————— */
+.resume-lib { margin: 18px 0 26px; padding: 16px 18px; border: 1px solid var(--border, #2c2f36); border-radius: 10px; background: var(--panel, rgba(255,255,255,.02)); }
+.resume-lib h2 { font-size: 15px; margin: 0 0 10px; }
+.resume-lib .lib-sub { font-size: 12px; font-weight: 400; color: #8b93a1; margin-left: 6px; }
+.lib-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.resume-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
+.resume-item { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 10px 12px; border: 1px solid #2c2f36; border-radius: 8px; background: rgba(255,255,255,.015); }
+.resume-title { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 8px; }
+.resume-item .badge { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #2f6fed; color: #fff; font-weight: 500; }
+.resume-item .muted { font-size: 12px; color: #8b93a1; margin-top: 2px; }
+.resume-item .warn { font-size: 12px; color: #e0a02f; }
+.resume-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.resume-preview { font-size: 12.5px; margin: 8px 0 12px; }
+.preview-row { display: flex; gap: 10px; padding: 5px 0; border-bottom: 1px dashed #2c2f36; }
+.preview-row .k { width: 130px; color: #8b93a1; flex-shrink: 0; }
+.preview-row .v { flex: 1; word-break: break-all; }
+.preview-meta { margin-top: 8px; color: #8b93a1; font-size: 12px; }

@@ -10,7 +10,7 @@
   <div class="wrap">
     <header class="header">
       <h1>编辑简历资料</h1>
-      <p class="subtitle">资料保存在本机 <code>chrome.storage.local</code>，不会上传到任何服务器（启用 AI 时除外，见下方说明）。字段布局对齐 playoffer 风格 ATS 简历模型（v1.3.0）；多段经历仅存<strong>主条目</strong>。</p>
+      <p class="subtitle">资料保存在本机 <code>chrome.storage.local</code>，不会上传到任何服务器（启用 AI 时除外，见下方说明）。字段布局对齐 playoffer 风格 ATS 简历模型（v1.4.0）：支持多份简历共存，教育/工作/项目可存多段，主条目字段自动取第一段。</p>
     </header>
 
     <div class="toolbar">
@@ -21,6 +21,35 @@
       <button type="button" class="btn ghost" id="btn-collapse-all">折叠全部</button>
       <input type="file" id="import-file" accept="application/json,.json" hidden />
     </div>
+
+    <section class="resume-lib">
+      <h2>简历库 <span class="lib-sub">本地解析，多份共存</span></h2>
+      <div class="lib-row">
+        <label class="btn ghost">导入简历文件<input type="file" id="resume-file" accept=".pdf,.docx,.txt,.md" hidden /></label>
+        <span class="muted" id="resume-file-name">支持 PDF / DOCX / TXT / MD；扫描件（纯图片 PDF）需先转文字</span>
+      </div>
+
+      <details class="section" id="resume-preview-wrap" hidden>
+        <summary>解析结果预览（保存前可改档案名）</summary>
+        <div id="resume-preview" class="resume-preview"></div>
+        <div class="grid">
+          <label class="full">档案名称<input type="text" id="resume-name" placeholder="例如：张三-前端-2024" /></label>
+        </div>
+        <div class="form-actions">
+          <button type="button" class="btn primary" id="btn-save-resume">保存到简历库并应用</button>
+          <button type="button" class="btn ghost" id="btn-discard-resume">放弃</button>
+          <span class="save-status" id="resume-status" role="status" aria-live="polite"></span>
+        </div>
+      </details>
+
+      <div id="resume-list" class="resume-list"></div>
+
+      <div class="form-actions">
+        <button type="button" class="btn ghost" id="btn-export-lib">导出全部档案</button>
+        <button type="button" class="btn ghost" id="btn-import-lib">导入档案 JSON</button>
+        <input type="file" id="import-lib-file" accept="application/json,.json" hidden />
+      </div>
+    </section>
 
     <form id="profile-form" autocomplete="off">
       <details class="section" open>
@@ -414,8 +443,12 @@
       </fieldset>
     </form>
   </div>
+  <script src="../lib/pdf.min.js"></script>
+  <script src="../lib/mammoth.browser.min.js"></script>
   <script src="../shared/profile.js"></script>
   <script src="../shared/ai.js"></script>
+  <script src="../shared/db.js"></script>
+  <script src="../shared/resume-parser.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

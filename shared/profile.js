@@ -100,6 +100,74 @@
     'trainingName', 'trainingStart', 'trainingEnd', 'trainingOrg', 'trainingGain', 'trainingContent'
   ];
 
+  /**
+   * v1.4.0：多段经历（解析简历后可能有多条）。
+   * 数组元素字段见 LIST_ITEM_FIELDS；扁平的主条目字段仍保留，自动取第一条以兼容旧匹配。
+   */
+  var LIST_FIELDS = ['eduList', 'workList', 'projectList'];
+
+  var LIST_ITEM_FIELDS = {
+    eduList: ['school', 'major', 'degree', 'start', 'end', 'city', 'gpa', 'description'],
+    workList: ['company', 'title', 'start', 'end', 'city', 'description'],
+    projectList: ['name', 'role', 'start', 'end', 'tech', 'description']
+  };
+
+  /** 数组第一条 → 扁平主条目字段名映射 */
+  var MAIN_ENTRY_MAP = {
+    eduList: { school: 'school', major: 'major', degree: 'eduDegree', start: 'eduStart', end: 'eduEnd', city: 'schoolCity' },
+    workList: { company: 'company', title: 'title', start: 'startDate', end: 'workEnd', city: 'workCity' },
+    projectList: { name: 'projectName', role: 'projectRole', start: 'projectStart', end: 'projectEnd', tech: 'techSkills', description: 'projectDesc' }
+  };
+
+  function emptyList(listKey) {
+    return [];
+  }
+
+  function normalizeListItem(listKey, item) {
+    var keys = LIST_ITEM_FIELDS[listKey] || [];
+    var src = item || {};
+    var out = {};
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      out[k] = src[k] == null ? '' : String(src[k]).trim();
+    }
+    return out;
+  }
+
+  function normalizeList(listKey, list) {
+    var arr = Array.isArray(list) ? list : [];
+    var out = [];
+    for (var i = 0; i < arr.length; i++) {
+      var it = normalizeListItem(listKey, arr[i]);
+      var hasValue = false;
+      for (var j = 0; j < LIST_ITEM_FIELDS[listKey].length; j++) {
+        if (it[LIST_ITEM_FIELDS[listKey][j]]) hasValue = true;
+      }
+      if (hasValue) out.push(it);
+    }
+    return out;
+  }
+
+  /** 数组第一条回填扁平主条目（不覆盖已有显式值，除非 force） */
+  function deriveMainEntries(profile, force) {
+    var p = profile || {};
+    for (var i = 0; i < LIST_FIELDS.length; i++) {
+      var listKey = LIST_FIELDS[i];
+      var list = p[listKey];
+      if (!Array.isArray(list) || !list.length) continue;
+      var map = MAIN_ENTRY_MAP[listKey];
+      var first = list[0];
+      for (var src in map) {
+        if (!Object.prototype.hasOwnProperty.call(map, src)) continue;
+        var flat = map[src];
+        var val = first[src];
+        if (!val) continue;
+        if (force || !p[flat]) p[flat] = val;
+      }
+    }
+    return p;
+  }
+
   function emptyProfile() {
     var p = {};
     for (var i = 0; i < PROFILE_FIELDS.length; i++) {
@@ -405,6 +473,13 @@
 
   return {
     PROFILE_FIELDS: PROFILE_FIELDS,
+    LIST_FIELDS: LIST_FIELDS,
+    LIST_ITEM_FIELDS: LIST_ITEM_FIELDS,
+    MAIN_ENTRY_MAP: MAIN_ENTRY_MAP,
+    emptyList: emptyList,
+    normalizeList: normalizeList,
+    normalizeListItem: normalizeListItem,
+    deriveMainEntries: deriveMainEntries,
     DEFAULT_PROFILE: DEFAULT_PROFILE,
     SAMPLE_PROFILE: SAMPLE_PROFILE,
     emptyProfile: emptyProfile,

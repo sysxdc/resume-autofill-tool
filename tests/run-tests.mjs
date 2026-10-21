@@ -715,10 +715,10 @@ test('buildSystemPrompt mentions select option matching', () => {
 
 console.log('repo integrity');
 
-test('manifest is MV3 v1.3.x with icons', () => {
+test('manifest is MV3 1.4.x with icons', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.ok(/^1\.3\.\d+$/.test(manifest.version), `version=${manifest.version}`);
+  assert.ok(/^1\.4\.\d+$/.test(manifest.version), `version=${manifest.version}`);
   assert.ok(manifest.icons['16']);
   assert.ok(manifest.action.default_icon['48']);
   assert.ok(manifest.content_scripts[0].js.includes('shared/match.js'));
@@ -1240,7 +1240,7 @@ test('v1.3.2: getLabelText 支持表格布局与 el-select 兄弟标签', () => 
 
 test('v1.3.2: manifest 版本已递增', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.ok(/^1\.3\.\d+$/.test(manifest.version), manifest.version);
+  assert.ok(/^1\.4\.\d+$/.test(manifest.version), manifest.version);
   assert.equal(manifest.content_scripts[0].all_frames, true);
 });
 
@@ -1349,6 +1349,27 @@ test('v1.3.7: antd 年/月/日面板 + 年月字段', () => {
   const matcher = fs.readFileSync(path.join(root, 'shared/match.js'), 'utf8');
   assert.ok(/年月/.test(matcher) && matcher.indexOf("return 'ym'") !== -1, 'detectDatePartRole 应识别 ym');
   assert.ok(/ymParts/.test(matcher), 'maybeExtractDatePartValue 应输出 YYYY-MM');
+});
+
+console.log('v1.4.0 简历库 / 解析器');
+test('v1.4.0: manifest 版本与资源接线', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  assert.strictEqual(pkg.version, '1.4.0');
+  const html = fs.readFileSync(path.join(root, 'options/options.html'), 'utf8');
+  ['../lib/pdf.min.js', '../lib/mammoth.browser.min.js', '../shared/db.js', '../shared/resume-parser.js'].forEach((src) => {
+    assert.ok(html.indexOf(src) !== -1, 'options.html 应加载 ' + src);
+  });
+  assert.ok(fs.existsSync(path.join(root, 'lib/pdf.worker.min.js')), 'pdf worker 必须随包发布');
+});
+
+test('v1.4.0: profile 支持多段经历', () => {
+  const P = require(path.join(root, 'shared/profile.js'));
+  assert.deepEqual(P.LIST_FIELDS, ['eduList', 'workList', 'projectList']);
+  assert.ok(P.LIST_ITEM_FIELDS.eduList.includes('school'));
+  const prof = P.emptyProfile();
+  prof.eduList = [{ school: 'A大学' }, { school: 'B大学' }];
+  P.deriveMainEntries(prof);
+  assert.strictEqual(prof.school, 'A大学');
 });
 
 console.log('');

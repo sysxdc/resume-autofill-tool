@@ -4,11 +4,12 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.3.0**
+当前版本：**1.4.0**
 
 ## 功能概览
 
 - **本地资料库**：选项页按 playoffer 风格折叠分区编辑（个人信息 / 求职意向 / 教育 / 实习 / 工作 / 项目 / 校园 / 社会实践 / 技能 / 证书 / 外语 / 家庭 / 获奖 / 专利 / 论文 / 培训）。
+- **简历解析与多档案库（1.4.0）**：导入 PDF / DOCX / TXT / MD，本地解析成 profile 存进 IndexedDB，多份简历共存、一键切换应用。
 - **导入 / 导出 JSON**、**加载示例资料**、清空确认与保存反馈。
 - **兼容匹配（非完全匹配）**：关键词 + CN↔EN 同义 + Levenshtein / token 模糊评分；`autocomplete` 优先；保留 EEO / 法律问卷 denylist。
 - **一键填写** + **扫描字段** + **AI 巡查** + **AI 填写**。
@@ -34,6 +35,41 @@
 
 示例资料为虚构「张三」；**切勿**把真实身份证/手机/邮箱提交进仓库。`normalizeProfile` 对旧 JSON 缺键填空、丢弃未知键。
 
+
+## 简历库与解析（1.4.0）
+
+选项页顶部「简历库」支持把现成简历文件直接变成可填写的档案，**全部在本机完成，不联网**。
+
+**支持格式**
+
+| 格式 | 解析方式 | 说明 |
+|------|----------|------|
+| PDF | 打包的 pdf.js 3.11 | 取文本层；纯图片/扫描件无文本层，需先 OCR |
+| DOCX | 打包的 mammoth 1.13 | `extractRawText`，不受排版样式影响 |
+| TXT / MD | FileReader | 直接按文本解析 |
+
+**流程**：选择文件 → 自动解析 → 预览（姓名/联系方式/意向/教育段数/工作段数/技能/置信度 + 缺失提醒）→ 改档案名 → 「保存到简历库并应用」。
+应用后会把该档案的 profile 写入 `chrome.storage.local`，内容脚本照旧读取并填表。
+
+**多档案**：所有档案存在 IndexedDB（库名 `resume-autofill`，store `resumes`），列表里可 **应用 / 重命名 / 删除**；支持「导出全部档案」「导入档案 JSON」整库搬迁。当前使用的档案 id 存在同一库的 `meta` store。
+
+**多段经历（schema 扩展）**：`eduList` / `workList` / `projectList` 三个数组各存多段，元素字段：
+
+- `eduList[]`：`school, major, degree, start, end, city, gpa, description`
+- `workList[]`：`company, title, start, end, city, description`
+- `projectList[]`：`name, role, start, end, tech, description`
+
+数组按**最新在前**排序；扁平主条目（`school/major/eduDegree/eduStart/eduEnd`、`company/title/startDate/workEnd`、`projectName/projectRole/…`）自动取第一条，因此旧的模糊匹配逻辑零改动。
+
+**解析策略**（`shared/resume-parser.js`）
+
+1. 文本归一化：CRLF、全角数字/字母/冒号括号、项目符号、连续空行。
+2. 标题分段：`教育背景/工作经历/项目经历/专业技能/荣誉奖项/自我评价` 等别名（支持 `一、`、`【】`、`1.` 前缀），整行匹配避免正文误判。
+3. 记录切分：日期区间（`2019.09-2023.06`、`2019/09 - 2023/06`、`2019年9月—至今`）作为记录起点，学校/公司关键词二次校正。
+4. 字段抽取：手机/邮箱/GitHub/LinkedIn、性别/生日/城市、学校/专业/学历、公司全称/职位、项目名/技术栈/职责、技能词表。
+5. 置信度 = 6 个关键字段命中率；缺手机号/邮箱/教育/工作会写进 `warnings`。
+
+**已知限制**：不做 OCR（扫描件需先转文字）；`.doc` 老格式提示另存为 `.docx`/PDF；填充仍是「主条目 + 单行」——表单有多段教育/工作行时，目前只填第一段（数组已入库，多行填充待后续版本）。
 
 ## 模糊匹配说明
 
@@ -105,11 +141,16 @@ node tests/run-tests.mjs
 
 ```text
 resume-autofill-tool/
-├── manifest.json                 # MV3，version 1.3.0
+├── manifest.json                 # MV3，version 1.4.0
+├── lib/                          # 打包的第三方库（离线，无 CDN）
+│   ├── pdf.min.js / pdf.worker.min.js
+│   └── mammoth.browser.min.js
 ├── shared/
-│   ├── profile.js                # 字段列表 / 示例 / normalize
+│   ├── profile.js                # 字段列表 / 示例 / normalize / 多段经历
 │   ├── match.js                  # 关键词、模糊评分、denylist
-│   └── ai.js                     # AI 设置 + mergeAiMappingWithProfile
+│   ├── ai.js                     # AI 设置 + mergeAiMappingWithProfile
+│   ├── db.js                     # IndexedDB 多档案库
+│   └── resume-parser.js          # PDF/DOCX/TXT → 文本 → profile
 ├── background/
 │   └── service-worker.js         # AI_MAP_FIELDS / GET_AI_STATUS
 ├── content/
@@ -122,7 +163,9 @@ resume-autofill-tool/
 │   ├── playoffer-field-map.md    # CN 标签 → 键
 │   └── live-field-coverage.md
 ├── tests/
-│   └── run-tests.mjs
+│   ├── run-tests.mjs             # 匹配/填充/资源完整性
+│   ├── resume-parser.test.mjs    # 解析器 + 多档案 schema
+│   └── fixtures/                 # resume-zh.{txt,docx,pdf}
 ├── README.md
 └── .gitignore
 ```
@@ -138,6 +181,17 @@ resume-autofill-tool/
 - 证件号等敏感字段为选填；公共电脑请勿保存。
 
 ## Changelog
+
+### 1.4.0
+- **简历解析（纯本地）**：新增 `shared/resume-parser.js` + 打包 `pdf.js 3.11` / `mammoth 1.13`；PDF / DOCX / TXT / MD → 文本 → profile，无需联网、无 CDN。
+- **多档案库**：新增 `shared/db.js`（IndexedDB，库 `resume-autofill`），多份简历共存，列表可应用/重命名/删除，支持整库导出与导入 JSON。
+- **schema 扩展**：`eduList` / `workList` / `projectList` 三段数组；按最新在前排序，扁平主条目自动取第一条，旧匹配逻辑零改动。
+- **选项页「简历库」**：导入 → 解析预览（字段 + 置信度 + 缺失提醒）→ 改名保存并应用；保存资料时同步回写当前档案。
+- **解析策略**：标题别名分段（含 `一、`/`【】` 前缀）+ 日期区间切记录 + 学校/公司关键词校正 + 技能词表。
+- 手册：README 新增「简历库与解析」；测试 107 + 14。
+
+### 1.3.7
+- 适配 Ant Design 日期面板（年面板 / `« 2020年 »` 月面板 / 日网格）；`gridNavigate` 修复「十年箭头」死循环；`parseDateParts` 收紧分隔符与数值校验；支持 `YYYY-MM` 的年月字段（`ym` 角色）；单字段异常不再中断整次填充。
 
 ### 1.3.0
 - **playoffer 全量字段**：profile / 选项页 / 匹配关键词对齐 ATS 简历模型（约 255 键）；多段经历存主条目。
