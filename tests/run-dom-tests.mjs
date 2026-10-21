@@ -310,6 +310,7 @@ const CASES = [
 // ── 能力层用例：在真实控件上验证 probeControl / matchLevel ──
 const CAP_SCRIPT = path.join(__dirname, '..', 'shared', 'date-capability.js');
 const STRAT_SCRIPT = path.join(__dirname, '..', 'shared', 'date-strategies.js');
+const AUDIT_SCRIPT = path.join(__dirname, '..', 'shared', 'audit.js');
 
 const CAP_CASES = [
   {
@@ -476,6 +477,75 @@ const FILL_CASES = [
   },
 ];
 
+// ── 审计用例：抓住「以为填上了、其实没进去」──
+const AUDIT_CASES = [
+  {
+    name: 'audit:wecruit —— 只输入不提交，审计判「读不回」而不是「已填」',
+    file: 'wecruit-antd3-select.html',
+    async run(page) {
+      // 模拟我们的失败路径：把值打进搜索框、没有真正提交
+      await nativeClick(page, '#selection');
+      await page.fill('#search', '广东工业大学');
+      await page.waitForTimeout(250);
+      const r = await page.evaluate(() => {
+        const A = window.ResumeAutofillAudit;
+        const host = document.querySelector('#sel');
+        const shown = host.querySelector('.ant-select-selection-selected-value');
+        const actual = shown ? shown.textContent.trim() : '';
+        return A.auditEntries([{ key: 'school', expected: '广东工业大学', actual: actual }], { ignoreEmpty: false });
+      });
+      eq(r.checked, 1, '审计项数');
+      eq(r.ok, 0, '没有一致项');
+      eq(r.empty, 1, '判为「读不回」');
+      eq(r.mismatch, 0, '不算错填（页面没显示错值）');
+      ok(r.problems.length === 1, '问题项已列出');
+    },
+  },
+  {
+    name: 'audit:wecruit —— 真正提交后审计通过',
+    file: 'wecruit-antd3-select.html',
+    async run(page) {
+      await nativeClick(page, '#selection');
+      await page.fill('#search', '广东工业大学');
+      await page.waitForTimeout(250);
+      await page.focus('#search');
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
+      const r = await page.evaluate(() => {
+        const A = window.ResumeAutofillAudit;
+        const host = document.querySelector('#sel');
+        const shown = host.querySelector('.ant-select-selection-selected-value');
+        return A.auditEntries([{ key: 'school', expected: '广东工业大学', actual: shown ? shown.textContent.trim() : '' }]);
+      });
+      eq(r.ok, 1, '一致');
+      eq(r.wrongFill, 0, '零错填');
+    },
+  },
+  {
+    name: 'audit:r12 —— 日期补日判近似，跨月判错填',
+    file: 'r12-antd-date.html',
+    async run(page) {
+      await page.focus('#birth');
+      await page.evaluate(() => {
+        const td = Array.from(document.querySelectorAll('#tb td.ant-picker-cell-in-view')).find((n) => n.textContent.trim() === '5');
+        td.click();
+      });
+      const v = await value(page, '#birth');
+      const r = await page.evaluate((val) => {
+        const A = window.ResumeAutofillAudit;
+        return {
+          month: A.compareEntry({ key: 'birthday', expected: '2020-03', actual: val }).status,
+          exactDay: A.compareEntry({ key: 'birthday', expected: '2020-03-05', actual: val }).status,
+          wrongMonth: A.compareEntry({ key: 'birthday', expected: '2020-02-05', actual: val }).status
+        };
+      }, v);
+      eq(r.month, 'approx', '月精度期望 → 近似');
+      eq(r.exactDay, 'ok', '日精度期望 → 一致');
+      eq(r.wrongMonth, 'mismatch', '跨月 → 错填');
+    },
+  },
+];
+
 // ── 运行 ──────────────────────────────────────────────────
 (async function main() {
   const filter = process.argv[2] || '';
@@ -484,7 +554,7 @@ const FILL_CASES = [
   let passed = 0;
   const failed = [];
 
-  for (const c of CASES.concat(CAP_CASES).concat(FILL_CASES)) {
+  for (const c of CASES.concat(CAP_CASES).concat(FILL_CASES).concat(AUDIT_CASES)) {
     if (filter && !c.name.includes(filter) && !c.file.includes(filter)) continue;
     const page = await browser.newPage();
     const pageErrors = [];
@@ -493,6 +563,7 @@ const FILL_CASES = [
       await page.goto(fileUrl(c.file));
       await page.addScriptTag({ path: CAP_SCRIPT });
       await page.addScriptTag({ path: STRAT_SCRIPT });
+      await page.addScriptTag({ path: AUDIT_SCRIPT });
       await c.run(page);
       if (pageErrors.length) throw new Fail('页面 JS 报错: ' + pageErrors.join('; '));
       passed++;

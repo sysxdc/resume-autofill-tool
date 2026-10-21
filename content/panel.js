@@ -226,11 +226,23 @@
           keys: (r.filledKeys || []).slice(0, 80),
           // 降级项：值填上了但精度掉了（2023-09 被写成 2023-09-01 / 日被控件吃掉），必须看得见
           degraded: (r.degradedDates || []).slice(0, 20),
+          auditRecords: r.auditRecords || 0,
+          audit: r.audit ? {
+            checked: r.audit.checked, ok: r.audit.ok, approx: r.audit.approx,
+            empty: r.audit.empty, wrong: r.audit.mismatch,
+            problems: (r.audit.problems || []).slice(0, 15)
+          } : null,
           skipped: (r.skipped || []).slice(0, 30)
         });
       } catch (_) { /* ignore */ }
       var blanks = (r.unfilled && r.unfilled.length !== undefined) ? r.unfilled : api.unfilled();
-      setStatus('已填 ' + (r.filled || 0) + ' 项' + (r.timedOut ? '（超时，部分字段没处理完）' : '') + '，' + summary(blanks));
+      var auditText = '';
+      if (r.audit && r.audit.checked) {
+        auditText = '；校验 ' + r.audit.ok + '/' + r.audit.checked + ' 一致';
+        if (r.audit.mismatch) auditText += '，' + r.audit.mismatch + ' 处页面值对不上（已在下方列出）';
+        else if (r.audit.empty) auditText += '，' + r.audit.empty + ' 处读不回值';
+      }
+      setStatus('已填 ' + (r.filled || 0) + ' 项' + (r.timedOut ? '（超时，部分字段没处理完）' : '') + auditText + '，' + summary(blanks));
       renderList(blanks);
     } catch (err) {
       setStatus('填写失败：' + String((err && err.message) || err).slice(0, 80), true);

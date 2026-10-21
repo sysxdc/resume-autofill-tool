@@ -17,6 +17,7 @@ const Match = require(path.join(root, 'shared/match.js'));
 const Profile = require(path.join(root, 'shared/profile.js'));
 const AI = require(path.join(root, 'shared/ai.js'));
 const DateCap = require(path.join(root, 'shared/date-capability.js'));
+const Audit = require(path.join(root, 'shared/audit.js'));
 
 let passed = 0;
 let failed = 0;
@@ -2221,6 +2222,88 @@ test('v1.5.18 日期策略层：顺序 / 注册 / 判别', () => {
   assert.equal(S.register('panel-nav', async () => true), true);
   assert.equal(S.available()['panel-nav'].length, 2, '同槽位可叠加（内置在前）');
   assert.equal(S.register('not-a-slot', async () => true), false, '顺序表外的 id 不收');
+});
+
+test('v1.5.19 AI 白名单：简历值不出本机', () => {
+  const prof = {
+    name: '戴运升', email: 'secret@example.com', phone: '18998683413',
+    idNumber: '441701200409210032', birthday: '2004-09-21', currentCity: '',
+    eduList: [{ school: '广东工业大学' }]
+  };
+  const fields = [
+    { index: 0, label: '电子邮箱', controlType: 'text' },
+    { index: 1, label: '学历', controlType: 'select', options: [{ text: '本科' }, { text: '硕士' }] }
+  ];
+  const body = AI.buildAiRequestBody({ enabled: true }, prof, fields);
+  const raw = JSON.stringify(body);
+  // 红线：整份请求里不许出现任何简历值
+  ['戴运升', 'secret@example.com', '18998683413', '441701200409210032', '2004-09-21', '广东工业大学'].forEach((v) => {
+    assert.equal(raw.indexOf(v), -1, '请求里不该出现值：' + v);
+  });
+  // 但要有键目录（只有键名）+ 字段标签 + 选项文本（payload 是嵌在 message 里的 JSON 字符串）
+  const payload = JSON.parse(body.messages[1].content);
+  assert.ok(Array.isArray(payload.keys) && payload.keys.length > 0, '带键目录');
+  const keyNames = payload.keys.map((k) => k.key);
+  assert.ok(keyNames.includes('name') && keyNames.includes('email'), '键名可见');
+  assert.ok(keyNames.includes('eduList'), '多段经历以列表键出现');
+  assert.equal(keyNames.includes('currentCity'), false, '空值键不进目录');
+  assert.equal(payload.fields[0].label, '电子邮箱', '字段标签可见');
+  assert.deepEqual(payload.fields[1].options, ['本科', '硕士'], '选项文本可见');
+  // 默认就是白名单
+  assert.equal(AI.normalizeAiSettings({}).mode, 'whitelist');
+  // full 模式仍保留（用户显式选择），用于开放题
+  const full = JSON.stringify(AI.buildAiRequestBody({ mode: 'full' }, prof, fields));
+  assert.ok(full.includes('secret@example.com'), 'full 模式才发值');
+});
+
+test('v1.5.19 填写审计：能区分「一致 / 近似 / 读不回 / 错填」', () => {
+  const R = (e) => Audit.compareEntry(e);
+  assert.equal(R({ key: 'email', expected: 'a@b.c', actual: 'a@b.c' }).status, 'ok');
+  // 日期：月精度被补日 → 近似（合法降级）
+  assert.equal(R({ key: 'eduStart', expected: '2023-09', actual: '2023-09-01' }).status, 'approx');
+  // 日期：跨月 → 错填
+  assert.equal(R({ key: 'eduStart', expected: '2023-09', actual: '2023-08-01' }).status, 'mismatch');
+  // 值没进去 → 读不回
+  assert.equal(R({ key: 'phone', expected: '189', actual: '' }).status, 'empty');
+  // 学校名多出来的后缀是另一所学校 → 必须判错填（这条以前被「包含即近似」放过）
+  assert.equal(R({ key: 'school', expected: '广东工业大学', actual: '广东工业大学华立学院' }).status, 'mismatch');
+  // 专业被页面加了「(类别)(层次)(地区)」消歧后缀 → 近似（wecruit 实测）
+  assert.equal(R({ key: 'major', expected: '自动化', actual: '自动化(自动化类)(普通本科)(中国大陆)' }).status, 'approx');
+  // 但「后缀」不是括号时仍然算另一所学校/另一个值 → 错填
+  assert.equal(R({ key: 'school', expected: '广东工业大学', actual: '广东工业大学华立学院' }).status, 'mismatch');
+  // 枚举字段的页面长标签 → 近似
+  assert.equal(R({ key: 'eduDegree', expected: '本科', actual: '本科（学士）' }).status, 'approx');
+  // 行政区截断 → 近似
+  assert.equal(R({ key: 'province', expected: '广东省阳江市', actual: '阳江市' }).status, 'approx');
+
+  const sum = Audit.auditEntries([
+    { key: 'email', expected: 'a@b.c', actual: 'a@b.c' },
+    { key: 'phone', expected: '189', actual: '' },
+    { key: 'school', expected: '广东工业大学', actual: '华立学院' }
+  ]);
+  assert.equal(sum.checked, 3);
+  assert.equal(sum.ok, 1);
+  assert.equal(sum.empty, 1);
+  assert.equal(sum.mismatch, 1);
+  assert.equal(sum.wrongFill, 1);
+  assert.equal(sum.okAll, false);
+  assert.ok(sum.problems.length >= 2, '问题项要列出来');
+});
+
+test('v1.5.19 诊断字段必须透传（否则悬浮窗永远看不到）', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  // handleFill 是白名单式重组，漏一个字段 = 该字段永远 undefined（degradedDates 就这么丢过）
+  const handle = src.slice(src.indexOf('async function handleFill'), src.indexOf('async function handleFill') + 1200);
+  ['degradedDates', 'dateTries', 'audit', 'auditRecords'].forEach((k) => {
+    assert.ok(handle.indexOf(k) !== -1, 'handleFill 透传 ' + k);
+  });
+  // 审计在册点：至少覆盖 日期组 / 弹窗选择器 / 单选 / 起止合体
+  const calls = (src.match(/recordFill\(/g) || []).length;
+  assert.ok(calls >= 8, 'recordFill 调用点 ' + calls + ' 个（至少覆盖 8 个成功路径）');
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  const js = manifest.content_scripts[0].js;
+  assert.ok(js.indexOf('shared/audit.js') !== -1, 'audit 已注入');
+  assert.ok(js.indexOf('shared/audit.js') < js.indexOf('content/autofill.js'), 'audit 先于 autofill');
 });
 
 console.log('');

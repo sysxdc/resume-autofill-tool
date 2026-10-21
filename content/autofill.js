@@ -817,6 +817,7 @@
             [sec.startKey, sec.endKey].forEach(function (k) {
               if (k && filledKeys.indexOf(k) === -1) filledKeys.push(k);
             });
+            recordFill(sec.el || null, sec.startKey, M.profileValue(profile, sec.startKey) || '', 'date');
           }
         }
       }
@@ -856,6 +857,7 @@
       [map.startKey, map.endKey].forEach(function (k) {
         if (filledKeys.indexOf(k) === -1) filledKeys.push(k);
       });
+      recordFill(ed, map.startKey, start + '~' + end, 'date');
     }
     return filled;
   }
@@ -1734,6 +1736,7 @@
       if (ok) {
         filled += 1;
         if (filledKeys && filledKeys.indexOf(key) === -1) filledKeys.push(key);
+        recordFill(inp, key, val);
       }
       // 没选中的弹窗要关掉，否则遮罩会把后面的下拉点击全吞掉
       var leftover = visibleAntdModal();
@@ -2480,6 +2483,61 @@
 
   // 最近一次日期策略尝试（诊断用；fillReadonlyPickerAntd 写入、fill() 读出来）
   var lastDateTries = [];
+
+  // 填写审计：记下每次「以为填上了」的元素与期望值，整轮结束后回读核对
+  // （这几轮最常见的失败不是填错内容，而是以为填上了其实没进去：值进了搜索框、
+  //   点 li 不提交、受控组件重渲染把值吞掉。审计是唯一能抓住它的本地手段。）
+  var fillRecords = [];
+
+  function recordFill(el, key, expected, kind) {
+    try {
+      fillRecords.push({
+        el: el,
+        key: String(key || ''),
+        label: String((el && (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('placeholder'))) ) || ''),
+        expected: String(expected == null ? '' : expected),
+        kind: String(kind || '')
+      });
+    } catch (_) { /* ignore */ }
+  }
+
+  /** 回读一个控件当前显示的值（覆盖 input / textarea / select / antd 宿主 / 单选组） */
+  function readBackValue(el) {
+    if (!el || el.nodeType !== 1) return '';
+    var tag = String(el.tagName || '').toLowerCase();
+    try {
+      if (tag === 'select') {
+        var opt = el.options && el.options[el.selectedIndex];
+        return opt ? String(opt.textContent || opt.text || opt.value || '').trim() : '';
+      }
+      if (tag === 'input' || tag === 'textarea') {
+        var t = String(el.getAttribute('type') || 'text').toLowerCase();
+        if (t === 'radio' || t === 'checkbox') {
+          var lab = el.closest && el.closest('label');
+          return el.checked ? String((lab && lab.textContent) || el.value || '').replace(/\s+/g, ' ').trim() : '';
+        }
+        return String(el.value || '').trim();
+      }
+      // 自定义下拉宿主
+      var shown = el.querySelector('.ant-select-selection-selected-value, .ant-select-selection-item, .el-select__selected-item, .selected-text');
+      if (shown) return String(shown.textContent || '').replace(/\s+/g, ' ').trim();
+      var inner = el.querySelector('input.ant-input, input[type="text"]');
+      if (inner) return String(inner.value || '').trim();
+      return String(el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+    } catch (_) { return ''; }
+  }
+
+  /** 整轮填写后核对：期望值 vs 页面真实值 */
+  function runFillAudit() {
+    var A = globalThis.ResumeAutofillAudit;
+    if (!A || !fillRecords.length) return null;
+    try {
+      var entries = fillRecords.map(function (r) {
+        return { key: r.key, label: r.label, expected: r.expected, actual: readBackValue(r.el), kind: r.kind };
+      });
+      return A.auditEntries(entries, { ignoreEmpty: false });
+    } catch (_) { return null; }
+  }
 
   var DATE_PANEL_SEL = '.layui-laydate, .laydate, .el-picker-panel, .el-date-picker, ' +
     '.ant-picker-dropdown, .flatpickr-calendar, [class*="datepicker"], [class*="date-picker"], ' +
@@ -3895,6 +3953,7 @@
     var filledKeys = [];
     var degradedDates = [];
     lastDateTries = [];
+    fillRecords = [];
     var forced = [];
     var skipped = [];
     var keyCounts = {};
@@ -4002,6 +4061,7 @@
             filled += 1;
             keyCounts[counterKey] = count + 1;
             if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
+            recordFill(customHost, key, value);
             highlight(el);
             continue;
           }
@@ -4049,6 +4109,7 @@
             filled += 1;
             keyCounts[counterKey] = count + 1;
             if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
+            recordFill(grpFirst.members && grpFirst.members[0] ? grpFirst.members[0] : el, key, value, 'date');
             grpFirst.members.forEach(function (m) { highlight(m); });
           } else if (skipped.length < 12) {
             skipped.push({ key: key, reason: grpFirst.reason || 'date_group_failed' });
@@ -4132,6 +4193,7 @@
         filled += 1;
         keyCounts[counterKey] = count + 1;
         if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
+        recordFill(el, key, value, isReadonlyPicker(el) ? 'date' : '');
         highlight(el);
       }
     }
@@ -4155,6 +4217,8 @@
           keyCounts['radio:' + gkey] = 1;
           filled += 1;
           if (filledKeys.indexOf(gkey) === -1) filledKeys.push(gkey);
+          var checkedRadio = container.querySelector('input[type=radio]:checked');
+          if (checkedRadio) recordFill(checkedRadio, gkey, gval);
         }
       });
       filled += fillNamedRadioGroups(profile, keyCounts, filledKeys);
@@ -4210,9 +4274,22 @@
     // 别把弹层留在页面上
     try { closePhoenixPanels(); } catch (_) { /* ignore */ }
 
+    // 填完审计：期望值 vs 页面真实值（本地比较，不发网络）
+    var audit = runFillAudit();
+    if (audit && audit.wrongFill) {
+      // 有错填：宁可把这些字段报出来，也不能让它们静默进提交
+      (audit.problems || []).forEach(function (p) {
+        if (p.status === 'mismatch' && skipped.length < 20) {
+          skipped.push({ key: p.key, reason: 'audit_mismatch: 页面显示「' + String(p.actual).slice(0, 20) + '」' });
+        }
+      });
+    }
+
     return {
       filled: filled, expanded: expanded, filledKeys: filledKeys, skipped: skipped,
-      degradedDates: degradedDates, dateTries: lastDateTries, forced: forced, timedOut: timedOut
+      degradedDates: degradedDates, dateTries: lastDateTries, audit: audit,
+      auditRecords: fillRecords.length,
+      forced: forced, timedOut: timedOut
     };
   }
 
@@ -4258,6 +4335,7 @@
         filled += 1;
         var k = m.profileKey || ('custom:' + m.index);
         if (filledKeys.indexOf(k) === -1) filledKeys.push(k);
+        recordFill(el, k, value, looksLikeDateInput(el) ? 'date' : '');
         highlight(el);
       }
     });
@@ -4298,6 +4376,12 @@
       filledKeys: result.filledKeys,
       skipped: result.skipped || [],
       forced: result.forced || [],
+      // 诊断/审计字段必须原样透传：handleFill 是「白名单式」重组结果，
+      // 漏一个就等于该字段永远为 undefined（degradedDates / audit 之前就是这么丢的）
+      degradedDates: result.degradedDates || [],
+      dateTries: result.dateTries || [],
+      audit: result.audit || null,
+      auditRecords: result.auditRecords || 0,
       timedOut: !!result.timedOut
     };
   }

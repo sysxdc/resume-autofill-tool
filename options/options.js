@@ -140,7 +140,8 @@
       enabled: document.getElementById('ai-enabled').checked,
       apiBaseUrl: document.getElementById('ai-base').value,
       apiKey: document.getElementById('ai-key').value,
-      model: document.getElementById('ai-model').value
+      model: document.getElementById('ai-model').value,
+      mode: (document.getElementById('ai-mode') || {}).value || 'whitelist'
     });
   }
 
@@ -150,6 +151,8 @@
     document.getElementById('ai-base').value = s.apiBaseUrl || '';
     document.getElementById('ai-key').value = s.apiKey || '';
     document.getElementById('ai-model').value = s.model || '';
+    var modeSel = document.getElementById('ai-mode');
+    if (modeSel) modeSel.value = s.mode || 'whitelist';
   }
 
 

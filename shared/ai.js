@@ -24,8 +24,13 @@
     enabled: false,
     apiBaseUrl: 'https://api.openai.com/v1',
     apiKey: '',
-    model: 'gpt-4o-mini'
+    model: 'gpt-4o-mini',
+    // 'whitelist'（默认）：只发字段标签 / 控件类型 / 选项文本，**项目值一律不出本机**
+    // 'full'：旧行为，会把整份非空 profile（含证件号、手机、住址）发给模型，需要用户显式选择
+    mode: 'whitelist'
   };
+
+  var AI_MODES = ['whitelist', 'full'];
 
   function normalizeAiSettings(raw) {
     var src = raw || {};
@@ -34,7 +39,10 @@
       apiBaseUrl: String(src.apiBaseUrl || DEFAULT_AI_SETTINGS.apiBaseUrl).trim().replace(/\/+$/, '') ||
         DEFAULT_AI_SETTINGS.apiBaseUrl,
       apiKey: String(src.apiKey || '').trim(),
-      model: String(src.model || DEFAULT_AI_SETTINGS.model).trim() || DEFAULT_AI_SETTINGS.model
+      model: String(src.model || DEFAULT_AI_SETTINGS.model).trim() || DEFAULT_AI_SETTINGS.model,
+      mode: AI_MODES.indexOf(String(src.mode || '').toLowerCase()) !== -1
+        ? String(src.mode).toLowerCase()
+        : DEFAULT_AI_SETTINGS.mode
     };
   }
 
@@ -66,6 +74,99 @@
       profile: profileObj,
       fields: fields
     });
+  }
+
+  /**
+   * 允许模型看到的键目录：**只有非空键名**（值一律不发）。
+   * 只列这个用户真正填过的键，既缩短 payload，也让模型少猜。
+   */
+  function buildKeyCatalog(ProfileApi, profileObj) {
+    var P = ProfileApi || Profile;
+    var all = (P && P.PROFILE_FIELDS) || [];
+    var prof = profileObj || {};
+    var out = [];
+    all.forEach(function (k) {
+      var v = prof[k];
+      if (v === undefined || v === null) return;
+      var filled = Array.isArray(v) ? v.length > 0 : String(v).trim() !== '';
+      if (!filled) return;
+      out.push({ key: k });
+    });
+    // 多段经历里的子字段（eduList[].school 这种）单独给一行标签，便于模型理解
+    var labels = (P && P.LIST_ITEM_LABELS) || {};
+    Object.keys(labels).forEach(function (listKey) {
+      var arr = prof[listKey];
+      if (!Array.isArray(arr) || !arr.length) return;
+      out.push({ key: listKey, label: '多段：' + Object.keys(labels[listKey]).join('/') });
+    });
+    return out;
+  }
+
+  /**
+   * 白名单模式的 system prompt：只做「字段 → profileKey」映射，不允许返回任何值。
+   * 值由本地 mergeAiMappingWithProfile 从 profile 取，模型拿不到也编不出。
+   */
+  function buildWhitelistSystemPrompt() {
+    return [
+      '你是求职表单字段映射助手。输入是「候选人资料里有哪些字段（只有键名和中文标签）」和「页面上有哪些表单字段」。',
+      '任务：为每个页面字段返回它对应的资料键（profileKey）。',
+      '严格只输出 JSON 数组，不要 markdown，不要解释。每个元素形如：',
+      '{"index":0,"action":"fill"|"skip","profileKey":"email"|null,"confidence":0.0-1.0,"reason":"..."}',
+      '规则：',
+      '1. **不要输出任何字段值**，你也不会收到任何值；值由本地按 profileKey 填充。',
+      '2. profileKey 必须是「可用键目录」里出现过的键，不确定就 action=skip。',
+      '3. 开放题（自我介绍 / 为什么加入 / 职业规划）→ skip（本模式不生成文本）。',
+      '4. EEO / 种族 / 残疾 / 性别自认 / veteran / how did you hear / 法律竞业 / 是否曾在本公司任职 → skip。',
+      '5. 证件号、银行账号、紧急联系人电话这类敏感字段 → 低置信时 skip。',
+      '6. confidence：高 ≥0.85，中 0.6–0.85，低 <0.6；低于 0.6 会被本地直接丢弃。',
+      '7. 一个资料键最多映射给 2 个页面字段（多次出现按顺序取不同条目）。'
+    ].join('\n');
+  }
+
+  /** 白名单模式的 user payload：只有标签、控件类型、选项文本 */
+  function buildWhitelistUserPrompt(fields, keyCatalog) {
+    var clean = (fields || []).map(function (f, i) {
+      var item = {
+        index: typeof f.index === 'number' ? f.index : i,
+        label: String(f.label || f.placeholder || f.name || f.id || '').slice(0, 80)
+      };
+      var type = String(f.controlType || f.tag || f.type || '').toLowerCase();
+      if (type) item.controlType = type;
+      var opts = f.options || [];
+      if (opts.length) {
+        item.options = opts.slice(0, 60).map(function (o) {
+          return String((o && (o.text || o.value || o)) || '').slice(0, 60);
+        });
+      }
+      return item;
+    });
+    return JSON.stringify({ keys: keyCatalog || [], fields: clean });
+  }
+
+  /**
+   * 组装请求体。whitelist 模式下 profile 值绝不进入 body（这是隐私边界，别再改回去）。
+   */
+  function buildAiRequestBody(settings, profile, fields, opts) {
+    var s = normalizeAiSettings(settings);
+    var o = opts || {};
+    var P = o.ProfileApi || Profile;
+    var system = s.mode === 'full' ? buildSystemPrompt() : buildWhitelistSystemPrompt();
+    var user;
+    if (s.mode === 'full') {
+      var profileObj = P && P.profileNonEmpty ? P.profileNonEmpty(profile) : profile;
+      user = buildUserPrompt(profileObj, fields);
+    } else {
+      var profObj = profile || {};
+      user = buildWhitelistUserPrompt(fields, buildKeyCatalog(P, profObj));
+    }
+    return {
+      model: s.model,
+      temperature: 0.1,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user }
+      ]
+    };
   }
 
   function parseAiMappingJson(text) {
@@ -292,6 +393,11 @@
     aiConfigured: aiConfigured,
     buildSystemPrompt: buildSystemPrompt,
     buildUserPrompt: buildUserPrompt,
+    buildKeyCatalog: buildKeyCatalog,
+    buildWhitelistSystemPrompt: buildWhitelistSystemPrompt,
+    buildWhitelistUserPrompt: buildWhitelistUserPrompt,
+    buildAiRequestBody: buildAiRequestBody,
+    AI_MODES: AI_MODES,
     parseAiMappingJson: parseAiMappingJson,
     mergeAiMappingWithProfile: mergeAiMappingWithProfile
   };

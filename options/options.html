@@ -717,6 +717,16 @@
           <label>模型名称
             <input type="text" name="model" id="ai-model" placeholder="gpt-4o-mini" />
           </label>
+          <label class="full">发送内容
+            <select name="mode" id="ai-mode">
+              <option value="whitelist">只发字段标签（推荐，简历内容不出本机）</option>
+              <option value="full">发送完整简历字段（开放题才写得出，含证件号/手机）</option>
+            </select>
+          </label>
+          <p class="ai-note full" id="ai-mode-note">
+            白名单模式：请求里只有「字段标签 + 控件类型 + 选项文本 + 你填过的键名」，模型只回 profileKey，
+            具体内容由本地按 key 填。开放题（自我介绍等）在此模式下会被跳过。
+          </p>
         </div>
         <div class="form-actions">
           <button type="submit" class="btn primary">保存 AI 设置</button>
