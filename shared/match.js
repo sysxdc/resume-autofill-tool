@@ -62,12 +62,10 @@
   var FIELD_KEYWORDS = {
     firstName: [
       'firstname', 'first_name', 'first-name', 'givenname', 'given_name', 'given-name',
-      'fname', '名', '名字', '名（', '名)'
-    ],
+      'fname', '名字'],
     lastName: [
       'lastname', 'last_name', 'last-name', 'surname', 'familyname', 'family_name', 'family-name',
-      'lname', '姓', '姓氏', '姓（', '姓)'
-    ],
+      'lname', '姓', '姓氏'],
     namePinyin: [
       'namepinyin', 'name_pinyin', 'pinyinname', '姓名拼音', '拼音姓名'
     ],
@@ -513,6 +511,7 @@
     awardLevel: ['awardlevel', 'award_level', '奖项级别'],
     awardType: ['awardtype', 'award_type', '奖励类型'],
     awardGrade: ['awardgrade', 'award_grade', '奖励等级'],
+    awardRank: ['awardrank', 'award_rank', '获奖名次', '比赛名次', '名次', '奖项名次'],
     awardDescription: ['awarddescription', 'award_description', '获奖描述'],
     patentName: ['patentname', 'patent_name', '专利名称'],
     patentNo: ['patentno', 'patent_no', '专利号'],
@@ -600,7 +599,7 @@
     'familyIdNumber', 'familyName', 'familyRelation', 'familyGender', 'familyEducation', 'familyEthnicity',
     'familyBirthday', 'familyPhone', 'familyEmployer', 'familyTitle', 'familyPoliticalStatus', 'familyAddress',
     'honors',
-    'awardName', 'awardIssuer', 'awardDate', 'awardEnd', 'awardLevel', 'awardType', 'awardGrade', 'awardDescription',
+    'awardName', 'awardRank', 'awardIssuer', 'awardDate', 'awardEnd', 'awardLevel', 'awardType', 'awardGrade', 'awardDescription',
     'patentName', 'patentNo', 'patentApplyDate', 'patentStatus', 'patentInventor', 'patentDescription',
     'paperTitle', 'paperJournal', 'paperAuthors', 'paperVolume', 'paperImpactFactor', 'paperJournalLevel',
     'paperAuthorOrder', 'paperDate', 'paperDoi', 'paperLink', 'paperAbstract',

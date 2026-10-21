@@ -1331,7 +1331,8 @@ test('v1.3.6: 只读框按 data-fmt 直写兜底', () => {
   assert.ok(/data-fmt/.test(src), '应读取 data-fmt');
   assert.ok(/function forceSetReadonly/.test(src), '应有直写兜底');
   assert.ok(/getOwnPropertyDescriptor\(Object\.getPrototypeOf\(el\), 'value'\)/.test(src), '应用原生 setter 以触达框架');
-  assert.ok(/resolve\(forceSetReadonly\(el, desired\) \? 'forced' : false\)/.test(src), '失败时返回 forced 标记');
+  assert.ok(/forceSetReadonly\(el, desired\) \? 'forced' : false/.test(src), '失败时返回 forced 标记');
+  assert.ok(/isAntdPickerEl\(el\) \? false/.test(src), 'antd 受控组件不做只读直写（会被 React 丢弃）');
   assert.ok(/forced: result\.forced \|\| \[\]/.test(src), '应答应透传 forced');
 });
 
@@ -1501,6 +1502,24 @@ test('v1.5.2: 无上下文时别名兜底 + 户籍不被抢成 schoolCity', () =
   assert.equal(mp('专业排名', 'edu'), 'majorRank');
 });
 
+test('v1.5.4: id 结构映射覆盖 ATS 行级字段', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/resume\(education\|work\|project\|paper\|intern\)info_/.test(src), '应解析 resumeXxxInfo_N_field 形态的 id');
+  for (const f of ['schoolname', 'collegename', 'scoreRank'.toLowerCase(), 'startdate', 'enddate']) {
+    assert.ok(new RegExp("'?" + f).test(src) || src.indexOf(f) !== -1, '缺字段映射: ' + f);
+  }
+  assert.ok(/form_item_resumeVo_resumeEducationInfo_0_collegeName/.test(src) === false, '不应硬编码站点 id');
+  assert.ok(/placeholder/.test(src), 'start/end 同日 id 需用 placeholder 区分');
+});
+
+test('v1.5.4: 获奖名次不再被单字“名”抢成姓名', () => {
+  const r1 = Match.matchFieldKeyScored('获奖名次', {});
+  assert.equal(r1 && r1.key, 'awardRank');
+  assert.notEqual(Match.matchFieldKeyScored('获奖名次', {}).key, 'firstName');
+  assert.equal(Match.matchFieldKeyScored('获奖时间', {}).key, 'awardDate');
+  assert.equal(Match.matchFieldKeyScored('竞赛/奖项名称', {}).key, 'awardName');
+});
+
 test('v1.5.0: normalizeProfile + merge 多段 roundtrip', () => {
   const raw = {
     name: '张三',
@@ -1635,9 +1654,9 @@ test('v1.5.0: demo/dropdowns.html 存在且含四类组件', () => {
   assert.ok(/活体验证|手动/.test(html));
 });
 
-test('v1.5.3: manifest 1.5.3', () => {
+test('v1.5.4: manifest 1.5.4', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(pkg.version, '1.5.3');
+  assert.equal(pkg.version, '1.5.4');
 });
 
 

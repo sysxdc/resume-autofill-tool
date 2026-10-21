@@ -222,6 +222,93 @@
     return '';
   }
 
+
+  // —————— v1.5.4：按 id 的语义路径做行级映射（ATS 常见：resumeEducationInfo_0_collegeName）——————
+  var STRUCT_PATH_RE = /resume(education|work|project|paper|intern)info_(\d+)_([a-z]+)/i;
+
+  var STRUCT_FIELDS = {
+    education: {
+      schoolname: { field: 'school', key: 'school' },
+      city: { field: 'city', key: 'schoolCity' },
+      collegename: { field: 'department', key: 'department' },
+      department: { field: 'department', key: 'department' },
+      major: { field: 'major', key: 'major' },
+      degree: { field: 'degree', key: 'eduDegree' },
+      startdate: { field: 'start', key: 'eduStart' },
+      enddate: { field: 'end', key: 'eduEnd' },
+      scorerank: { field: 'rank', key: 'majorRank' },
+      mentor: { field: 'mentor', key: 'advisorName' },
+      laboratory: { field: 'laboratory', key: 'labName' },
+      researchdirection: { field: 'research', key: 'researchDirection' },
+      gpa: { field: 'gpa', key: 'gpa' }
+    },
+    work: {
+      companyname: { field: 'company', key: 'company' },
+      department: { field: 'department', key: 'workDepartment' },
+      position: { field: 'title', key: 'title' },
+      positionname: { field: 'title', key: 'title' },
+      title: { field: 'title', key: 'title' },
+      startdate: { field: 'start', key: 'startDate' },
+      enddate: { field: 'end', key: 'workEnd' },
+      city: { field: 'city', key: 'workCity' },
+      worktype: { field: 'nature', key: 'workType' }
+    },
+    paper: {
+      name: { field: 'name', key: 'awardName' },
+      rank: { field: 'rank', key: 'awardRank' },
+      time: { field: 'time', key: 'awardDate' },
+      remark: { field: 'desc', key: 'awardDescription' }
+    },
+    project: {
+      name: { field: 'name', key: 'projectName' },
+      projectname: { field: 'name', key: 'projectName' },
+      role: { field: 'role', key: 'projectRole' },
+      startdate: { field: 'start', key: 'projectStart' },
+      enddate: { field: 'end', key: 'projectEnd' },
+      description: { field: 'description', key: 'projectDesc' }
+    }
+  };
+
+  var STRUCT_LIST_KEY = { education: 'eduList', work: 'workList', project: 'projectList', paper: 'awardList' };
+
+  /**
+   * 从 id 里解析「第几段 + 哪个字段」。同一 id 的两个日期框（如 …_startDate）
+   * 用 placeholder 区分入学/毕业、入职/离职。
+   */
+  function detectStructuredField(el) {
+    if (!el || !el.id) return null;
+    var m = String(el.id).match(STRUCT_PATH_RE);
+    if (!m) return null;
+    var section = m[1].toLowerCase();
+    var index = parseInt(m[2], 10);
+    var raw = m[3].toLowerCase();
+    var map = STRUCT_FIELDS[section];
+    if (!map) return null;
+    var hit = map[raw];
+    if (!hit) return null;
+    var field = hit.field;
+    var key = hit.key;
+    if (raw === 'startdate' || raw === 'enddate') {
+      var ph = String(el.getAttribute('placeholder') || '');
+      if (/毕业|结束|截止|离职|离校/.test(ph)) { field = 'end'; key = section === 'education' ? 'eduEnd' : (section === 'work' ? 'workEnd' : key); }
+      else if (/入学|开始|入职|起始/.test(ph)) { field = 'start'; key = section === 'education' ? 'eduStart' : (section === 'work' ? 'startDate' : key); }
+    }
+    return { listKey: STRUCT_LIST_KEY[section], index: index, field: field, key: key };
+  }
+
+  /** 第 N 段的值；第 0 段且条目为空时回落到扁平字段 */
+  function structuredValue(profile, struct) {
+    if (!struct) return '';
+    var list = profile && Array.isArray(profile[struct.listKey]) ? profile[struct.listKey] : [];
+    var item = list[struct.index] || null;
+    if (item) {
+      var v = item[struct.field];
+      if (v != null && String(v).trim()) return String(v).trim();
+    }
+    if (struct.index === 0) return M.profileValue(profile, struct.key) || '';
+    return '';
+  }
+
   function matchKeyForElement(el) {
     return M.matchFieldKey(collectHints(el), {
       autocomplete: el.getAttribute('autocomplete') || '',
@@ -865,6 +952,9 @@
       if (n.disabled) return;
       if (/^(hidden|file|checkbox|radio|submit|button)$/i.test(n.type)) return;
       if (!isVisibleEl(n)) return;
+      // 整日期控件（入学时间/毕业时间/请选择日期/RangePicker 两端）不是年/月/日部件
+      var ph = String(n.getAttribute('placeholder') || '');
+      if (/入学时间|毕业时间|开始时间|结束时间|起始|截止|入职时间|离职时间|请选择日期|yyyy-mm|yyyy年/i.test(ph)) return;
       nodes.push(n);
     });
     if (nodes.length < 2 || nodes.length > 4) return null;
@@ -1279,6 +1369,14 @@
 
   var ANTD_DROPDOWN = '.ant-picker-dropdown';
 
+  /** 关掉已打开的 antd 面板：同一表单里多个日期框的弹层会同时挂在 body 上 */
+  function closeAllAntdPanels() {
+    try {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+      document.body.dispatchEvent(new KeyboardEvent('keyup', { key: 'Escape', keyCode: 27, bubbles: true }));
+    } catch (_) { /* ignore */ }
+  }
+
   function antdPanel() {
     var list = [];
     try {
@@ -1312,7 +1410,11 @@
       ? (dir < 0 ? '.ant-picker-header-super-prev-btn' : '.ant-picker-header-super-next-btn')
       : (dir < 0 ? '.ant-picker-header-prev-btn' : '.ant-picker-header-next-btn');
     var b = panel.querySelector(sel);
-    return b && isVisibleEl(b) ? b : null;
+    if (b && isVisibleEl(b)) return b;
+    // 月/年面板没有 prev/next，只有 super 按钮（月面板的 super = ±1 年）
+    var sel2 = dir < 0 ? '.ant-picker-header-super-prev-btn' : '.ant-picker-header-super-next-btn';
+    var b2 = panel.querySelector(sel2);
+    return b2 && isVisibleEl(b2) ? b2 : null;
   }
 
   function antdClickCell(panel, text) {
@@ -1326,19 +1428,21 @@
 
   /** 把视图翻到目标年（年面板按 10 年跳，月/日面板按 1 年跳） */
   async function antdGotoYear(panel, year, yearStep) {
-    for (var guard = 0; guard < 24; guard++) {
-      var hv = antdHeaderView(panel);
+    for (var guard = 0; guard < 40; guard++) {
+      // React 每次翻页都会重建面板 DOM，必须每轮重新取，否则点的是已脱离文档的按钮
+      var cur = antdPanel() || panel;
+      var hv = antdHeaderView(cur);
       if (!hv.y) return false;
       if (hv.y === year) return true;
       var diff = year - hv.y;
       var btn = null;
       if (yearStep >= 10 && Math.abs(diff) >= 10) {
-        btn = antdNav(panel, diff < 0 ? -1 : 1, 'year');
+        btn = antdNav(cur, diff < 0 ? -1 : 1, 'year');
       }
-      if (!btn) btn = antdNav(panel, diff < 0 ? -1 : 1, 'month');
+      if (!btn) btn = antdNav(cur, diff < 0 ? -1 : 1, 'month');
       if (!btn) return false;
       simulateClick(btn);
-      await sleep(110);
+      await sleep(yearStep >= 10 ? 140 : 120);
     }
     return false;
   }
@@ -1363,17 +1467,42 @@
       monthMode = cells.some(function (c) { return /^\d{1,2}\s*月$/.test(c.text); });
     }
     if (monthMode) {
-      var navOk = await antdGotoYear(panel, y, 1);
-      var clickOk = antdClickCell(panel, m + '月');
-      if (!clickOk) return false;
-      await sleep(240);
-      if (!dateValueMatches(el.value, desired)) {
-        var p2 = antdPanel() || panel;
-        var ok = antdClickCell(p2, String(m) + '月');
-        await sleep(200);
+      var want = y + '-' + ('0' + m).slice(-2);
+
+      function monthCellReady() {
+        var pp = antdPanel() || panel;
+        var cell = pp.querySelector('.ant-picker-cell[title="' + want + '"]');
+        return cell && !/ant-picker-cell-disabled/.test(String(cell.className)) ? cell : null;
       }
-      return true;
+
+      var hit = monthCellReady();
+      if (!hit) {
+        // 月面板只有 super-prev/super-next（= ±1 年）：逐年翻到目标年。
+        // 每轮重新取面板，点击后立刻检查目标格子，避免 React 重建 DOM 后的陈旧引用。
+        for (var gy = 0; gy < 40; gy++) {
+          var py = antdPanel() || panel;
+          var hvy = antdHeaderView(py);
+          if (!hvy.y || hvy.y === y) break;
+          var nvy = antdNav(py, hvy.y < y ? 1 : -1, 'month');
+          if (!nvy) break;
+          simulateClick(nvy);
+          await sleep(90);
+          if (monthCellReady()) break;
+        }
+        hit = monthCellReady();
+      }
+      if (hit) {
+        simulateClick(hit);
+        await sleep(260);
+        if (dateValueMatches(el.value, desired)) return true;
+      }
+      // 最后：按文字点月（老版本 antd 无 title）
+      panel = antdPanel() || panel;
+      if (!antdClickCell(panel, m + '月')) return false;
+      await sleep(260);
+      return dateValueMatches(el.value, desired);
     }
+
     return false;   // 日面板交给通用网格逻辑
   }
 
@@ -1384,6 +1513,12 @@
       el.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
       el.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
     } catch (_) { /* 老浏览器不支持 FocusEvent */ }
+    // antd 5 的 Picker 监听 pointerdown；其它站点多派发一次会被当成二次点击（开了又关）
+    try {
+      if (isAntdPickerEl(el) && typeof PointerEvent === 'function') {
+        el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true, view: window }));
+      }
+    } catch (_) { /* ignore */ }
     simulateClick(el);
     var box = el.parentElement;
     if (box) {
@@ -1427,7 +1562,102 @@
     return String(el.value || '').trim() !== '';
   }
 
+  function isAntdPickerEl(el) {
+    try { return !!(el && el.closest && el.closest('.ant-picker')); } catch (_) { return false; }
+  }
+
+  /** 等 antd 弹层真正挂上 DOM（首帧可能还没渲染） */
+  function waitForAntdPanel(ms) {
+    return new Promise(function (resolve) {
+      var t0 = Date.now();
+      (function poll() {
+        var p = antdPanel();
+        if (p) return resolve(p);
+        if (Date.now() - t0 > ms) return resolve(null);
+        setTimeout(poll, 60);
+      })();
+    });
+  }
+
   function fillReadonlyPicker(el, desired) {
+    return isAntdPickerEl(el) ? fillReadonlyPickerAntd(el, desired) : fillReadonlyPickerLegacy(el, desired);
+  }
+
+  /** antd（受控组件）专用：等弹层 → 年/月/日面板 → 不做只读直写 */
+  function fillReadonlyPickerAntd(el, desired) {
+    var before = String(el.value || '');
+    return new Promise(function (resolve) {
+      // Escape 关掉上一个弹层后要给它一点时间收尾，否则紧接着的 mousedown 会被吞掉
+      closeAllAntdPanels();
+      setTimeout(function () { openPicker(el); }, 160);
+      setTimeout(async function () {
+        // ⓿ Ant Design 面板：先等弹层挂载再判定年/月/日模式
+        var waited = await waitForAntdPanel(900);
+        if (!waited) {
+          // 二次尝试：上一个下拉关闭时可能抢回焦点，导致首次点击被吞
+          closeAllAntdPanels();
+          await sleep(260);
+          openPicker(el);
+          waited = await waitForAntdPanel(1100);
+        }
+        // 只有 antd 控件才要求弹层；其它站点（Element/自定义面板）走下面的老路径
+        if (!waited && isAntdPickerEl(el)) {
+          try { el.blur(); } catch (_) { /* ignore */ }
+          closeAllAntdPanels();
+          resolve(false);
+          return;
+        }
+        // ① 先试「年 / 月 / 日」多表格日期面板
+        var parts = parseDateParts(desired);
+        var antdOk = false;
+        try { antdOk = await tryAntdPanel(el, desired); } catch (e) { antdOk = false; }
+        if (antdOk && dateValueMatches(el.value, desired)) { resolve(true); return; }
+        var pid = parts ? findDatePanel(parts.y) : null;
+        if (parts && pid) {
+          // ② 日历网格（‹‹ ‹ 十月 2026 › ›› + 星期表头）走翻月 + 点日；其余走年/月/日分栏
+          var panelOk = isCalendarGrid(pid)
+            ? await tryCalendarGrid(el, desired)
+            : await tryDatePanel(el, desired);
+          if (panelOk && dateValueMatches(el.value, desired)) { resolve(true); return; }
+          // 面板路径失败：重开再走普通候选路径
+          openPicker(el);
+          await sleep(300);
+        }
+        var cands = pickVisibleCandidates(desired);
+        if (!cands.length) {
+          cands = await pageUntilFound(desired);
+        }
+        if (!cands.length) {
+          resolve(isAntdPickerEl(el) ? false : (forceSetReadonly(el, desired) ? 'forced' : false));
+          return;
+        }
+        var i = 0;
+        var tryNext = function () {
+          if (i >= cands.length) {
+            // 全部失败：尽量还原原值，避免留下错值
+            if (String(el.value || '') !== before) {
+              try { openPicker(el); } catch (_) { /* ignore */ }
+            }
+            // 最后一招：只读框直写（jQuery 表单可以，antd 受控组件不行）
+            resolve(isAntdPickerEl(el) ? false : (forceSetReadonly(el, desired) ? 'forced' : false));
+            return;
+          }
+          simulateClick(cands[i].el);
+          i += 1;
+          setTimeout(function () {
+            if (dateValueMatches(el.value, desired)) { resolve(true); return; }
+            // 弹层可能已被关闭，重新打开再试下一个候选
+            if (i < cands.length) simulateClick(el);
+            setTimeout(tryNext, i < cands.length ? 260 : 0);
+          }, 300);
+        };
+        tryNext();
+      }, 640);
+    });
+  }
+
+  /** 非 antd 站点：沿用 v1.5.3 的原有流程 */
+  function fillReadonlyPickerLegacy(el, desired) {
     var before = String(el.value || '');
     openPicker(el);
     return new Promise(function (resolve) {
@@ -1568,19 +1798,26 @@
     var forced = [];
     var skipped = [];
     var keyCounts = {};
-    var els = iterFillableFields();
     var groupHandled = typeof WeakSet === 'function' ? new WeakSet() : null;
+    // 站点会在填入后重建 DOM：第二遍重新扫描，把被替换过的新节点补填上
+    var handled = typeof WeakSet === 'function' ? new WeakSet() : null;
 
+    for (var pass = 0; pass < 2; pass++) {
+    var els = iterFillableFields();
     for (var idx = 0; idx < els.length; idx++) {
       var el = els[idx];
+      if (handled) { if (handled.has(el)) continue; handled.add(el); }
       if (groupHandled && groupHandled.has(el)) continue;
-      var key = matchKeyForElement(el);
+      var struct = detectStructuredField(el);
+      var key = struct ? struct.key : matchKeyForElement(el);
       if (!key) continue;
-      var count = keyCounts[key] || 0;
-      if (count >= MAX_FILLS_PER_KEY) continue;
-      var value = M.profileValueForOccurrence
-        ? M.profileValueForOccurrence(profile, key, count)
-        : M.profileValue(profile, key);
+      var count = struct ? 0 : (keyCounts[key] || 0);
+      if (!struct && count >= MAX_FILLS_PER_KEY) continue;
+      var value = struct
+        ? structuredValue(profile, struct)
+        : (M.profileValueForOccurrence
+          ? M.profileValueForOccurrence(profile, key, count)
+          : M.profileValue(profile, key));
       if (!value) {
         if (skipped.length < 12) skipped.push({ key: key, reason: 'no_profile_value' });
         continue;
@@ -1686,6 +1923,8 @@
         if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
         highlight(el);
       }
+    }
+
     }
 
     // 无名单选组（性别/婚姻/政治面貌/民族）：语义明确才勾
@@ -1916,6 +2155,7 @@
 
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
     if (message && message.type === 'FILL_FORM') {
+
       handleFillMultiFrame(message.options || {}).then(function (r) {
         // 子 frame 不应答，只把结果 postMessage 给顶层
         if (IS_TOP_FRAME) sendResponse(r);
