@@ -466,6 +466,43 @@
     });
   }
 
+  /** 收集 radio 组的候选标题：表单标签 → 行首兄弟文本 → 父容器去选项文本 → name */
+  function radioGroupHints(first, wrap, name) {
+    var hints = [];
+    var pick = function (v) {
+      var t = String(v || '').replace(/\s+/g, ' ').trim();
+      if (!t || t.length < 2) return;
+      if (/^(是|否|男|女|其他|有|无)$/.test(t)) return;
+      if (hints.indexOf(t) === -1) hints.push(t);
+    };
+    var node = wrap || first.parentElement;
+    // ① 表单行标签 / legend
+    var lab = (node && node.querySelector('legend, .el-form-item__label, .ant-form-item-label, .form-label, .item-label')) || null;
+    if (lab) pick(lab.textContent);
+    // ② 往上最多 3 层：取本节点前一个非空兄弟的文本，以及父容器“去掉选项后”的文本
+    for (var up = 0; up < 3 && node; up++) {
+      var sib = node.previousElementSibling;
+      while (sib) {
+        if (!/^(INPUT|BUTTON|SCRIPT|STYLE)$/.test(sib.tagName)) {
+          var t = String(sib.textContent || '').replace(/\s+/g, ' ').trim();
+          if (t) { pick(t); break; }
+        }
+        sib = sib.previousElementSibling;
+      }
+      var parent = node.parentElement;
+      if (!parent) break;
+      var clone = parent.cloneNode(true);
+      Array.prototype.forEach.call(clone.querySelectorAll('input, button, .radio-group, [role="radiogroup"], label'), function (n) {
+        if (n.parentNode) n.parentNode.removeChild(n);
+      });
+      pick(clone.textContent);
+      node = parent;
+    }
+    // ③ name 兜底（is_fresh / has_relative 这类语义名）
+    pick(String(name || '').replace(/[_-]+/g, ' '));
+    return hints;
+  }
+
   /** 命名 radio 组：按 name 聚合，Yes/No 与安全键可填 */
   function fillNamedRadioGroups(profile, keyCounts, filledKeys) {
     var filled = 0;
@@ -482,17 +519,16 @@
       if (group.length < 2) return;
       // 已有选中则跳过
       if (group.some(function (r) { return r.checked; })) return;
-      var labelHint = '';
       var first = group[0];
       var wrap = first.closest
         ? first.closest('fieldset, .el-form-item, .ant-form-item, .form-item, .form-group, tr, li, div')
         : first.parentElement;
-      if (wrap) {
-        var lab = wrap.querySelector('label, legend, .el-form-item__label, .ant-form-item-label');
-        if (lab) labelHint = String(lab.textContent || '').replace(/\s+/g, ' ').trim();
+      // v1.5.1: 组标题常在“行首 <span>/<td>”里，或在本组容器前一个兄弟节点
+      var hints = radioGroupHints(first, wrap, name);
+      var scored = null;
+      for (var hi = 0; hi < hints.length && !scored; hi++) {
+        scored = M.matchFieldKeyScored ? M.matchFieldKeyScored(hints[hi], {}) : null;
       }
-      if (!labelHint) labelHint = name;
-      var scored = M.matchFieldKeyScored ? M.matchFieldKeyScored(labelHint, {}) : null;
       var gkey = scored && scored.key;
       if (!gkey) return;
       var gval = M.profileValue(profile, gkey);

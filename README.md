@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.5.0**
+当前版本：**1.5.1**
 
 ## 功能概览
 
@@ -184,6 +184,17 @@ resume-autofill-tool/
 - 证件号等敏感字段为选填；公共电脑请勿保存。
 
 ## Changelog
+
+### 1.5.1
+- **解析器：标题后置日期**：`splitRecords` 支持「学校/公司 → 专业行 → 日期行」这种常见排版（日期不再另起一条），教育/工作起止时间能正确落位。
+- **解析器：专业识别**：新增 `detectMajor`，优先 `专业: X`、其次 `自动化专业` 后缀写法，避免把「专业基础: Python…」误当专业名。
+- **命名 radio 组标题发现**：`fillNamedRadioGroups` 新增 `radioGroupHints`，标题不再只认 `legend / el-form-item__label`；支持「行首 `<span>`/`<td>` 文本」「本组容器前一个非空兄弟」「父容器剔除选项后的文本」「name 语义名（`is_fresh`、`has_relative`）」，逐候选匹配。
+- 修复 `demo/dropdowns.html` 上「是否应届生」「是否有亲属在本公司」两组是/否 radio 填不上；实测该页 8 个字段全部命中。
+- 测试：解析器 17 项（含标题后置日期/专业后缀）、主套件 124 项。
+
+- **命名 radio 组标题发现**：`fillNamedRadioGroups` 新增 `radioGroupHints`，标题不再只认 `legend / el-form-item__label`；支持「行首 `<span>`/`<td>` 文本」「本组容器前一个非空兄弟」「父容器剔除选项后的文本」「name 语义名（`is_fresh`、`has_relative`）」，逐候选做匹配。
+- 修复 `demo/dropdowns.html` 上「是否应届生」「是否有亲属在本公司」两组是/否 radio 填不上的问题；实测 8 个字段全部命中（原生/el-select/ant-select/字典下拉各 1+2+2+1，两组 radio）。
+- 测试：守卫 `radioGroupHints` 的四处关键实现；主套件 124 项。
 
 ### 1.5.0
 - **选项页多段经历编辑**：可折叠分区编辑教育 / 工作 / 项目多段（增删、上移下移）；加载示例 / 导入 / 切换档案刷新列表 UI；保存经 `mergeFlatOntoProfile` 写入显式列表（空数组表示清空）。

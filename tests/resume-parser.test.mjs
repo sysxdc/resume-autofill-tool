@@ -143,6 +143,36 @@ test('deriveMainEntries 不覆盖已有显式值', () => {
   assert.equal(prof.company, '数组公司');
 });
 
+
+console.log('真实版式兼容（日期行在标题下方）');
+
+test('日期行写在标题之后也要挂到该条记录', () => {
+  const NL = String.fromCharCode(10);
+  const txt = ['教育背景', '广东工业大学', '自动化专业 | 本科 | 2027 届', '2023.09 - 2027.06', '专业基础: Python 程序设计'].join(NL);
+  const r = Parser.parseResumeText(txt).profile;
+  assert.equal(r.eduList.length, 1);
+  assert.equal(r.eduList[0].school, '广东工业大学');
+  assert.equal(r.eduList[0].degree, '本科');
+  assert.equal(r.eduList[0].start, '2023-09');
+  assert.equal(r.eduList[0].end, '2027-06');
+});
+
+test('专业：支持“自动化专业”后缀写法，不被“专业基础”干扰', () => {
+  const NL = String.fromCharCode(10);
+  const txt = ['教育背景', '广东工业大学', '自动化专业 | 本科 | 2027 届', '专业基础: Python 程序设计'].join(NL);
+  const r = Parser.parseResumeText(txt).profile;
+  assert.equal(r.eduList[0].major, '自动化');
+});
+
+test('工作经历同样支持标题后置日期', () => {
+  const NL = String.fromCharCode(10);
+  const txt = ['工作经历', '广州非线智能科技有限公司', '实习生', '2026.06 - 2026.09', '(AI Agent 工具链开发)'].join(NL);
+  const r = Parser.parseResumeText(txt).profile;
+  assert.equal(r.workList[0].company, '广州非线智能科技有限公司');
+  assert.equal(r.workList[0].start, '2026-06');
+  assert.equal(r.workList[0].end, '2026-09');
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

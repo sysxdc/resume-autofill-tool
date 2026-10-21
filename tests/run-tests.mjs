@@ -1609,9 +1609,18 @@ test('v1.5.0: demo/dropdowns.html 存在且含四类组件', () => {
 
 test('v1.5.0: manifest 1.5.0', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.equal(pkg.version, '1.5.0');
+  assert.equal(pkg.version, '1.5.1');
 });
 
+
+console.log('v1.5.1 命名 radio 组标题发现');
+test('v1.5.1: radio 组标题支持行首 span / 前兄弟文本', () => {
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(/function radioGroupHints/.test(src), '应有 radioGroupHints');
+  assert.ok(/previousElementSibling/.test(src), '应尝试前一个兄弟节点的文本');
+  assert.ok(/radio-group/.test(src), '克隆父容器时应剔除 .radio-group');
+  assert.ok(/for \(var hi = 0; hi < hints\.length/.test(src), '应逐个候选标题做匹配');
+});
 
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);

@@ -239,6 +239,12 @@
       var line = String(lines[i] || '').trim();
       if (!line) continue;
       var range = parseRange(line);
+      // 常见排版：学校/公司在前，日期另起一行 → 挂到当前这条，而不是新起记录
+      if (range && cur && !cur.range && cur.lines.length <= 3 &&
+          cur.lines.every(function (l) { return String(l).length <= 40; })) {
+        cur.range = range;
+        continue;
+      }
       var startsNew = !!range;
       if (!startsNew && cur && cur.range) {
         // 同一条记录里出现第二所学校/公司 → 也视为新记录
@@ -276,6 +282,15 @@
     return '';
   }
 
+  /** 专业：优先“专业: X”，其次“自动化专业”这种后缀写法，最后按学校行猜 */
+  function detectMajor(blob, firstLine, school, degree) {
+    var m = String(blob || '').match(/专\s*业\s*[:：]\s*([^\s|,，;；]{2,20})/);
+    if (m && m[1]) return m[1].trim();
+    var m2 = String(blob || '').match(/([\u4e00-\u9fa5]{2,12})专业(?![\u4e00-\u9fa5])/);
+    if (m2 && m2[1] && !/^(基础|课程|知识|技能|能力)$/.test(m2[1])) return m2[1].trim();
+    return guessMajor(firstLine || '', school, degree);
+  }
+
   function parseEducation(sections) {
     var lines = (sections.education || []).filter(function (l) { return String(l).trim(); });
     var records = splitRecords(lines);
@@ -285,8 +300,7 @@
       var blob = rec.lines.join(' ');
       var school = detectSchool(blob);
       var degree = detectDegree(blob);
-      var major = labeled(blob, ['专业', '所学专业']);
-      if (!major) major = guessMajor(rec.lines[0] || '', school, degree);
+      var major = detectMajor(blob, rec.lines[0] || '', school, degree);
       if (!school && !major && !degree) continue;
       out.push({
         school: school,
