@@ -1,0 +1,22 @@
+{
+  "name": "resume-autofill-real-components",
+  "private": true,
+  "description": "真组件回归测试用的组件库（与扩展本体无关，只给 tests/real/run-real.mjs 用）",
+  "dependencies": {
+    "react16": "npm:react@16.14.0",
+    "react-dom16": "npm:react-dom@16.14.0",
+    "react18": "npm:react@18.3.1",
+    "react-dom18": "npm:react-dom@18.3.1",
+    "moment": "2.29.4",
+    "dayjs": "1.11.13",
+    "antd3": "npm:antd@3.26.20",
+    "antd4": "npm:antd@4.24.16",
+    "antd5": "npm:antd@5.21.6",
+    "vue2": "npm:vue@2.7.16",
+    "vue3": "npm:vue@3.4.38",
+    "element-ui": "2.15.14",
+    "element-plus": "2.8.4",
+    "ant-design-vue": "4.2.6",
+    "layui": "2.9.16"
+  }
+}

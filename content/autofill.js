@@ -308,7 +308,8 @@
       if (pCtx) return pCtx;
     }
     var node = el;
-    for (var up = 0; up < 7 && node && node.parentElement; up++) {
+    // v1.5.24：12 层（antd / Element 的表单项本身就套了 6~7 层，原来的 7 层够不到分区标题）
+    for (var up = 0; up < 12 && node && node.parentElement; up++) {
       var text = '';
       if (node.tagName === 'FIELDSET') {
         var lg = node.querySelector('legend');
@@ -318,6 +319,8 @@
         var head = node.querySelector(':scope > legend, :scope > h2, :scope > h3, :scope > h4, :scope > summary, :scope > .section-title, :scope > .ant-card-head-title, :scope > .el-card__header, :scope > .panel-heading');
         if (head) text = String(head.textContent || '').replace(/\s+/g, ' ').trim();
       }
+      // 分区标题是容器前面的兄弟（<h3>教育经历</h3><form>…</form>）
+      if (!text) text = headingBefore(node);
       if (text && text.length <= 24) {
         var ctx = sectionContextFromText(text);
         if (ctx) return ctx;
@@ -327,6 +330,24 @@
     // v1.5.12：没有区块标题的 ATS（wecruit / antd 表单）用同一组字段里的兄弟标签推断
     var bySiblings = sectionContextBySiblingLabels(el);
     if (bySiblings) return bySiblings;
+    return '';
+  }
+
+  var HEADING_CLASS_RE = /(^|\s)[\w-]*(section|block|card|group|module|part|panel)[-_]?(title|header|heading|head)(\s|$)|(^|\s)(title|header|heading)(\s|$)/i;
+
+  /** node 前面紧挨的标题兄弟（只认标题标签 / 标题类名，表单项标签不算） */
+  function headingBefore(node) {
+    var prev = node.previousElementSibling;
+    for (var hop = 0; hop < 2 && prev; hop++, prev = prev.previousElementSibling) {
+      var tag = String(prev.tagName || '').toUpperCase();
+      var cls = String(prev.className || '');
+      if (/label|form-item/i.test(cls)) return '';
+      if (/^(H1|H2|H3|H4|H5|LEGEND)$/.test(tag) || HEADING_CLASS_RE.test(cls)) {
+        return String(prev.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+      // 中间隔着一个输入框 / 表单项就不是本区块的标题了
+      if (prev.querySelector && prev.querySelector('input, select, textarea')) return '';
+    }
     return '';
   }
 
@@ -719,17 +740,19 @@
     if (!rule) return null;
     if (!RANGE_SECTION_MAP[rule.key]) return null;
     var index = 0;
+    var explicit = false;
     var m = nodeText(header).match(/(\d+)\s*(?:$|[）)])/);
     if (m) {
       index = Math.max(0, parseInt(m[1], 10) - 1);
+      explicit = true;
     } else if (row && row.parentElement) {
       var sibs = Array.prototype.filter.call(row.parentElement.children, function (n) {
         return n.classList && n.classList.contains('list-form-container');
       });
       var pos = sibs.indexOf(row);
-      if (pos > 0) index = pos;
+      if (pos >= 0) { index = pos; explicit = true; }
     }
-    return { rule: rule, index: index };
+    return { rule: rule, index: index, explicit: explicit };
   }
 
   /** 从最近的 id 里读段序号（快手：educations_1_schoolName、interShips_0_companyName） */
@@ -759,7 +782,7 @@
     }
     if (!rule || !RANGE_SECTION_MAP[rule.key]) return null;
     var idx = rowIndexFromIds(el);
-    return { rule: rule, index: idx < 0 ? 0 : idx };
+    return { rule: rule, index: idx < 0 ? 0 : idx, explicit: idx >= 0 };
   }
 
   /** 「2023-09」→ Date；缺日时，起点补 1 号，终点补当月最后一天 */
@@ -785,6 +808,15 @@
    */
   async function fillRangeEditor(editor, startVal, endVal) {
     // antd 的 RangePicker 两个 input 都是 readonly：只能点面板（快手教育经历的「起止时间」）
+    if (editor.classList && editor.classList.contains('ant-calendar-picker')) {
+      // antd v3 范围：调组件自己的 handleChange（与点完面板等价）
+      var v3ins = editor.querySelectorAll('input.ant-calendar-range-picker-input');
+      if (v3ins.length < 2 || !fillAntdPickerByModel(v3ins[0], startVal, endVal)) return false;
+      await sleep(160);
+      var a3 = String(v3ins[0].value || '').trim();
+      var b3 = String(v3ins[1].value || '').trim();
+      return !!a3 && !!b3 && dateValueMatches(a3, startVal) && dateValueMatches(b3, endVal);
+    }
     if (editor.classList && editor.classList.contains('ant-picker-range')) {
       var rangeIns = editor.querySelectorAll('input');
       // ① 直接改组件值（最可靠，不依赖点击）
@@ -810,32 +842,9 @@
     var end = rangeDateOf(endVal, true);
     if (!start || !end) return false;
     if (end.getTime() < start.getTime()) return false;
-    var vm = editor.__vue__ || (editor.querySelector('.el-range-input') || {}).__vue__;
-    var committed = false;
-    try {
-      if (vm && vm.picker && vm.picker.$emit) {
-        // 点日历格子走的就是这个 pick 事件：v-model 与两个 input 一起更新
-        vm.picker.$emit('pick', [start, end], true);
-        committed = true;
-      } else if (vm && vm.$emit) {
-        vm.$emit('input', [start, end]);
-        committed = true;
-      }
-    } catch (_) { /* ignore */ }
-    if (!committed) {
-      // Vue 3（Element Plus）：直接调 v-model 的 onUpdate:modelValue
-      var v3 = vue3ModelHandler(inputs[0], /DatePicker|^Picker$/i) || vue3ModelHandler(editor, /DatePicker|^Picker$/i);
-      if (v3) {
-        var monthOnly = /monthrange/.test(String(editor.className || ''));
-        try {
-          v3.fn([vueDateModelValue(v3.props, start, monthOnly), vueDateModelValue(v3.props, end, monthOnly)]);
-          committed = true;
-        } catch (_) { committed = false; }
-      }
-    }
-    await sleep(120);
-    try { if (vm && typeof vm.handleClose === 'function') vm.handleClose(); } catch (_) { /* ignore */ }
-    await sleep(120);
+    // 组件实例提交（Vue 2 走 emitInput，会按 value-format 转换；Vue 3 走 v-model）—— 经页面主环境桥接
+    var committed = bridgeDateCommit(inputs[0], start, end);
+    await sleep(160);
     // 没有组件实例可提交：不往 input 里硬塞文字（那只是「看起来填了」，表单收不到），如实报告失败
     if (!committed) return false;
     var a0 = String(inputs[0].value || '').trim();
@@ -945,9 +954,168 @@
     return filled;
   }
 
+  // —————— v1.5.24：layui laydate（国内老网申很常见）——————
+  // laydate 只是普通 input + 自绘面板，值就存在 input.value 里（表单提交读的也是它）。
+  // 打开一次面板看类型（日期 / 年月 / 年 / 范围），按它的格式直接写：比逐格点击快且准（之前每个 2~3 秒）。
+  function isLaydateInput(el) {
+    return !!(el && el.hasAttribute && el.hasAttribute('lay-key'));
+  }
+
+  async function laydateKind(el) {
+    var key = el.getAttribute('lay-key');
+    try { el.focus(); } catch (_) { /* ignore */ }
+    simulateClick(el);
+    var panel = null;
+    for (var w = 0; w < 10 && !panel; w++) {
+      await sleep(60);
+      var p = document.getElementById('layui-laydate' + key);
+      if (p && isVisibleEl(p)) panel = p;
+    }
+    if (!panel) return null;
+    var kind = {
+      range: /layui-laydate-range/.test(String(panel.className || '')),
+      type: panel.querySelector('.laydate-year-list') ? 'year'
+        : (panel.querySelector('.laydate-month-list') ? 'month' : 'date'),
+      time: !!panel.querySelector('.laydate-time-list')
+    };
+    // 点面板外关闭（laydate 监听 document 的 mousedown）
+    try {
+      document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      document.body.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    } catch (_) { /* ignore */ }
+    try { el.blur(); } catch (_) { /* ignore */ }
+    return kind;
+  }
+
+  /** laydate 的写法：placeholder 写明格式就照它，否则用 laydate 默认（yyyy-MM-dd / yyyy-MM / yyyy） */
+  function laydateText(el, kind, value) {
+    var mo = D && D.parseModel ? D.parseModel(value) : null;
+    if (!mo || !mo.y) return '';
+    var fmt = D.detectFormat ? D.detectFormat(el.getAttribute('placeholder') || '') : null;
+    if (kind.type === 'year') return String(mo.y);
+    if (!mo.m) return '';
+    if (fmt && (kind.type === 'date' ? fmt.hasDay : !fmt.hasDay)) return D.formatModel(mo, fmt);
+    return kind.type === 'month' ? D.toYm(mo) : D.toYmd(mo);
+  }
+
+  /** 写 laydate：单个日期给 startVal；范围控件给 startVal + endVal（没有终点 / 类型对不上 → false） */
+  async function fillLaydate(el, startVal, endVal) {
+    var kind = await laydateKind(el);
+    if (!kind) return false;
+    if (kind.range !== !!endVal) return false;
+    var a = laydateText(el, kind, startVal);
+    if (!a) return false;
+    var text = a;
+    if (kind.range) {
+      var b = laydateText(el, kind, endVal);
+      if (!b) return false;
+      var sepM = String(el.getAttribute('placeholder') || '').match(/\s*(~|至|到|—|-)\s*/);
+      var sep = sepM && sepM[1] !== '-' ? ' ' + sepM[1] + ' ' : ' - ';
+      text = a + sep + b;
+    }
+    rawSetValue(el, text);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    return String(el.value || '') === text;
+  }
+
+  // —————— v1.5.24：一个输入框装起止两个日期（「起止时间：2019-09 - 2023-06」）——————
+  var STRONG_RANGE_LABEL_RE = /起止|起讫|时间段|期间|时间范围|起始.{0,4}(结束|截止)|开始.{0,4}(结束|截止)/;
+  var WEAK_RANGE_LABEL_RE = /在校时间|就读时间|在读时间|在职时间|任职时间|实习时间|项目时间|学习时间|^工作时间$|经历时间/;
+
+  function looksLikeSingleInputRange(el) {
+    if (!el || el.tagName.toLowerCase() !== 'input') return false;
+    var t = String(el.type || 'text').toLowerCase();
+    if (t !== 'text' && t !== 'search' && t !== '') return false;
+    if (el.closest && el.closest(RANGE_EDITOR_SEL + ', .ant-calendar-picker')) return false;
+    var label = String(getLabelText(el) || '').replace(/\s+/g, '');
+    if (/参加工作|首次工作/.test(label)) return false;
+    var ph = String(el.getAttribute('placeholder') || '');
+    if (STRONG_RANGE_LABEL_RE.test(label)) return true;
+    // 只凭 placeholder 的「A - B」不够（「例：10k - 15k」是薪资范围）：标签或 placeholder 得像日期
+    var dateish = /时间|日期|年月|年份|date|time|period/i.test(label) ||
+      /yyyy|年|月|日期|时间|开始|结束|\d{4}[-/.]\d{1,2}/i.test(ph);
+    if (dateish && /\S\s+(~|至|到|-)\s+\S|^\s*-\s*$|开始.{0,6}(~|至|到|-).{0,6}结束/.test(ph)) return true;
+    return isLaydateInput(el) && WEAK_RANGE_LABEL_RE.test(label);
+  }
+
+  function rangeSectionFor(el) {
+    var ctx = detectSectionContext(el);
+    if (!ctx || !RANGE_SECTION_MAP[ctx]) {
+      var label = String(getLabelText(el) || '');
+      if (/实习/.test(label)) ctx = 'intern';
+      else if (/在校|就读|在读|学习|教育|入学/.test(label)) ctx = 'edu';
+      else if (/项目/.test(label)) ctx = 'project';
+      else if (/在职|任职|工作/.test(label)) ctx = 'work';
+    }
+    return RANGE_SECTION_MAP[ctx] ? ctx : '';
+  }
+
+  /** 第 index 段的开始 / 结束（实习分区回落到 workList；列表空时用扁平主条目） */
+  function rangeValuesFor(profile, ctxKey, index) {
+    var map = RANGE_SECTION_MAP[ctxKey];
+    var list = profile && Array.isArray(profile[map.listKey]) ? profile[map.listKey] : [];
+    if (!list.length && (ctxKey === 'intern' || ctxKey === 'work') && Array.isArray(profile && profile.workList)) {
+      list = profile.workList;
+    }
+    var item = list[index] || null;
+    var start = item && item.start ? String(item.start).trim() : '';
+    var end = item && item.end ? String(item.end).trim() : '';
+    if (!start && index === 0) start = M.profileValue(profile, map.startKey) || '';
+    if (!end && index === 0) end = M.profileValue(profile, map.endKey) || '';
+    return { map: map, start: start, end: end };
+  }
+
+  /**
+   * 单输入框范围：laydate 按面板类型写；普通可编辑输入框按 placeholder 的格式与分隔符写。
+   * @returns {Promise<boolean|null>} null = 不是 / 写不了这种控件（交还主循环按普通字段处理）
+   */
+  async function fillSingleInputRange(el, profile, seen) {
+    var ctxKey = rangeSectionFor(el);
+    if (!ctxKey) return null;
+    var idx = seen[ctxKey] || 0;
+    var rv = rangeValuesFor(profile, ctxKey, idx);
+    if (!rv.start || !rv.end) return null;
+    var endOpen = isCurrentJobValue(rv.end);
+    var ok = false;
+    if (isLaydateInput(el)) {
+      if (endOpen) return null;
+      var kind = await laydateKind(el);
+      if (!kind || !kind.range) return null;
+      ok = await fillLaydate(el, rv.start, rv.end);
+    } else if (!el.readOnly && !el.disabled) {
+      var ph = String(el.getAttribute('placeholder') || '');
+      var fmt = D && D.detectFormat ? D.detectFormat(ph) : null;
+      var side = function (v) {
+        var mo = D.parseModel(v);
+        if (!mo || !mo.y || !mo.m) return '';
+        return fmt ? D.formatModel(mo, fmt) : (mo.d ? D.toYmd(mo) : D.toYm(mo));
+      };
+      var a = side(rv.start);
+      var b = endOpen ? '至今' : side(rv.end);
+      if (!a || !b) return null;
+      var sepM = ph.match(/\S\s*(~|至|到|—)\s*\S/);
+      var sep = sepM ? ' ' + sepM[1] + ' ' : ' - ';
+      ok = await writeAndVerify(el, a + sep + b);
+    } else {
+      return null;
+    }
+    seen[ctxKey] = idx + 1;
+    if (ok) return { ok: true, map: rv.map, start: rv.start, end: rv.end };
+    return false;
+  }
+
   /** 页面上的范围日期控件：按分区/段序取 eduList[i].start/end 等 */
   async function fillRangeEditors(profile, handled, filledKeys) {
+    var rangeSeen = {};
     var editors = Array.prototype.filter.call(document.querySelectorAll(RANGE_EDITOR_SEL), isVisibleEl);
+    // antd v3 的 RangePicker 没有专门的范围类名：认 .ant-calendar-range-picker-input 所在的 .ant-calendar-picker
+    Array.prototype.forEach.call(document.querySelectorAll('.ant-calendar-range-picker-input'), function (inp) {
+      var box = inp.closest('.ant-calendar-picker');
+      if (box && editors.indexOf(box) === -1 && isVisibleEl(box)) editors.push(box);
+    });
+    editors.sort(function (a, b) { return a === b ? 0 : ((a.compareDocumentPosition(b) & 4) ? -1 : 1); });
     var filled = 0;
     for (var i = 0; i < editors.length; i++) {
       var ed = editors[i];
@@ -960,6 +1128,10 @@
       if (alreadyFilled) continue;
       var ctx = rangeContext(ed) || rangeContextLoose(ed);
       if (!ctx) continue;
+      // 没有段序号可读（无 id、无「教育经历-2」标题）时，按同分区里第几个范围控件算
+      var seenN = rangeSeen[ctx.rule.key] || 0;
+      rangeSeen[ctx.rule.key] = seenN + 1;
+      if (!ctx.explicit) ctx.index = seenN;
       var map = RANGE_SECTION_MAP[ctx.rule.key];
       var list = profile && Array.isArray(profile[map.listKey]) ? profile[map.listKey] : [];
       // 实习分区常常只有 workList（实习写在 workList 里），不要因为 internList 为空就跳过
@@ -1109,72 +1281,54 @@
    * Element 的 input-number / date-editor 是包装组件：直接写 input.value 不会更新 v-model，
    * 页面一重渲染值就被打回去。这里直接走组件实例的 input 事件（实测有效）。
    */
+  // —————— v1.5.24：页面主环境桥接（content/page-bridge.js，manifest world: MAIN）——————
+  // 内容脚本在隔离环境里读不到页面挂在 DOM 上的 React fiber / Vue 实例；组件提交统一交给桥接脚本。
+  // 同步协议：在目标元素上派发 CustomEvent，桥接在捕获阶段处理完把结果写进 data-ra-bridge-out。
+  var BRIDGE_EVT = 'resume-autofill-bridge';
+  var BRIDGE_OUT = 'data-ra-bridge-out';
+
+  function bridgeCall(el, op, args) {
+    if (!el || typeof el.dispatchEvent !== 'function') return null;
+    try {
+      el.removeAttribute(BRIDGE_OUT);
+      el.dispatchEvent(new CustomEvent(BRIDGE_EVT, {
+        bubbles: true, composed: true, detail: JSON.stringify({ op: op, args: args || {} })
+      }));
+      var raw = el.getAttribute(BRIDGE_OUT);
+      if (!raw) return null;     // 桥接没装（老浏览器 / 测试环境）→ 调用方走点击面板的老路
+      el.removeAttribute(BRIDGE_OUT);
+      return JSON.parse(raw);
+    } catch (_) { return null; }
+  }
+
+  function dateArr(d) { return [d.getFullYear(), d.getMonth() + 1, d.getDate()]; }
+
+  /** 把日期（范围给 e）交给组件自己的提交入口：antd 3/4/5、Element UI、Element Plus、ant-design-vue */
+  function bridgeDateCommit(el, s, e) {
+    if (!s) return false;
+    var r = bridgeCall(el, 'dateCommit', { s: dateArr(s), e: e ? dateArr(e) : null });
+    return !!(r && r.ok);
+  }
+
   /**
-   * v1.5.23：Vue 3（Element Plus 等）没有 __vue__，组件实例挂在 __vueParentComponent 上。
-   * 往上找名字像 DatePicker / InputNumber 的组件，拿它 v-model 的 onUpdate:modelValue ——
-   * 调它就等于用户在面板里选完（与 React 的 props.onChange 同理），不依赖任何点击。
+   * Element 的 input-number / date-editor 是包装组件：直接写 input.value 不会更新 v-model，
+   * 页面一重渲染值就被打回去。这里交给组件实例（Vue 2 的 emitInput / Vue 3 的 onUpdate:modelValue）。
    */
-  function vue3ModelHandler(el, nameRe) {
-    var inst = el && el.__vueParentComponent;
-    for (var i = 0; i < 15 && inst; i++, inst = inst.parent) {
-      var type = inst.type || {};
-      var name = String(type.name || type.__name || '');
-      var vp = inst.vnode && inst.vnode.props;
-      if (nameRe.test(name) && vp && typeof vp['onUpdate:modelValue'] === 'function') {
-        return { fn: vp['onUpdate:modelValue'], props: inst.props || {} };
-      }
-    }
-    return null;
-  }
-
-  /** 按组件的 valueFormat 生成 v-model 值；没有 valueFormat 就给 Date（Element Plus 的默认） */
-  function vueDateModelValue(props, dateObj, monthOnly) {
-    var vf = String((props && (props.valueFormat || props['value-format'])) || '');
-    if (!vf) return dateObj;
-    if (/^x$/i.test(vf)) return dateObj.getTime();
-    var fmt = D && D.detectFormat ? D.detectFormat(vf) : null;
-    var model = { y: String(dateObj.getFullYear()), m: String(dateObj.getMonth() + 1), d: monthOnly ? null : String(dateObj.getDate()) };
-    if (fmt) return D.formatModel(model, fmt);
-    return formatDateYmd(dateObj);
-  }
-
   function commitFrameworkWidget(el, value) {
     if (!el || !el.closest) return false;
-    var v3num = el.closest('.el-input-number') ? vue3ModelHandler(el, /InputNumber/i) : null;
-    if (v3num) {
-      var rawN = String(value == null ? '' : value).trim();
-      var num = Number(rawN.replace(/[^\d.\-]/g, ''));
-      if (rawN && isFinite(num)) {
-        try { v3num.fn(num); return true; } catch (_) { /* ignore */ }
-      }
-    }
-    var v3date = el.closest('.el-date-editor') && !el.closest('.el-range-editor')
-      ? vue3ModelHandler(el, /DatePicker|TimePicker|^Picker$/i) : null;
-    if (v3date) {
-      var p3 = parseDateParts(value);
-      if (p3) {
-        var d3 = new Date(parseInt(p3.y, 10), parseInt(p3.m, 10) - 1, p3.d ? parseInt(p3.d, 10) : 1);
-        try { v3date.fn(vueDateModelValue(v3date.props, d3, !p3.d)); return true; } catch (_) { /* ignore */ }
-      }
-    }
-    var numBox = el.closest('.el-input-number');
-    if (numBox && numBox.__vue__) {
+    if (el.closest('.el-input-number')) {
       var raw = String(value == null ? '' : value).trim();
       var n = Number(raw.replace(/[^\d.\-]/g, ''));
       if (raw && isFinite(n)) {
-        try { numBox.__vue__.$emit('input', n); return true; } catch (_) { /* ignore */ }
+        var rn = bridgeCall(el, 'numberCommit', { n: n });
+        if (rn && rn.ok) return true;
       }
     }
-    var dateBox = el.closest('.el-date-editor');
-    if (dateBox && dateBox.__vue__ && !/el-range-editor/.test(String(dateBox.className))) {
+    if (el.closest('.el-date-editor') && !el.closest('.el-range-editor')) {
       var parts = parseDateParts(value);
       if (!parts) return false;
-      var d = new Date(parseInt(parts.y, 10), parseInt(parts.m, 10) - 1,
-        parts.d ? parseInt(parts.d, 10) : 1);
-      var vf = String(dateBox.__vue__.valueFormat || '');
-      var out = d;
-      if (vf) out = /月/.test(vf) ? (parts.y + '-' + ('0' + parts.m).slice(-2)) : formatDateYmd(d);
-      try { dateBox.__vue__.$emit('input', out); return true; } catch (_) { /* ignore */ }
+      var d = new Date(parseInt(parts.y, 10), parseInt(parts.m, 10) - 1, parts.d ? parseInt(parts.d, 10) : 1);
+      return bridgeDateCommit(el, d, null);
     }
     return false;
   }
@@ -1698,10 +1852,18 @@
     return out.length ? out : null;
   }
 
+  // 日期控件的外层也常带 role="combobox"（Element Plus：aria-haspopup="dialog"），不是下拉框：
+  // 当成下拉会先空等 3~4 秒弹层选项，再轮到日期逻辑（v1.5.24 前每个日期框都白耗这几秒）
+  var DATE_WIDGET_SEL = '.el-date-editor, .el-range-editor, .ant-picker, .ant-calendar-picker, ' +
+    '.ivu-date-picker, .arco-picker, .t-date-picker, .t-date-range-picker, .semi-datepicker, ' +
+    '.next-date-picker, .next-range-picker, .phoenix-date-picker, .layui-laydate';
+
   function findCustomSelectHost(el) {
     if (!el || !el.closest) return null;
     var host = el.closest(CUSTOM_SELECT_HOST);
     if (!host) return null;
+    if (el.closest(DATE_WIDGET_SEL) && !isPhoenixHost(host)) return null;
+    if (String(host.getAttribute && host.getAttribute('aria-haspopup') || '') === 'dialog') return null;
     // CUSTOM_SELECT_HOST 里的 [role="combobox"] 会直接命中 antd 的 input 本身（快手就是），
     // 那样 host 里既找不到 input 也读不到弹层，等于一个字段都填不动 —— 一律缩放到外层组件
     var tag = String(host.tagName || '').toUpperCase();
@@ -1714,6 +1876,27 @@
     return host;
   }
 
+  // 宿主里内嵌的弹层（Element UI 的 .el-select-dropdown 就挂在 .el-select 里面，隐藏时仍有选项文字）
+  var INNER_DROPDOWN_SEL = '.el-select-dropdown, .ant-select-dropdown, [role="listbox"], .el-popper, ' +
+    '[class*="dropdown"], [class*="Dropdown"], [class*="-popup"], [class*="menu"]';
+
+  /** 宿主「自己显示」的文字：跳过内嵌弹层与隐藏节点（v1.5.24 前把隐藏选项「本科硕士博士」当成了已选值） */
+  function hostOwnText(host) {
+    if (!host || !document.createTreeWalker) return String((host && host.textContent) || '').replace(/\s+/g, ' ').trim();
+    var out = '';
+    var walker = document.createTreeWalker(host, 4, null);
+    var tn;
+    while ((tn = walker.nextNode())) {
+      var p = tn.parentElement;
+      if (!p) continue;
+      var inner = p.closest(INNER_DROPDOWN_SEL);
+      if (inner && inner !== host && host.contains(inner)) continue;
+      out += tn.nodeValue;
+      if (out.length > 200) break;
+    }
+    return out.replace(/\s+/g, ' ').trim();
+  }
+
   function customSelectLooksFilled(host) {
     if (!host) return false;
     // antd v3：只认 .ant-select-selection-selected-value，隐藏 input 里的编码值不算
@@ -1722,7 +1905,7 @@
     }
     var txt = '';
     var selected = host.querySelector(
-      '.el-select__selected-item, .el-input__inner, .ant-select-selection-selected-value, ' +
+      '.el-select__selected-item:not(.el-select__input-wrapper):not(.is-transparent), .el-input__inner, .ant-select-selection-selected-value, ' +
       '.ant-select-selection-item, .ant-select-selection-search-input, .selected-text, [class*="selected"]'
     );
     if (selected) {
@@ -1742,7 +1925,7 @@
     }
     if (txt && !/请选择|请输入|请填写|填写|select|choose|--/i.test(txt)) return true;
     // Moka 这类自绘下拉把选中值渲染成 span，input.value 一直是空的
-    var hostText = String(host.textContent || '').replace(/\s+/g, ' ').trim();
+    var hostText = hostOwnText(host);
     // 「必填项未填写」这类校验提示不是选中值，别把它当已填
     if (hostText && hostText.length <= 24 && !/请选择|请输入|可多选|最多|select|choose|--|必填|未填写|不能为空|错误|请上传/i.test(hostText)) return true;
     return false;
@@ -1753,6 +1936,10 @@
    * 快手的下拉失焦后不会关（页面上能同时挂着好几个可见弹层），
    * 所以多个弹层并存时只取 DOM 里最后出现的那个 —— 也就是刚点开的这个。
    */
+  var DROPDOWN_BOX_SEL = '.ant-select-dropdown, .el-select-dropdown, .el-popper, [role="listbox"], ' +
+    '[class*="dropdown"]:not([class*="item"]):not([class*="option"]), ' +
+    '[class*="Dropdown"]:not([class*="item"]):not([class*="Item"]):not([class*="option"])';
+
   function collectOpenDropdownOptions() {
     var nodes = document.querySelectorAll(DROPDOWN_OPTION_SEL);
     var groups = [];
@@ -1761,7 +1948,9 @@
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
       if (!isVisibleEl(n)) continue;
-      var box = n.closest('.ant-select-dropdown, .el-select-dropdown, [class*="dropdown"], [class*="Dropdown"]');
+      // 从父节点开始找所属弹层：closest 包含自身，而选项自己的类名（el-select-dropdown__item）就含 dropdown，
+      // 之前每个选项各成一组、只剩最后一项（Element UI 下拉因此永远只看到「博士」）
+      var box = n.parentElement ? n.parentElement.closest(DROPDOWN_BOX_SEL) : null;
       if (box) {
         if (box !== lastBox) { lastBox = box; groups.push([]); }
         groups[groups.length - 1].push(n);
@@ -1811,8 +2000,17 @@
    * 都要先输入再选，光点开只有一屏默认选项。
    * 用原生 setter + input 事件，React / Vue 的受控组件才认。
    */
+  /** 下拉里可输入的搜索框（只读的 input 是展示用的，往里写字只会污染页面） */
+  function searchInputOf(host) {
+    var list = host.querySelectorAll('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"])');
+    for (var i = 0; i < list.length; i++) {
+      if (!list[i].readOnly && !list[i].disabled) return list[i];
+    }
+    return null;
+  }
+
   function typeIntoSearch(host, text) {
-    var input = host.querySelector('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"])');
+    var input = searchInputOf(host);
     if (!input) return false;
     var setter = null;
     try {
@@ -1825,7 +2023,7 @@
       if (String(input.value || '')) {
         if (setter) setter.call(input, ''); else input.value = '';
         input.dispatchEvent(new Event('input', { bubbles: true }));
-        input = host.querySelector('input:not([type="hidden"]):not([type="radio"]):not([type="checkbox"])') || input;
+        input = searchInputOf(host) || input;
         try { input.focus(); } catch (_) { /* ignore */ }
       }
       if (setter) setter.call(input, String(text)); else input.value = String(text);
@@ -1840,14 +2038,15 @@
   /** 下拉当前显示的文字（antd / Element / 自绘都能读到） */
   function customSelectText(host) {
     if (!host) return '';
-    var sel = host.querySelector('.ant-select-selection-item, .el-select__selected-item');
+    // Element Plus：第一个 .el-select__selected-item 是输入框外壳（永远空），选中文字在不透明的 placeholder 里
+    var sel = host.querySelector('.ant-select-selection-item, .el-select__selected-item:not(.el-select__input-wrapper):not(.is-transparent)');
     if (sel) return String(sel.textContent || '').replace(/\s+/g, ' ').trim();
     // antd 选了就有 .ant-select-selection-item；没有就是没选。
     // 别拿搜索框里的字冒充结果——点了选项但没提交时，搜索框还留着刚输的词
     if (host.className && /ant-select/.test(String(host.className))) return '';
     var inp = host.querySelector('input');
     if (inp && inp.value) return String(inp.value).replace(/\s+/g, ' ').trim();
-    return String(host.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    return hostOwnText(host).slice(0, 40);
   }
 
   function normText(t) {
@@ -2098,10 +2297,13 @@
       if (key !== 'major' && key !== 'school') continue;
       var inp = it.querySelector('input.ant-input:not([type="hidden"])');
       if (!inp) continue;
-      if (handled) { if (handled.has(inp)) continue; handled.add(inp); }
+      if (handled && handled.has(inp)) continue;
       if (String(inp.value || '').trim()) continue;
       var ph = String(inp.getAttribute('placeholder') || '');
+      // 先确认是「点了弹窗选」的那种再占用：之前在这里之前就 handled.add，
+      // 普通的「学校名称 / 专业」输入框被标成已处理，主循环永远跳过它们（antd 表单里学校专业一律不填）
       if (!/请选择|选择专业|选择学校/.test(ph)) continue;
+      if (handled) handled.add(inp);
       var val = M.profileValueForOccurrence
         ? M.profileValueForOccurrence(profile, key, 0)
         : M.profileValue(profile, key);
@@ -2261,6 +2463,10 @@
       var searched = false;   // 已经输过搜索词
       var retyped = false;    // 列表出来之后补输过一次
       var sigAtType = '';     // 输搜索词那一刻的选项指纹（远程搜索要等列表真的变了）
+      // v1.5.24：只读（不可搜索）的下拉，选项出来、确认没有目标就立刻放弃；之前要空等 3~4 秒，
+      // 一张表有几个对不上的下拉就会拖到整体超时
+      var searchable = !!searchInputOf(host);
+      var noMatchPolls = 0;
 
       function candidates() {
         return hostDropdownOptions(host) || collectOpenDropdownOptions();
@@ -2300,6 +2506,11 @@
             }
           }
           if (matched) { pick(opts, matched); return; }
+          if (!searchable) {
+            noMatchPolls += 1;
+            // 多等一拍防止列表还在渲染（虚拟列表 / 动画），两次都对不上就是真没有
+            if (noMatchPolls >= 2) { closeOpenDropdowns(); resolve(false); return; }
+          }
           if (searched && sigAtType && sig !== sigAtType) {
             // 搜过了、列表也真的变了（远程搜索回来了）还是没有 → 这个下拉确实没这个值
             closeOpenDropdowns();
@@ -2333,13 +2544,13 @@
             });
           }
         }
-        if (!typed && waited >= 420 && String(value).length > 1) {
+        // 可搜索：选项一出来没对上就马上输搜索词（之前固定等 420ms）；弹层没出来时也输（远程搜索要先输才有列表）
+        if (!typed && searchable && String(value).length > 1 && (opts.length || waited >= 420)) {
           typed = true;
-          searched = true;
           sigAtType = sig;
-          typeIntoSearch(host, value);
+          searched = typeIntoSearch(host, value);
         }
-        if (waited >= (searched ? 4200 : 3000)) {
+        if (waited >= (searched ? 3600 : (searchable ? 2400 : 1800))) {
           closeOpenDropdowns();
           resolve(false);
           return;
@@ -2895,9 +3106,18 @@
 
   /** 扫描页面上的自定义下拉宿主（无 native select 时） */
   function iterCustomSelectHosts() {
-    return Array.from(document.querySelectorAll(CUSTOM_SELECT_HOST)).filter(function (h) {
-      return isVisibleEl(h) || (h.offsetParent !== null);
+    // v1.5.24：归一化 + 去重 —— .el-select 里那个 role=combobox 的 input、日期控件外层的 combobox
+    // 都不是独立的下拉（之前同一个下拉会被当成两个各试一遍，对不上时白耗两倍时间）
+    var out = [];
+    Array.prototype.forEach.call(document.querySelectorAll(CUSTOM_SELECT_HOST), function (h) {
+      if (!(isVisibleEl(h) || h.offsetParent !== null)) return;
+      var n = findCustomSelectHost(h);
+      if (!n) return;
+      var outer = n.parentElement && n.parentElement.closest(CUSTOM_SELECT_HOST);
+      if (outer && findCustomSelectHost(outer) === outer && outer !== n) n = outer;
+      if (out.indexOf(n) === -1) out.push(n);
     });
+    return out;
   }
 
 
@@ -2992,11 +3212,11 @@
         return String(el.value || '').trim();
       }
       // 自定义下拉宿主
-      var shown = el.querySelector('.ant-select-selection-selected-value, .ant-select-selection-item, .el-select__selected-item, .selected-text');
+      var shown = el.querySelector('.ant-select-selection-selected-value, .ant-select-selection-item, .el-select__selected-item:not(.el-select__input-wrapper):not(.is-transparent), .selected-text');
       if (shown) return String(shown.textContent || '').replace(/\s+/g, ' ').trim();
       var inner = el.querySelector('input.ant-input, input[type="text"]');
-      if (inner) return String(inner.value || '').trim();
-      return String(el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      if (inner && String(inner.value || '').trim()) return String(inner.value || '').trim();
+      return hostOwnText(el).slice(0, 60);
     } catch (_) { return ''; }
   }
 
@@ -3708,92 +3928,19 @@
     return !!a && !!b && dateValueMatches(a, formatDateYmd(start)) && dateValueMatches(b, formatDateYmd(end));
   }
 
-  /** DOM 节点上的 React fiber（16/17: __reactInternalInstance$，18: __reactFiber$） */
-  function fiberOfNode(node) {
-    if (!node) return null;
-    try {
-      var keys = Object.keys(node);
-      for (var i = 0; i < keys.length; i++) {
-        var k = keys[i];
-        if (k.indexOf('__reactInternalInstance$') === 0 || k.indexOf('__reactFiber$') === 0) return node[k];
-      }
-    } catch (_) { /* ignore */ }
-    return null;
-  }
-
-  /** 往上找 antd Picker 组件的 fiber props（特征：带 generateConfig 和 onChange） */
-  function pickerFiberProps(el) {
-    var fiber = fiberOfNode(el);
-    for (var i = 0; i < 40 && fiber; i++, fiber = fiber.return) {
-      var p = fiber.memoizedProps;
-      if (p && p.generateConfig && typeof p.onChange === 'function') return p;
-    }
-    return null;
-  }
-
-  function makePickerDate(gc, y, m, d) {
-    var out = gc.setYear(gc.getNow(), y);
-    out = gc.setMonth(out, m - 1);
-    out = gc.setDate(out, d);
-    return out;
-  }
-
   /**
    * 绕开日历直接改组件值：调它自己的 onChange（Form 就是靠这个存值的）。
-   * 快手教育经历的 RangePicker 两个 input 都 readonly，弹层还不认合成事件，
-   * 面板怎么点都打不开 —— 这条路不依赖任何点击。
+   * v1.5.24：实现搬到 content/page-bridge.js（页面主环境）——隔离环境里根本读不到 fiber / Vue 实例。
+   * 桥接按 antd 3（handleChange）→ antd 4/5（最外层 rc-picker 的 onChange）→ Vue 2 → Vue 3 依次尝试。
    */
   function fillAntdPickerByModel(el, startVal, endVal) {
-    var props = pickerFiberProps(el);
-    if (!props || !props.generateConfig) return false;
-    var gc = props.generateConfig;
-    var isRange = !!(el.closest && el.closest('.ant-picker-range'));
+    var isRange = !!(el.closest && (el.closest('.ant-picker-range') ||
+      (el.classList && el.classList.contains('ant-calendar-range-picker-input'))));
     var s = rangeDateOf(startVal, false);
     if (!s) return false;
-    if (!isRange) {
-      var one = makePickerDate(gc, s.getFullYear(), s.getMonth() + 1, s.getDate());
-      try { props.onChange(one); } catch (_) { return false; }
-      return true;
-    }
-    var e = rangeDateOf(endVal, true);
-    if (!e || e.getTime() < s.getTime()) return false;
-    var sd = makePickerDate(gc, s.getFullYear(), s.getMonth() + 1, s.getDate());
-    var ed = makePickerDate(gc, e.getFullYear(), e.getMonth() + 1, e.getDate());
-    try { props.onChange([sd, ed]); } catch (_) { return false; }
-    return true;
-  }
-
-  /** 拿 React 通过 DOM 挂上来的 props（React 16/17: __reactEventHandlers$，18+: __reactProps$） */
-  function reactPropsOf(node) {
-    if (!node) return null;
-    try {
-      var keys = Object.keys(node);
-      for (var i = 0; i < keys.length; i++) {
-        var k = keys[i];
-        if (k.indexOf('__reactProps$') === 0 || k.indexOf('__reactEventHandlers$') === 0) {
-          var p = node[k];
-          if (p && typeof p === 'object') return p;
-        }
-      }
-    } catch (_) { /* ignore */ }
-    return null;
-  }
-
-  /**
-   * 直接调组件自己的事件处理函数。
-   * antd 的 Picker 只在「真点击」的 mousedown 里 open()，合成事件它不认（快手实测），
-   * 但 props 上的 onMouseDown 就是它注册的那个函数，调它和真点击等价。
-   */
-  function fireReactHandler(node, name) {
-    var props = reactPropsOf(node);
-    if (!props || typeof props[name] !== 'function') return false;
-    var fake = {
-      bubbles: true, cancelable: true, target: node, currentTarget: node, nativeEvent: {},
-      preventDefault: function () {}, stopPropagation: function () {},
-      isDefaultPrevented: function () { return false; }, isPropagationStopped: function () { return false; },
-      persist: function () {}
-    };
-    try { props[name](fake); return true; } catch (_) { return false; }
+    var e = isRange ? rangeDateOf(endVal, true) : null;
+    if (isRange && (!e || e.getTime() < s.getTime())) return false;
+    return bridgeDateCommit(el, s, e);
   }
 
   /** 打开只读控件的弹层：先 focus（Element 的 el-date-picker 监听 focus），再 click，再点右侧日历图标 */
@@ -3809,7 +3956,8 @@
     if (isAntdPickerEl(el)) {
       try { if (el.focus) el.focus(); } catch (_) { /* ignore */ }
       var root = (el.closest && el.closest('.ant-picker, .ant-calendar-picker')) || el;
-      if (fireReactHandler(root, 'onMouseDown')) return;
+      var rh = bridgeCall(root, 'reactHandler', { name: 'onMouseDown' });
+      if (rh && rh.ok) return;
     }
     try { if (el.focus) el.focus(); } catch (_) { /* ignore */ }
     try {
@@ -4175,6 +4323,24 @@
     }
   }
 
+  /**
+   * v1.5.24：快字段先填、慢控件后置（同类内保持页面顺序）。
+   * 文本框 / 原生下拉毫秒级；自定义下拉、只读日期弹层要开弹层等渲染。按页面顺序处理时，
+   * 前面几个慢控件就能把 45s 预算吃光，后面的姓名电话都没机会填（「超时 + 填得比以前少」）。
+   */
+  function fastFirst(list) {
+    var fast = [];
+    var slow = [];
+    for (var i = 0; i < list.length; i++) {
+      var el = list[i];
+      var tag = el.tagName.toLowerCase();
+      var isSlow = tag !== 'select' && (isReadonlyPicker(el) || !!findCustomSelectHost(el) ||
+        !!(el.closest && el.closest('.ant-picker, .ant-calendar-picker, .el-date-editor, .phoenix-select')));
+      (isSlow ? slow : fast).push(el);
+    }
+    return fast.concat(slow);
+  }
+
   async function fillFromProfile(profile, options) {
     var owned = beginMemo();
     try {
@@ -4216,6 +4382,9 @@
     try { await waitForFormSettle(1500); } catch (_) { /* ignore */ }
     var startedAt = Date.now();
     var timedOut = false;
+    var singleRangeSeen = {};
+    var occurSeen = {};
+    var triedHosts = typeof WeakSet === 'function' ? new WeakSet() : null;
     for (var pass = 0; pass < 2; pass++) {
       if (timedOut) break;
     // 起止时间合体的控件要在逐 input 匹配之前处理，否则两个 input 会被各写一份
@@ -4228,7 +4397,7 @@
       // 联动下拉（语种 → 语言等级）：第二级选项由第一级决定，必须按顺序写
       try { filled += await fillLinkedSelectChains(profile, filledKeys); } catch (_) { /* ignore */ }
     }
-    var els = iterFillableFields();
+    var els = fastFirst(iterFillableFields());
     for (var idx = 0; idx < els.length; idx++) {
       if (Date.now() - startedAt > 45000) { timedOut = true; break; }
       var el = els[idx];
@@ -4237,6 +4406,23 @@
       // 范围日期控件由 fillRangeEditors 负责（两个 input 共享一个 label）
       if (el.classList && el.classList.contains('el-range-input')) continue;
       if (el.closest && el.closest(RANGE_EDITOR_SEL)) continue;
+      if (el.classList && el.classList.contains('ant-calendar-range-picker-input')) continue;   // antd v3 范围
+      // 一个输入框装起止两个日期：按区块取对应那段经历的开始 + 结束
+      if (looksLikeSingleInputRange(el) && !fieldLooksFilled(el)) {
+        var sr = null;
+        try { sr = await fillSingleInputRange(el, profile, singleRangeSeen); } catch (_) { sr = null; }
+        if (sr && sr.ok) {
+          filled += 1;
+          [sr.map.startKey, sr.map.endKey].forEach(function (k) { if (filledKeys.indexOf(k) === -1) filledKeys.push(k); });
+          recordFill(el, sr.map.startKey, String(el.value || ''), '');
+          highlight(el);
+          continue;
+        }
+        if (sr === false) {
+          if (skipped.length < 30) skipped.push({ key: 'range', reason: 'single_input_range_failed' });
+          continue;
+        }
+      }
       var struct = detectStructuredField(el);
       // 分区兜底优先：语言技能里的「获得时间」全局会落到 certDate（证书时间），
       // 在这种分区里应该用 englishDate
@@ -4246,8 +4432,14 @@
       if (!key) key = aliasKeyForLabel(getLabelText(el), null);
       if (!key) continue;
       var counterKey = occurrenceKey(key, getLabelText(el));
-      var count = struct ? 0 : (keyCounts[counterKey] || 0);
-      if (!struct && count >= MAX_FILLS_PER_KEY) continue;
+      // v1.5.24：第几段按「出现位置」算，不按「成功次数」算 —— 第 1 段没填上（已有值 / 写失败），
+      // 第 2 段也必须拿 list[1]，否则会把第 1 段的值填进第 2 段（错位）
+      var count = 0;
+      if (!struct) {
+        count = occurSeen[counterKey] || 0;
+        if (isVisibleEl(el)) occurSeen[counterKey] = count + 1;   // 隐藏的模板行不占位
+        if ((keyCounts[counterKey] || 0) >= MAX_FILLS_PER_KEY && !M.LIST_OCCURRENCE_MAP[key]) continue;
+      }
       var value = struct
         ? structuredValue(profile, struct)
         : (M.profileValueForOccurrence
@@ -4264,12 +4456,12 @@
         }
       }
       if (!value) {
-        if (skipped.length < 12) skipped.push({ key: key, reason: 'no_profile_value' });
+        if (skipped.length < 30) skipped.push({ key: key, reason: 'no_profile_value' });
         continue;
       }
       if (fieldLooksFilled(el)) continue;
       // antd 的日期框是受控组件：往 input 里写字不会提交，只能点面板选日期
-      if (el.closest && el.closest('.ant-picker') && !el.closest('.ant-picker-range')) {
+      if (el.closest && el.closest('.ant-picker, .ant-calendar-picker') && !el.closest('.ant-picker-range')) {
         var dOk = false;
         try {
           if (fillAntdPickerByModel(el, value)) {
@@ -4280,7 +4472,7 @@
         if (!dOk) { try { dOk = await fillReadonlyPickerAntd(el, value); } catch (_) { dOk = false; } }
         if (dOk) {
           filled += 1;
-          keyCounts[counterKey] = count + 1;
+          keyCounts[counterKey] = (keyCounts[counterKey] || 0) + 1;
           if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
           recordFill(el, key, value, 'date');
           continue;
@@ -4291,6 +4483,7 @@
       if (customHost && isPhoenixHost(customHost) && customHost.isConnected === false) continue;
       if (customHost && el.tagName.toLowerCase() !== 'select') {
         if (customSelectLooksFilled(customHost)) continue;
+        if (triedHosts) triedHosts.add(customHost);
         try {
           var cOk = await fillCustomSelect(customHost, value, key);
           if (!cOk) {
@@ -4302,7 +4495,7 @@
           }
           if (cOk) {
             filled += 1;
-            keyCounts[counterKey] = count + 1;
+            keyCounts[counterKey] = (keyCounts[counterKey] || 0) + 1;
             if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
             recordFill(customHost, key, value);
             highlight(el);
@@ -4310,7 +4503,7 @@
           }
           // Phoenix 宿主的真值只在 React 状态里，绝不能直接写 input.value
           if (isPhoenixHost(customHost)) {
-            if (skipped.length < 12) skipped.push({ key: key, reason: 'phoenix_fill_failed' });
+            if (skipped.length < 30) skipped.push({ key: key, reason: 'phoenix_fill_failed' });
             continue;
           }
         } catch (_) { /* fall through */ }
@@ -4327,16 +4520,16 @@
         var toggled = await clickCurrentJobToggle(el);
         if (toggled) {
           filled += 1;
-          keyCounts[counterKey] = count + 1;
+          keyCounts[counterKey] = (keyCounts[counterKey] || 0) + 1;
           if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
           highlight(el);
         } else if (!looksLikeDateInput(el) && (await writeAndVerify(el, String(value).trim()))) {
           // 没有「至今」开关、但这是个普通文本框（结束时间）→ 直接写“至今”
           filled += 1;
-          keyCounts[counterKey] = count + 1;
+          keyCounts[counterKey] = (keyCounts[counterKey] || 0) + 1;
           if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
           highlight(el);
-        } else if (skipped.length < 12) {
+        } else if (skipped.length < 30) {
           skipped.push({ key: key, reason: 'current_job_no_toggle' });
         }
         continue;
@@ -4350,12 +4543,12 @@
           grpFirst.members.forEach(function (m) { if (groupHandled) groupHandled.add(m); });
           if (grpFirst.ok) {
             filled += 1;
-            keyCounts[counterKey] = count + 1;
+            keyCounts[counterKey] = (keyCounts[counterKey] || 0) + 1;
             if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
             recordFill(grpFirst.members && grpFirst.members[0] ? grpFirst.members[0] : el, key, value, 'date',
               dateGroupReader(grpFirst.parts));
             grpFirst.members.forEach(function (m) { highlight(m); });
-          } else if (skipped.length < 12) {
+          } else if (skipped.length < 30) {
             skipped.push({ key: key, reason: grpFirst.reason || 'date_group_failed' });
           }
           continue;
@@ -4380,11 +4573,11 @@
           grpRes.members.forEach(function (m) { if (groupHandled) groupHandled.add(m); });
           if (grpRes.ok) {
             filled += 1;
-            keyCounts[counterKey] = count + 1;
+            keyCounts[counterKey] = (keyCounts[counterKey] || 0) + 1;
             if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
             recordFill(grpRes.members[0] || el, key, value, 'date', dateGroupReader(grpRes.parts));
             grpRes.members.forEach(function (m) { highlight(m); });
-          } else if (skipped.length < 12) {
+          } else if (skipped.length < 30) {
             skipped.push({ key: key, reason: grpRes.reason || 'date_group_failed' });
           }
           continue;
@@ -4393,7 +4586,7 @@
 
       // fail-closed：是年/月/日部件、但组不成完整日期 → 宁可不填，也不写半截日期
       if (M.detectDatePartRole && M.detectDatePartRole(hints, dateOpts) && hasSiblingDateParts(el)) {
-        if (skipped.length < 12) skipped.push({ key: key, reason: 'date_part_no_group' });
+        if (skipped.length < 30) skipped.push({ key: key, reason: 'date_part_no_group' });
         continue;
       }
 
@@ -4406,10 +4599,12 @@
           continue;
         }
         try {
-          ok = await fillReadonlyPicker(el, value);
+          // laydate：看一眼面板类型就能按格式直接写，不用逐格点
+          ok = isLaydateInput(el) ? await fillLaydate(el, value, null) : false;
+          if (!ok) ok = await fillReadonlyPicker(el, value);
         } catch (err) {
           ok = false;
-          if (skipped.length < 12) {
+          if (skipped.length < 30) {
             skipped.push({ key: key, reason: 'picker_error: ' + String((err && err.message) || err).slice(0, 60) });
           }
         }
@@ -4418,7 +4613,7 @@
           await settle();
           if (!dateValueMatches(el.value, value) && !pickerValueMatches(el.value, value)) {
             ok = false;
-            if (skipped.length < 12) skipped.push({ key: key, reason: 'picker_not_committed' });
+            if (skipped.length < 30) skipped.push({ key: key, reason: 'picker_not_committed' });
           }
         }
         if (ok === 'forced') forced.push(key);
@@ -4435,7 +4630,7 @@
         // 日期写进普通输入框：按控件要求的格式（type=date/month、placeholder 的 YYYY/MM…）
         dateText = dateValueForInput(el, value);
         if (dateText === '') {
-          if (skipped.length < 12) skipped.push({ key: key, reason: 'date_value_unsupported' });
+          if (skipped.length < 30) skipped.push({ key: key, reason: 'date_value_unsupported' });
           continue;
         }
         if (dateText) value = dateText;
@@ -4444,7 +4639,7 @@
         if (maxL && String(value).length > maxL) {
           var cut = fitToMaxLength(value, maxL);
           if (!cut) {
-            if (skipped.length < 12) skipped.push({ key: key, reason: 'value_exceeds_maxlength' });
+            if (skipped.length < 30) skipped.push({ key: key, reason: 'value_exceeds_maxlength' });
             continue;
           }
           value = cut;
@@ -4457,7 +4652,7 @@
             var nWant = Number(String(value).replace(/[^\d.\-]/g, ''));
             ok = isFinite(nWant) && parseFloat(el.value) === nWant;
           }
-          if (!ok && skipped.length < 12) skipped.push({ key: key, reason: 'widget_not_committed' });
+          if (!ok && skipped.length < 30) skipped.push({ key: key, reason: 'widget_not_committed' });
         } else {
           ok = await writeAndVerify(el, value);
           if (!ok && el.tagName && el.tagName.toLowerCase() === 'select') {
@@ -4475,7 +4670,7 @@
 
       if (ok) {
         filled += 1;
-        keyCounts[counterKey] = count + 1;
+        keyCounts[counterKey] = (keyCounts[counterKey] || 0) + 1;
         if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
         // 已逐项回读确认过（含格式化差异）：审计只需确认它一直留到本轮结束、没被后续重渲染吞掉
         var landed = el.tagName.toLowerCase() === 'select' ? readBackValue(el) : String(el.value || '');
@@ -4518,7 +4713,8 @@
         // 与主循环共用 45s 总预算（之前这一段不受限，点不开的下拉每个耗 3~4s，整轮能拖到 70s）
         if (Date.now() - startedAt > 45000) { timedOut = true; break; }
         var host = hosts[hi];
-        if (customSelectLooksFilled(host)) continue;
+        if (triedHosts && triedHosts.has(host)) continue;   // 主循环已经试过（对不上的下拉别再耗一遍）
+        var hostFilled = customSelectLooksFilled(host);
         var hLabel = '';
         var prev = host.previousElementSibling;
         if (prev) {
@@ -4538,11 +4734,15 @@
         if (!hLabel) continue;
         // antd 的必填星号在 label 里（"学校*"），不清理会匹配不上
         hLabel = String(hLabel).replace(/\*/g, '').replace(/（必填）|\(必填\)|必填/g, '').replace(/\s+/g, ' ').trim();
-        var hKey = M.matchFieldKey(hLabel, {});
+        // 带上区块上下文（教育块的「城市」是学校城市，不是申请人城市）
+        var hKey = M.matchFieldKey(hLabel, { context: detectSectionContext(host) });
         if (!hKey) continue;
         var hCounterKey = occurrenceKey(hKey, hLabel);
-        var hCount = keyCounts[hCounterKey] || 0;
-        if (hCount >= MAX_FILLS_PER_KEY) continue;
+        // 与主循环一致：第几段按出现位置算（已经有值的那一段也占位）
+        var hCount = occurSeen[hCounterKey] || 0;
+        occurSeen[hCounterKey] = hCount + 1;
+        if (hostFilled) continue;
+        if ((keyCounts[hCounterKey] || 0) >= MAX_FILLS_PER_KEY && !M.LIST_OCCURRENCE_MAP[hKey]) continue;
         var hVal = M.profileValueForOccurrence
           ? M.profileValueForOccurrence(profile, hKey, hCount)
           : M.profileValue(profile, hKey);
@@ -4551,7 +4751,8 @@
           var hOk = await fillCustomSelect(host, hVal, hKey);
           if (hOk) {
             filled += 1;
-            keyCounts[hCounterKey] = hCount + 1;
+            keyCounts[hCounterKey] = (keyCounts[hCounterKey] || 0) + 1;
+            recordFill(host, hKey, hVal);
             if (filledKeys.indexOf(hKey) === -1) filledKeys.push(hKey);
             highlight(host);
           }
@@ -4581,7 +4782,12 @@
       });
       audit.entries.forEach(function (r, ri) {
         if (r.status !== 'empty' && r.status !== 'mismatch') return;
-        if (!fillRecords[ri].noCount) filled = Math.max(0, filled - 1);
+        // 只有回读可靠的才扣：原生 input / select / textarea，或带专用读法的（年月日三件套、年月下拉对）。
+        // 自定义下拉宿主的回读是「猜显示文字」，扣了会把选上的字段误报成没填（v1.5.23 的回退之一）
+        var rec = fillRecords[ri];
+        var reliable = !!(rec.read || (rec.el && /^(INPUT|SELECT|TEXTAREA)$/.test(String(rec.el.tagName || ''))));
+        if (!reliable) return;
+        if (!rec.noCount) filled = Math.max(0, filled - 1);
         if (!goodKeys[r.key]) {
           var fk = filledKeys.indexOf(r.key);
           if (fk !== -1) filledKeys.splice(fk, 1);

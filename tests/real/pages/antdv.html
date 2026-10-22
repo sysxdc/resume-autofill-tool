@@ -1,0 +1,21 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../node_modules/ant-design-vue/dist/reset.css"></head><body style="padding:20px">
+<div id="app">
+ <div class="sec"><h3>基本信息</h3><a-form>
+  <a-form-item label="姓名"><a-input v-model:value="s.name"></a-input></a-form-item>
+  <a-form-item label="学历"><a-select v-model:value="s.deg" style="width:200px" :options="[{value:'本科'},{value:'硕士'},{value:'博士'}]"></a-select></a-form-item>
+  <a-form-item label="出生日期"><a-date-picker v-model:value="s.birth" value-format="YYYY-MM-DD"></a-date-picker></a-form-item>
+ </a-form></div>
+ <div class="sec"><h3>教育经历</h3><a-form>
+  <a-form-item label="起止时间"><a-range-picker v-model:value="s.eduRange" picker="month" value-format="YYYY-MM"></a-range-picker></a-form-item>
+  <a-form-item label="入学时间"><a-date-picker v-model:value="s.enroll" picker="month"></a-date-picker></a-form-item>
+ </a-form></div>
+ <div class="sec"><h3>工作经历</h3><a-form>
+  <a-form-item label="开始时间"><a-date-picker v-model:value="s.ws" value-format="YYYY-MM-DD"></a-date-picker></a-form-item>
+  <a-form-item label="结束时间"><a-date-picker v-model:value="s.we" value-format="YYYY-MM-DD"></a-date-picker></a-form-item>
+ </a-form></div>
+</div>
+<script src="../node_modules/vue3/dist/vue.global.prod.js"></script>
+<script src="../node_modules/dayjs/dayjs.min.js"></script><script src="../node_modules/dayjs/plugin/customParseFormat.js"></script><script src="../node_modules/dayjs/plugin/weekday.js"></script><script src="../node_modules/dayjs/plugin/localeData.js"></script><script src="../node_modules/dayjs/plugin/weekOfYear.js"></script><script src="../node_modules/dayjs/plugin/weekYear.js"></script><script src="../node_modules/dayjs/plugin/advancedFormat.js"></script><script src="../node_modules/dayjs/plugin/quarterOfYear.js"></script>
+<script src="../node_modules/ant-design-vue/dist/antd.min.js"></script>
+<script>var s = Vue.reactive({ name: '', deg: undefined, birth: undefined, eduRange: undefined, enroll: undefined, ws: undefined, we: undefined }); Vue.createApp({ setup: function () { return { s: s }; } }).use(antd).mount('#app');
+window.__state = function () { var o = {}; Object.keys(s).forEach(function (k) { var v = s[k]; o[k] = v && v.format ? v.format('YYYY-MM-DD') : (Array.isArray(v) ? v.map(function (x) { return x && x.format ? x.format('YYYY-MM-DD') : x; }) : v); }); return o; };</script></body></html>

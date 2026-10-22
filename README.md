@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.5.23**
+当前版本：**1.5.24**
 
 ## 功能概览
 
@@ -166,6 +166,7 @@ bash scripts/repo-state.sh
 npm test                        # 等价 node tests/run-tests.mjs（串联 unit + DOM + parser）
 npm run test:dom                # 只跑真实浏览器里的控件行为基线（需 playwright）
 npm run test:benchmark          # 网申字段匹配基准
+npm run test:real               # 真组件 × 真扩展（先 cd tests/real && npm install 装组件库）
 # 或零依赖直接：
 node tests/run-tests.mjs
 node tests/run-dom-tests.mjs
@@ -178,7 +179,8 @@ DOM 基线依赖可选的 `playwright`（见 `package.json` `devDependencies`）
 | 套件 | 断言什么 | 能不能证明「填得对」 |
 |---|---|---|
 | `tests/run-tests.mjs`（≈190+ 项） | 关键词/模糊评分、denylist、`profileValue`、select 匹配、AI merge 纯函数、manifest 结构 | **不能**，只做 smoke：防手滑删类名/常量 |
-| `tests/run-dom-tests.mjs`（26 项 + `fixtures/dom/*.html`） | 真实 Chromium 里「怎么打开 / 怎么写进去 / 回读是什么 / 有什么坑」 | 能，这是唯一的行为证据 |
+| `tests/run-dom-tests.mjs`（29 项 + `fixtures/dom/*.html`） | 真实 Chromium 里「怎么打开 / 怎么写进去 / 回读是什么 / 有什么坑」（仿制控件，脚本注入页面主环境） | 能，但只覆盖仿制控件 |
+| `tests/real/run-real.mjs`（9 项 + `tests/real/pages/*.html`） | **真组件库**（antd 3/4/5、Element UI/Plus、ant-design-vue、layui）+ **加载解压扩展本体**、走 `FILL_FORM` 消息，断言组件自己的状态与耗时 | 能，最接近用户实际：内容脚本在隔离环境、组件提交经 `page-bridge.js` |
 | `tests/resume-parser.test.mjs`（20 项） | 简历文本 → 结构化 profile | 能（解析域） |
 
 ### 为什么要有 DOM 基线
@@ -319,6 +321,45 @@ Date.STRATEGY_ORDER            // native-input → native-selects → fiber-prop
 （`#__ra_panel_host__.dataset.lastResult`），降级不再静默。
 
 ## Changelog
+
+### 1.5.24
+
+反馈「部分时间还是填不进去、起止时间一起改的控件不行、会超时、填的字段比之前少」——
+这次用**真实组件库 + 真实扩展环境**复现（之前所有测试都是仿制控件 + 把脚本注入页面主环境，抓不到下面第一条）。
+
+- **根因：组件直改在真实扩展里从来没生效过**。内容脚本跑在 Chrome 的隔离环境，读不到页面挂在 DOM 上的
+  React fiber / Vue 实例（`__reactFiber$`、`__vue__`、`_vnode`）。v1.5.14 起的「antd 直接改组件值」、
+  v1.5.23 的 Vue 3 路径只在测试里有效，真实站点上全部退回「点面板」：每个日期框 4~9 秒、点不准、
+  还会把值点进别的日期框（错填）。新增 `content/page-bridge.js`（manifest `"world": "MAIN"`），
+  组件提交统一经它同步完成：antd 3（实例 `handleChange`）、antd 4/5（最外层 rc-picker `onChange`；
+  antd 5 内层那个只改输入框文字、不通知表单）、Element UI（`emitInput`，按 `value-format` 输出）、
+  Element Plus / ant-design-vue（Vue 3 生产构建没有 `__vueParentComponent`，改为从挂载容器的 `_vnode`
+  找到组件链）。`minimum_chrome_version` 设为 111。
+- **起止时间**：antd 3 RangePicker（之前被当成两个单日期，教育的起止时间被填成工作开始日期）；
+  layui laydate（看一眼面板类型按格式直接写，含单输入框范围 `2019-09 - 2023-06`）；
+  通用「一个输入框装起止两个日期」；同一分区多个范围控件按出现顺序取第 N 段（之前第 2 段教育拿到第 1 段的值）。
+- **漏填的老 bug**：`fillModalPickers` 在确认是弹窗选择器之前就把输入框标成已处理——antd 表单里普通的
+  「学校名称 / 专业」输入框一律被跳过；Element UI 下拉的选项被按「每个选项各成一组」收集，只剩最后一项；
+  内嵌在宿主里的隐藏选项文字被当成「已选值」而跳过；Element Plus 下拉选中文字读错位置，选上了也判失败；
+  `profileValue` 对 `workEnd` / 学历等键不回落到 `workList[0]` / `eduList[0]`。
+- **多段对齐**：第几段按「出现位置」算，不按「成功次数」算（第 1 段已有值或没填上时，第 2 段不会再拿第 1 段的值）。
+- **超时**：日期控件外层的 `role="combobox"` 不再被当成下拉（Element Plus 每个日期框白等 4.5 秒）；
+  只读下拉选项里没有目标值时立即放弃（原来空等 3~4 秒、主循环和末尾循环各一遍）；可搜索下拉一出选项就输入搜索词；
+  不再往只读输入框里写搜索词；快字段先填、慢控件后置；末尾下拉循环带区块上下文并与主循环去重。
+- **「已填」统计**：填完审计只对回读可靠的原生控件扣减（自定义下拉的显示文字读法不可靠，v1.5.23 会把选上的报成没写入）。
+- **区块识别**：往上找 12 层，并认「容器前面的兄弟标题」（`<h3>教育经历</h3><form>…`）。
+- **实测（真实扩展，Playwright 加载解压扩展、走 `FILL_FORM` 消息，断言组件自己的状态）**：
+
+  | 页面 | v1.5.22 | v1.5.23 | v1.5.24 |
+  |---|---|---|---|
+  | 大表单（antd5，40 字段，2 段教育 + 2 段工作） | 61s，31 项且有错位 | **45s 超时，21 项** | 8s，38 项全对 |
+  | antd5 小表单（7 字段） | 22s，有漏填 | 28s，3 项 | 1.9s，全对 |
+  | Element Plus（8 字段） | 25s，起止时间为空、结束时间错填当月 | 25s | 1.3s，全对 |
+  | ant-design-vue / antd3 / layui | 17s / 11s / 15s，均有漏填或错填 | 同左 | 1~2s，全对 |
+
+- **测试**：新增 `tests/real/`（真组件 × 真扩展，`cd tests/real && npm install` 后 `npm run test:real`），
+  9 个用例：antd 3/4/5、Element UI、Element Plus、ant-design-vue、layui、两张大表单；旧版本在这套测试上 0/9。
+  另加 1 个 DOM 用例（单输入框起止时间按段取值 / 薪资范围框不被当成日期范围）。
 
 ### 1.5.23
 

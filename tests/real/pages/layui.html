@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../node_modules/layui/dist/css/layui.css"></head><body style="padding:20px">
+<div class="sec"><h3>基本信息</h3><form class="layui-form">
+ <div class="layui-form-item"><label class="layui-form-label">姓名</label><div class="layui-input-block"><input class="layui-input" id="name"></div></div>
+ <div class="layui-form-item"><label class="layui-form-label">出生日期</label><div class="layui-input-block"><input class="layui-input" id="birth" readonly placeholder="yyyy-MM-dd"></div></div>
+</form></div>
+<div class="sec"><h3>教育经历</h3><form class="layui-form">
+ <div class="layui-form-item"><label class="layui-form-label">起止时间</label><div class="layui-input-block"><input class="layui-input" id="eduRange" readonly placeholder=" - "></div></div>
+ <div class="layui-form-item"><label class="layui-form-label">入学时间</label><div class="layui-input-block"><input class="layui-input" id="enroll" readonly placeholder="yyyy-MM"></div></div>
+</form></div>
+<div class="sec"><h3>工作经历</h3><form class="layui-form">
+ <div class="layui-form-item"><label class="layui-form-label">开始时间</label><div class="layui-input-block"><input class="layui-input" id="ws" readonly></div></div>
+ <div class="layui-form-item"><label class="layui-form-label">结束时间</label><div class="layui-input-block"><input class="layui-input" id="we" readonly></div></div>
+</form></div>
+<script src="../node_modules/layui/dist/layui.js"></script>
+<script>layui.use('laydate', function () { var l = layui.laydate;
+ l.render({ elem: '#birth' }); l.render({ elem: '#eduRange', type: 'month', range: true }); l.render({ elem: '#enroll', type: 'month' }); l.render({ elem: '#ws' }); l.render({ elem: '#we' }); window.__ready = 1; });
+window.__state = function () { var o = {}; ['name','birth','eduRange','enroll','ws','we'].forEach(function (k) { o[k] = document.getElementById(k).value; }); return o; };</script></body></html>

@@ -323,12 +323,15 @@ const AUDIT_SCRIPT = path.join(__dirname, '..', 'shared', 'audit.js');
 const CHAIN_SCRIPT = path.join(__dirname, '..', 'shared', 'select-chain.js');
 const MATCH_SCRIPT = path.join(__dirname, '..', 'shared', 'match.js');
 const AUTOFILL_SCRIPT = path.join(__dirname, '..', 'content', 'autofill.js');
+const BRIDGE_SCRIPT = path.join(__dirname, '..', 'content', 'page-bridge.js');
 
 /**
  * 端到端：把整套内容脚本（match → 日期能力/策略 → 审计 → 联动 → autofill）装进页面，
  * 用假的 chrome.storage 提供档案，直接跑「一键填写」。断言的是最终页面上的真实值 + 上报结果。
  */
 async function loadExtension(page, profile) {
+  // 页面主环境桥接（扩展里是 world: MAIN 的独立内容脚本）
+  await page.addScriptTag({ path: BRIDGE_SCRIPT });
   await page.addScriptTag({ path: MATCH_SCRIPT });
   await page.evaluate((p) => {
     const store = { profile: p };
@@ -697,6 +700,28 @@ const E2E_CASES = [
       eq(await page.evaluate(() => document.getElementById('re').value), '2023-03-31', '范围结束回读');
       ok(r.filledKeys.includes('birthday') && r.filledKeys.includes('startDate'), 'filledKeys：' + JSON.stringify(r.filledKeys));
       ok(!(r.audit && r.audit.wrongFill), '审计无错填：' + JSON.stringify(r.audit && r.audit.problems));
+    },
+  },
+  {
+    name: 'e2e：单输入框起止时间按区块取第 N 段 + placeholder 格式；薪资范围框不当日期范围',
+    file: 'e2e-range.html',
+    async run(page) {
+      await loadExtension(page, {
+        eduList: [
+          { school: '某理工大学', start: '2021-09', end: '2024-06' },
+          { school: '某大学', start: '2017-09', end: '2021-06' }
+        ],
+        workList: [{ company: '甲科技', start: '2024-07', end: '至今' }],
+        expectedSalary: '15000'
+      });
+      await page.evaluate(async () => window.__resumeAutofill.fill({ allowAddSections: false }));
+      const v = (id) => page.evaluate((x) => document.getElementById(x).value, id);
+      eq(await v('edu1'), '2021.09 - 2024.06', '第 1 段教育（按 placeholder 格式）');
+      eq(await v('edu2'), '2017.09 - 2021.06', '第 2 段教育取 eduList[1]');
+      eq(await v('sch1'), '某理工大学', '第 1 段学校');
+      eq(await v('sch2'), '某大学', '第 2 段学校');
+      eq(await v('wk'), '2024-07 ~ 至今', '工作期间：分隔符跟 placeholder、终点至今');
+      ok(!/\d{4}[-.]\d{2}/.test(await v('pay')), '薪资范围框绝不能写进日期：' + (await v('pay')));
     },
   },
 ];

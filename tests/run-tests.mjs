@@ -1771,7 +1771,10 @@ test('v1.5.7: 起止时间合体控件按分区/段序填', () => {
   assert.ok(/RANGE_EDITOR_SEL/.test(src) && /el-date-editor--daterange/.test(src), '应识别 el daterange');
   assert.ok(/RANGE_SECTION_MAP/.test(src), '应有 分区 → listKey/startKey/endKey 映射');
   assert.ok(/function rangeContext\(el\)/.test(src), '应能判断属于哪个分区、第几段');
-  assert.ok(/\$emit\('pick', \[start, end\]/.test(src), '应走组件的 pick 事件提交');
+  // v1.5.24：组件提交搬到页面主环境桥接；Element UI 改走 emitInput（会按 value-format 转换，pick 事件要等面板实例创建）
+  const bridge = fs.readFileSync(path.join(root, 'content/page-bridge.js'), 'utf8');
+  assert.ok(/bridgeDateCommit\(inputs\[0\], start, end\)/.test(src), '范围控件交给桥接提交');
+  assert.ok(/vm\.emitInput\(val\)/.test(bridge), '应走组件自己的提交入口（emitInput）');
   assert.ok(/el-range-input/.test(src), '通用循环应跳过范围控件的两个 input');
 });
 
@@ -1869,8 +1872,9 @@ test('v1.5.8: 下拉改轮询 + 组件实例提交', () => {
   assert.ok(/waited >= \d+/.test(src), '下拉要轮询到选项出现');
   assert.ok(/function hostDropdownOptions/.test(src), '优先读宿主自己的下拉节点');
   assert.ok(/function commitFrameworkWidget/.test(src), 'el-input-number / el-date-editor 走组件提交');
-  assert.ok(/\$emit\('input', n\)/.test(src), '数字框传 Number');
-  assert.ok(/valueFormat/.test(src), '日期按 valueFormat 决定 Date / 字符串');
+  const bridge = fs.readFileSync(path.join(root, 'content/page-bridge.js'), 'utf8');
+  assert.ok(/numberCommit/.test(src) && /\$emit\('input', n\)/.test(bridge), '数字框传 Number（经桥接）');
+  assert.ok(/valueFormat/.test(bridge), '日期按 valueFormat 决定 Date / 字符串（桥接里）');
 });
 
 console.log('v1.5.9 悬浮窗 / 未填字段 / 外语成绩时间');
@@ -1991,7 +1995,8 @@ test('v1.5.12: 可搜索下拉「先输入再选」+ 远程搜索等待', () => 
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
   assert.ok(/function typeIntoSearch/.test(src), '要能往搜索框里输值');
   assert.ok(/sigAtType/.test(src), '要按选项指纹判断搜索是否生效');
-  assert.ok(/waited >= \(searched \? 4200 : 3000\)/.test(src), '搜过的要多等一会儿');
+  // v1.5.24：搜过的仍然等得最久；只读（不可搜索）下拉对不上就早放弃，不再一律空等 3 秒
+  assert.ok(/waited >= \(searched \? 3600 : \(searchable \? 2400 : 1800\)\)/.test(src), '搜过的要多等一会儿');
   assert.ok(/ArrowDown/.test(src), '点不开时用方向键展开');
 });
 
@@ -2029,13 +2034,15 @@ test('v1.5.13: 实习分区可从 workList 里挑实习条目展开', () => {
 
 test('v1.5.13: antd 日期框走面板（React props 触发 + title 点日）', () => {
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
-  assert.ok(/function reactPropsOf/.test(src), '要能拿到 React props');
-  assert.ok(/__reactEventHandlers\$/.test(src) && /__reactProps\$/.test(src), '两代 key 都认');
-  assert.ok(/function fireReactHandler/.test(src), '要能直接调组件 handler');
+  // v1.5.24：React props 只有页面主环境读得到 → 在桥接里
+  const bridge = fs.readFileSync(path.join(root, 'content/page-bridge.js'), 'utf8');
+  assert.ok(/function reactPropsOf/.test(bridge), '要能拿到 React props');
+  assert.ok(/__reactEventHandlers\$/.test(bridge) && /__reactProps\$/.test(bridge), '两代 key 都认');
+  assert.ok(/'reactHandler'/.test(src) && /op === 'reactHandler'/.test(bridge), '要能直接调组件 handler');
   assert.ok(/function antdPickDay/.test(src), '按天点选');
   assert.ok(/\.ant-picker-cell\[title="' \+ target/.test(src), '按 title 找日格子');
   assert.ok(/ant-picker-header-year-btn/.test(src), '跨年先点年份');
-  assert.ok(/closest\('\.ant-picker'\) && !el\.closest\('\.ant-picker-range'\)/.test(src), '单日期框单独处理');
+  assert.ok(/closest\('\.ant-picker, \.ant-calendar-picker'\) && !el\.closest\('\.ant-picker-range'\)/.test(src), '单日期框单独处理（含 antd v3）');
   assert.ok(/function fillAntdRangePicker/.test(src), '范围控件走面板');
   assert.ok(/function rowIndexFromIds/.test(src) && /function rangeContextLoose/.test(src), '范围控件定位分区/段序');
 });
@@ -2044,14 +2051,26 @@ console.log('v1.5.14 antd 日期框走组件 onChange');
 
 test('v1.5.14: 从 fiber 找 Picker 的 onChange（不依赖点击）', () => {
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
-  assert.ok(/function fiberOfNode/.test(src), '要能拿到 fiber');
-  assert.ok(/__reactInternalInstance\$/.test(src) && /__reactFiber\$/.test(src), '两代 fiber key 都认');
-  assert.ok(/function pickerFiberProps/.test(src), '要往上找 Picker props');
-  assert.ok(/generateConfig/.test(src) && /memoizedProps/.test(src), '用 generateConfig 认 Picker');
-  assert.ok(/function makePickerDate/.test(src), '用 setYear/setMonth/setDate 造日期');
-  assert.ok(/function fillAntdPickerByModel/.test(src), '直接调 onChange');
-  assert.ok(/props\.onChange\(\[sd, ed\]\)/.test(src), '范围控件传数组');
-  assert.ok(/props\.onChange\(one\)/.test(src), '单日期传单个值');
+  // v1.5.24：fiber 只有页面主环境读得到 → 实现在桥接里，autofill 只负责把日期交过去
+  const src2 = fs.readFileSync(path.join(root, 'content/page-bridge.js'), 'utf8');
+  assert.ok(/function fiberOfNode/.test(src2), '要能拿到 fiber');
+  assert.ok(/__reactInternalInstance\$/.test(src2) && /__reactFiber\$/.test(src2), '两代 fiber key 都认');
+  assert.ok(/function pickerFiberProps/.test(src2), '要往上找 Picker props');
+  assert.ok(/generateConfig/.test(src2) && /memoizedProps/.test(src2), '用 generateConfig 认 Picker');
+  assert.ok(/function makePickerDate/.test(src2), '用 setYear/setMonth/setDate 造日期');
+  assert.ok(/function fillAntdPickerByModel/.test(src) && /bridgeDateCommit/.test(src), '直接调 onChange（经桥接）');
+  assert.ok(/props\.onChange\(\[makePickerDate\(gc, s\), makePickerDate\(gc, e\)\]/.test(src2), '范围控件传数组');
+  assert.ok(/props\.onChange\(makePickerDate\(gc, s\)/.test(src2), '单日期传单个值');
+});
+
+test('v1.5.24: 页面主环境桥接已注册（world: MAIN），组件直改不在隔离环境里做', () => {
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  const entry = manifest.content_scripts.find((c) => c.js.includes('content/page-bridge.js'));
+  assert.ok(entry, '桥接要进 content_scripts');
+  assert.equal(entry.world, 'MAIN', '必须跑在页面主环境');
+  assert.ok(entry.all_frames, 'iframe 里的表单也要能用');
+  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  assert.ok(!/__reactFiber\$|__vue__|_vnode|__vue_app__/.test(src), '隔离环境读不到这些属性，autofill.js 里不该再依赖它们');
 });
 
 test('v1.5.14: 先 onChange、失败再点日历（两条路都留着）', () => {

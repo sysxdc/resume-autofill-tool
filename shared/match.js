@@ -1691,7 +1691,23 @@
     });
   }
 
+  /**
+   * v1.5.24：扁平值取不到就回落到列表第一条。
+   * 之前 workEnd / endDate / eduDegree 等有专门分支的键会提前 return ''，
+   * 只填了多段经历（workList）的档案，第一段的结束时间、学历永远取不到。
+   */
   function profileValue(profile, key) {
+    var v = profileValueFlat(profile, key);
+    if (v || !profile) return v;
+    var lm = LIST_OCCURRENCE_MAP[key];
+    if (lm) {
+      var arr = profile[lm[0]];
+      if (Array.isArray(arr) && arr.length && arr[0] && arr[0][lm[1]]) return String(arr[0][lm[1]]).trim();
+    }
+    return '';
+  }
+
+  function profileValueFlat(profile, key) {
     if (!profile) return '';
     if (key === 'firstName') {
       if (profile.firstName && String(profile.firstName).trim()) {
