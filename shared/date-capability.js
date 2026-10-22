@@ -30,40 +30,105 @@
     return s.length < 2 ? '0' + s : s;
   }
 
+  var EN_MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12 };
+  var CN_NUM = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12, 〇: 0 };
+
+  /** 全角数字/标点 → 半角（２０２０年９月、２０２０／０９） */
+  function toHalf(s) {
+    return String(s).replace(/[！-～]/g, function (ch) {
+      return String.fromCharCode(ch.charCodeAt(0) - 0xfee0);
+    }).replace(/　/g, ' ');
+  }
+
+  function validDay(y, m, d) {
+    if (!(m >= 1 && m <= 12) || !(d >= 1 && d <= 31)) return false;
+    var dim = new Date(Number(y), m, 0).getDate();
+    return !(dim && d > dim);
+  }
+
+  function setDay(out, y, m, d) {
+    out.y = String(y); out.m = String(m); out.d = String(d); out.precision = 'day';
+    return out;
+  }
+
+  function setMonth(out, y, m) {
+    out.y = String(y); out.m = String(m); out.d = null; out.precision = 'month';
+    return out;
+  }
+
   /**
    * 解析成统一模型。
-   * @returns {{y:string|null,m:string|null,d:string|null,precision:'day'|'month'|'open'|'unknown',open:boolean,raw:string}}
+   * v1.5.23 起额外支持：英文月份（Sep 2020 / 15 Sep 2020 / September 15, 2020）、
+   * 月/年（09/2020）、紧凑写法（202009 / 20200915）、全角数字、中文月份（2020年九月）、
+   * 美式 / 欧式 月日年（9/15/2020、15/09/2020；两个都 ≤12 时按美式并标 ambiguous）。
+   * @returns {{y:string|null,m:string|null,d:string|null,precision:'day'|'month'|'open'|'unknown',open:boolean,raw:string,ambiguous?:boolean}}
    */
   function parseModel(value) {
     var raw = String(value == null ? '' : value).trim();
     var out = { y: null, m: null, d: null, precision: 'unknown', open: false, raw: raw };
     if (!raw) return out;
-    if (OPEN_WORDS.test(raw.replace(/\s+/g, ''))) {
+    var half = toHalf(raw);
+    if (OPEN_WORDS.test(half.replace(/\s+/g, ''))) {
       out.precision = 'open';
       out.open = true;
       return out;
     }
     // 去掉时间尾巴（2023-09-01T00:00:00 / 2023-09-01 00:00:00）
-    var s = raw.replace(/[T\s]+\d{1,2}:\d{2}(:\d{2})?.*$/, '');
+    var s = half.replace(/[T\s]+\d{1,2}:\d{2}(:\d{2})?.*$/, '');
 
     // 年月日
     var m = s.match(/(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?/);
     if (m) {
       var mm = parseInt(m[2], 10);
       var dd = parseInt(m[3], 10);
-      if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) {
-        out.y = m[1]; out.m = String(mm); out.d = String(dd); out.precision = 'day';
-        return out;
-      }
+      if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) return setDay(out, m[1], mm, dd);
     }
     // 年月
     var ym = s.match(/^\s*(\d{4})\s*[-/.年]\s*(\d{1,2})\s*月?\s*$/);
     if (ym) {
       var m2 = parseInt(ym[2], 10);
-      if (m2 >= 1 && m2 <= 12) {
-        out.y = ym[1]; out.m = String(m2); out.d = null; out.precision = 'month';
+      if (m2 >= 1 && m2 <= 12) return setMonth(out, ym[1], m2);
+    }
+    // 紧凑：20200915 / 202009
+    var cp = s.match(/^\s*((?:19|20)\d{2})(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])?\s*$/);
+    if (cp) {
+      if (cp[3] && validDay(cp[1], parseInt(cp[2], 10), parseInt(cp[3], 10))) {
+        return setDay(out, cp[1], parseInt(cp[2], 10), parseInt(cp[3], 10));
+      }
+      if (!cp[3]) return setMonth(out, cp[1], parseInt(cp[2], 10));
+    }
+    // 中文月份：2020年九月 / 2020年十二月
+    var cn = s.match(/^\s*(\d{4})\s*年\s*(十一|十二|十|[一二三四五六七八九])\s*月\s*$/);
+    if (cn) return setMonth(out, cn[1], CN_NUM[cn[2]]);
+    // 英文月份
+    var en = s.toLowerCase().match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sept?|oct|nov|dec)[a-z]*\.?/);
+    var yy = s.match(/\b((?:19|20)\d{2})\b/);
+    if (en && yy) {
+      var em = EN_MONTHS[en[1]];
+      // 日：月份词前后紧挨的 1~2 位数（15 Sep 2020 / Sep 15, 2020 / Sep 15th 2020）
+      var rest = s.replace(yy[0], ' ');
+      var dm = rest.match(/(?:^|\D)(\d{1,2})(?:st|nd|rd|th)?(?:\D|$)/i);
+      if (dm && validDay(yy[1], em, parseInt(dm[1], 10))) return setDay(out, yy[1], em, parseInt(dm[1], 10));
+      return setMonth(out, yy[1], em);
+    }
+    // 月/日/年 或 日/月/年
+    var mdy = s.match(/^\s*(\d{1,2})\s*[-/.]\s*(\d{1,2})\s*[-/.]\s*((?:19|20)\d{2})\s*$/);
+    if (mdy) {
+      var a = parseInt(mdy[1], 10);
+      var b = parseInt(mdy[2], 10);
+      if (a > 12 && validDay(mdy[3], b, a)) return setDay(out, mdy[3], b, a);
+      if (b > 12 && validDay(mdy[3], a, b)) return setDay(out, mdy[3], a, b);
+      if (validDay(mdy[3], a, b)) {
+        setDay(out, mdy[3], a, b);
+        if (a !== b) out.ambiguous = true;
         return out;
       }
+    }
+    // 月/年：09/2020
+    var my = s.match(/^\s*(\d{1,2})\s*[-/.]\s*((?:19|20)\d{2})\s*$/);
+    if (my) {
+      var m3 = parseInt(my[1], 10);
+      if (m3 >= 1 && m3 <= 12) return setMonth(out, my[2], m3);
     }
     // 只有年
     var yOnly = s.match(/^\s*(\d{4})\s*年?\s*$/);
@@ -87,9 +152,20 @@
   function matchLevel(actualText, modelOrText) {
     var want = typeof modelOrText === 'string' ? parseModel(modelOrText) : (modelOrText || parseModel(''));
     var got = parseModel(actualText);
+    // 回读是「03/04/2021」这种月日都 ≤12 的写法：美式不对就按欧式再判一次
+    if (got.ambiguous && want && want.y && want.m) {
+      var r1 = matchLevelParsed(got, want);
+      if (r1.level !== 'mismatch') return r1;
+      var swapped = { y: got.y, m: got.d, d: got.m, precision: 'day', open: false, raw: got.raw };
+      return matchLevelParsed(swapped, want);
+    }
+    return matchLevelParsed(got, want, actualText);
+  }
+
+  function matchLevelParsed(got, want, actualText) {
     if (!want || !want.y || !got.y) {
       // 解析不出来就退回文本比较（保守：只有完全相同才算 exact）
-      var a = String(actualText == null ? '' : actualText).replace(/\s+/g, '');
+      var a = String(actualText == null ? (got && got.raw) || '' : actualText).replace(/\s+/g, '');
       var w = String(want && want.raw ? want.raw : '').replace(/\s+/g, '');
       return { level: a && a === w ? 'exact' : 'mismatch', got: got, want: want };
     }
@@ -136,6 +212,76 @@
     var p = toParts(model);
     if (!p || !p.m) return '';
     return p.y + (sep || '-') + pad2(p.m);
+  }
+
+  // ── 格式：从 placeholder / data-format 读出控件要的写法 ─────────────
+  // 文本型日期框常要求固定格式（YYYY/MM、yyyy年mm月、MM/DD/YYYY），写成 2020-09 会被校验打回或解析错。
+  var FMT_TOKEN_RE = /y{4}|y{2}|m{1,2}|d{1,2}/gi;
+  var FMT_PATTERNS = [
+    /y{4}[^a-z0-9]{0,2}m{1,2}(?:[^a-z0-9]{0,2}d{1,2})?[月日]?/i,  // Y-M(-D)
+    /m{1,2}[^a-z0-9]{1,2}d{1,2}[^a-z0-9]{1,2}y{4}/i,            // M/D/Y
+    /d{1,2}[^a-z0-9]{1,2}m{1,2}[^a-z0-9]{1,2}y{4}/i,            // D/M/Y
+    /m{1,2}[^a-z0-9]{1,2}y{4}/i                                 // M/Y
+  ];
+
+  /**
+   * @returns {{template:string, hasDay:boolean}|null}  template 里 {Y}{MM}{M}{DD}{D} 是占位
+   */
+  function detectFormat(hint) {
+    var h = toHalf(String(hint == null ? '' : hint)).trim();
+    if (!h) return null;
+    var best = null;
+    for (var i = 0; i < FMT_PATTERNS.length; i++) {
+      var m = h.match(FMT_PATTERNS[i]);
+      if (m && (!best || m[0].length > best.length)) best = m[0];
+    }
+    // dd/mm 两种顺序同时出现（MM/DD/YYYY 里也能找到 DD/MM… 的子串）时，取最长的那个即可
+    if (best) {
+      // 「mm」在 MDY 里既是月；在 Y-M-D 里也是月：小写 mm 不当分钟用
+      var tpl = best.replace(FMT_TOKEN_RE, function (t) {
+        var c = t.charAt(0).toLowerCase();
+        if (c === 'y') return t.length === 4 ? '{Y}' : '{YY}';
+        if (c === 'm') return t.length === 2 ? '{MM}' : '{M}';
+        return t.length === 2 ? '{DD}' : '{D}';
+      });
+      if (tpl.indexOf('{YY}') !== -1) return null;   // 两位年份不写，避免世纪歧义
+      return { template: tpl, hasDay: /\{D{1,2}\}/.test(tpl) };
+    }
+    // 示例式：「例：2020-09」「如 2020.09.01」「2020年09月」
+    var ex = h.match(/((?:19|20)\d{2})\s*([-/.年])\s*(\d{1,2})(?:\s*([-/.月])\s*(\d{1,2})\s*(日)?|\s*(月))?/);
+    if (ex) {
+      var mm = ex[3].length === 2 ? '{MM}' : '{M}';
+      if (ex[5] != null) {
+        var dd = ex[5].length === 2 ? '{DD}' : '{D}';
+        return { template: '{Y}' + ex[2] + mm + ex[4] + dd + (ex[6] || ''), hasDay: true };
+      }
+      return { template: '{Y}' + ex[2] + mm + (ex[7] || ''), hasDay: false };
+    }
+    return null;
+  }
+
+  /** 按 detectFormat 的模板写日期；模型只有年月而模板要日 → 补 1 号（day-approx，合法降级） */
+  function formatModel(model, fmt) {
+    var mo = typeof model === 'string' ? parseModel(model) : model;
+    if (!fmt || !mo || !mo.y || !mo.m) return '';
+    var d = mo.d || DEFAULT_DAY;
+    return fmt.template
+      .replace('{Y}', String(mo.y))
+      .replace('{MM}', pad2(parseInt(mo.m, 10)))
+      .replace('{M}', String(parseInt(mo.m, 10)))
+      .replace('{DD}', pad2(parseInt(d, 10)))
+      .replace('{D}', String(parseInt(d, 10)));
+  }
+
+  /** 原生 <input type=date|month|datetime-local> 只认规范写法，写别的会被浏览器清空 */
+  function nativeInputValue(type, model) {
+    var mo = typeof model === 'string' ? parseModel(model) : model;
+    var t = String(type || '').toLowerCase();
+    if (!mo || !mo.y || !mo.m) return '';
+    if (t === 'date') return toYmd(mo);
+    if (t === 'month') return toYm(mo);
+    if (t === 'datetime-local') return toYmd(mo) + 'T00:00';
+    return '';
   }
 
   // ── 控件探测（纯观察，不产生副作用）────────────────────────
@@ -239,6 +385,10 @@
     STRATEGY_ORDER: STRATEGY_ORDER,
     KINDS: KINDS,
     pad2: pad2,
+    toHalf: toHalf,
+    detectFormat: detectFormat,
+    formatModel: formatModel,
+    nativeInputValue: nativeInputValue,
     _internals: { OPEN_WORDS: OPEN_WORDS, DEFAULT_DAY: DEFAULT_DAY }
   };
 });

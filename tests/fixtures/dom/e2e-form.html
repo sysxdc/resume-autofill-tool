@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>e2e：一键填写端到端（写入回读 / 日期格式 / 零错填）</title>
+<style>
+  body { font: 14px/1.6 sans-serif; padding: 16px; }
+  .row { margin: 6px 0; }
+  label { display: inline-block; width: 120px; }
+  .hidden-cb { opacity: 0; position: absolute; width: 14px; height: 14px; margin: 0; }
+  .ant-checkbox { position: relative; display: inline-block; width: 14px; height: 14px; border: 1px solid #999; }
+</style>
+</head>
+<body>
+<form id="f">
+  <!-- 1 普通文本 -->
+  <div class="row"><label for="name">姓名</label><input id="name"></div>
+
+  <!-- 2 掩码输入：自动加空格（138 0013 8000）——格式化差异必须判为写入成功 -->
+  <div class="row"><label for="phone">手机号码</label><input id="phone"></div>
+
+  <!-- 3 受控输入：只认键盘（keydown 累积状态，input 后按状态重渲染）——setter 写不进，逐字键入才行 -->
+  <div class="row"><label for="email">邮箱</label><input id="email"></div>
+
+  <!-- 4 硬拒绝：任何写入都在下一拍被清空 —— 必须如实报告失败，不能计为已填 -->
+  <div class="row"><label for="wechat">微信号</label><input id="wechat"></div>
+
+  <!-- 5 原生日期框：只认 YYYY-MM-DD -->
+  <div class="row"><label for="birth">出生日期</label><input id="birth" type="date"></div>
+
+  <!-- 6 原生月份框：只认 YYYY-MM（旧逻辑写成年月日会被浏览器清空） -->
+  <div class="row"><label for="enroll">入学时间</label><input id="enroll" type="month"></div>
+
+  <!-- 7 文本日期框：placeholder 写明格式 -->
+  <div class="row"><label for="grad">毕业时间</label><input id="grad" placeholder="YYYY/MM"></div>
+
+  <!-- 8 文本日期框：placeholder 给示例 -->
+  <div class="row"><label for="hire">入职日期</label><input id="hire" placeholder="例：2020.09.01"></div>
+
+  <!-- 9 学历：档案写「博士研究生」，旧逻辑会选成「硕士」 -->
+  <div class="row"><label for="deg">学历</label>
+    <select id="deg"><option value="">请选择</option><option value="1">硕士</option><option value="2">博士</option></select></div>
+
+  <!-- 10 否定词陷阱：「接受」不能选成「不接受调剂」 -->
+  <div class="row"><label for="adj">是否接受调剂</label>
+    <select id="adj"><option value="">请选择</option><option value="n">不接受调剂</option><option value="y">接受调剂</option></select></div>
+
+  <!-- 11 第三方：父亲姓名 —— 绝不能填申请人自己的姓名 -->
+  <div class="row"><label for="father">父亲姓名</label><input id="father"></div>
+
+  <!-- 12 「至今」：勾选框藏在包装层里，必须回读确认勾上 -->
+  <div class="row"><label for="leave">离职时间</label><input id="leave" placeholder="请选择">
+    <span class="ant-checkbox-wrapper"><span class="ant-checkbox"><input id="now" type="checkbox" class="hidden-cb"></span><span>至今</span></span></div>
+
+  <!-- 13 maxlength：长文本在句末截断 -->
+  <div class="row"><label for="intro">个人简介</label><textarea id="intro" maxlength="40"></textarea></div>
+
+  <!-- 14 maxlength：证件号放不下 → 截断就是错值，必须跳过 -->
+  <div class="row"><label for="idno">身份证号</label><input id="idno" maxlength="10"></div>
+</form>
+
+<script>
+  // 2：掩码
+  document.getElementById('phone').addEventListener('input', function (e) {
+    var d = e.target.value.replace(/\D/g, '').slice(0, 11);
+    var out = d.slice(0, 3) + (d.length > 3 ? ' ' + d.slice(3, 7) : '') + (d.length > 7 ? ' ' + d.slice(7) : '');
+    if (out !== e.target.value) e.target.value = out;
+  });
+
+  // 3：只认键盘的受控组件
+  (function () {
+    var el = document.getElementById('email');
+    var state = '';
+    el.addEventListener('keydown', function (e) {
+      if (e.key && e.key.length === 1) state += e.key;
+      else if (e.key === 'Backspace') state = state.slice(0, -1);
+    });
+    el.addEventListener('input', function () {
+      if (el.value === '') state = '';
+      Promise.resolve().then(function () { el.value = state; });
+    });
+    window.__emailState = function () { return state; };
+  })();
+
+  // 4：任何写入都在下一拍被清空
+  document.getElementById('wechat').addEventListener('input', function (e) {
+    var t = e.target;
+    Promise.resolve().then(function () { t.value = ''; });
+  });
+</script>
+</body>
+</html>

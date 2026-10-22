@@ -1,6 +1,6 @@
 """打包扩展：dist/resume-autofill-tool-v<版本>.zip
 
-只打运行必需的文件（manifest / background / content / options / shared / icons / README），
+只打运行必需的文件（manifest / background / content / options / popup / shared / lib / demo / icons），
 测试、脚本、node_modules、临时目录一律不进包——否则装上去的扩展会带着一堆无用文件。
 """
 import json
@@ -18,7 +18,9 @@ out = out_dir / f"resume-autofill-tool-v{version}.zip"
 if out.exists():
     out.unlink()
 
-INCLUDE_DIRS = ["background", "content", "options", "shared", "icons"]
+# popup：工具栏弹窗（manifest.action.default_popup）；lib：pdf.js / mammoth（简历导入）；
+# demo：web_accessible_resources 里声明的演示页。少任何一个，装上去都有功能是坏的。
+INCLUDE_DIRS = ["background", "content", "options", "popup", "shared", "lib", "demo", "icons"]
 INCLUDE_FILES = ["manifest.json"]   # README 是开发文档（60KB+），不进包
 SKIP_SUFFIX = {".map", ".py", ".log", ".md.bak"}
 
@@ -49,6 +51,35 @@ with zipfile.ZipFile(out) as z:
     assert "manifest.json" in names, "manifest.json 必须在压缩包根目录"
     inner = json.loads(z.read("manifest.json").decode("utf-8"))
     assert inner["version"] == version
+    # manifest 引用到的每个文件都必须在包里（弹窗 / 选项页 / 后台 / 内容脚本 / 图标）
+    refs = []
+    refs.append(inner.get("background", {}).get("service_worker"))
+    refs.append(inner.get("options_page"))
+    refs.append(inner.get("action", {}).get("default_popup"))
+    refs += list(inner.get("action", {}).get("default_icon", {}).values())
+    refs += list(inner.get("icons", {}).values())
+    for cs in inner.get("content_scripts", []):
+        refs += cs.get("js", []) + cs.get("css", [])
+    missing = sorted({r for r in refs if r and r not in names})
+    assert not missing, f"manifest 引用的文件不在包里: {missing}"
+    # 页面里 <script src> / <link href> 引用的本地文件
+    import re
+    for n in names:
+        if not n.endswith(".html"):
+            continue
+        html = z.read(n).decode("utf-8", "ignore")
+        base = n.rsplit("/", 1)[0] if "/" in n else ""
+        for ref in re.findall(r'(?:src|href)="([^"#?:]+\.(?:js|css))"', html):
+            path = pathlib.PurePosixPath(base, ref)
+            parts = []
+            for seg in path.parts:
+                if seg == "..":
+                    if parts:
+                        parts.pop()
+                elif seg != ".":
+                    parts.append(seg)
+            target = "/".join(parts)
+            assert target in names, f"{n} 引用的 {ref} 不在包里"
 
 size = out.stat().st_size
 print(f"包: {out}")

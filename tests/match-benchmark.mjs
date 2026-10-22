@@ -272,6 +272,25 @@ const CORPUS = [
   e("通用", "是否有亲属在本公司任职", "hasRelativeAtCompany"),
   e("通用", "招聘渠道", "referralSource"),
   e("通用", "验证码", "-"),
+
+  // v1.5.23：一字之差 / 第三方实体 / 同义写法（gen：国内网申常见变体）
+  e("语义兼容", "入职日期", "startDate"),
+  e("语义兼容", "离职日期", "workEnd"),
+  e("语义兼容", "入学年份", "eduStart"),
+  e("语义兼容", "邮寄地址", "address"),
+  e("语义兼容", "户口所在城市", "hukou"),
+  e("语义兼容", "证书获得日期", "certDate"),
+  e("语义兼容", "论文发表日期", "paperDate"),
+  e("语义兼容", "英语六级分数", "englishScore"),
+  e("语义兼容", "意向工作地点", "expectedCity"),
+  e("语义兼容", "期望工作城市", "expectedCity"),
+  e("语义兼容", "父亲姓名", "familyName"),
+  e("语义兼容", "母亲工作单位", "familyEmployer"),
+  e("语义兼容", "家庭成员电话", "familyPhone"),
+  e("语义兼容", "紧急联系人与本人关系", "emergencyContactRelation"),
+  e("语义兼容", "推荐人电话", "-"),
+  e("语义兼容", "学位类型", "degreeType"),
+  e("语义兼容", "单位全称", "company"),
 ];
 
 const M2 = Match;

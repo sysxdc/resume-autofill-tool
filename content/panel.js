@@ -227,6 +227,8 @@
           // 降级项：值填上了但精度掉了（2023-09 被写成 2023-09-01 / 日被控件吃掉），必须看得见
           degraded: (r.degradedDates || []).slice(0, 20),
           auditRecords: r.auditRecords || 0,
+          // 写了 / 点了但最后页面上没有值的字段（已从「已填」里扣掉）
+          notWritten: (r.notWritten || []).slice(0, 20),
           audit: r.audit ? {
             checked: r.audit.checked, ok: r.audit.ok, approx: r.audit.approx,
             empty: r.audit.empty, wrong: r.audit.mismatch,

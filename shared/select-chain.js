@@ -63,9 +63,13 @@
     if (!w) return null;
     var best = null;
     var bestScore = -1;
+    var NEG = /(?:不|非|未|无需|没有|not|no|non|un)$/;
     cands.forEach(function (c) {
       var t = norm(c.text);
       if (!t) return;
+      // 「不熟练」⊃「熟练」：正反相包含，绝不选
+      var at = t.indexOf(w);
+      if (at > 0 && t !== w && NEG.test(t.slice(Math.max(0, at - 4), at))) return;
       var score = 0;
       if (t === w) score = 5;
       else if (t.indexOf(w) === 0) score = 4;

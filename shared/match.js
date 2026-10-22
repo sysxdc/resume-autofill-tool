@@ -168,7 +168,8 @@
     ],
     address: [
       'streetaddress', 'street_address', 'address1', 'address_line', 'mailingaddress',
-      '详细地址', '通讯地址', '居住地址', '住址', '街道地址', 'address', 'street', 'addr'
+      '详细地址', '通讯地址', '居住地址', '住址', '街道地址', 'address', 'street', 'addr',
+      '邮寄地址', '联系地址', '收件地址', '通信地址'
     ],
     province: [
       'province', 'state', 'region', '州', '省', '省份', '省市', '所在省'
@@ -184,7 +185,8 @@
       'hukoutype', 'hukou_type', '户口性质', '户籍性质'
     ],
     hukou: [
-      'hukou', 'householdregister', '户籍', '户口所在地', '户口', '户籍所在地', '户口地址'
+      'hukou', 'householdregister', '户籍', '户口所在地', '户口', '户籍所在地', '户口地址',
+      '户口所在城市', '户籍所在城市', '户籍城市', '户口城市', '户籍地'
     ],
     nativePlace: [
       'nativeplace', 'native_place', 'hometown', '籍贯', '出生地', '籍贯所在地', '祖籍'
@@ -230,7 +232,9 @@
     ],
     englishScore: [
       'englishscore', 'english_score', '英语成绩', '外语成绩', '语言成绩', '英语分数',
-      '四六级成绩', 'cet成绩', '雅思成绩', '托福成绩'
+      '四六级成绩', 'cet成绩', '雅思成绩', '托福成绩',
+      '四级成绩', '六级成绩', '四级分数', '六级分数', '雅思分数', '托福分数', 'cet4成绩', 'cet6成绩',
+      'cet-4成绩', 'cet-6成绩', 'cet4分数', 'cet6分数'
     ],
     englishDate: [
       'englishdate', 'english_date', '英语考试时间', '外语考试时间', '语言考试时间',
@@ -278,7 +282,8 @@
     studyMode: ['studymode', 'study_mode', '学习形式'],
     eduMode: ['edumode', 'edu_mode', '教育方式'],
     eduStart: [
-      'edustart', 'edu_start', 'enrollmentdate', 'enrollment', '入学时间', '入学日期', '就读开始'
+      'edustart', 'edu_start', 'enrollmentdate', 'enrollment', '入学时间', '入学日期', '就读开始',
+      '入学年月', '入学年份', '开学时间'
     ],
     eduEnd: [
       'eduend', 'edu_end', 'graduationdate', '毕业日期', '毕业时间', '就读结束', '学业结束'
@@ -357,10 +362,10 @@
     ],
     startDate: [
       'startdate', 'start_date', 'start-date', 'availablefrom', 'dateavailable',
-      '入职时间', '任职开始', '开始日期', '工作开始'
+      '入职时间', '任职开始', '开始日期', '工作开始', '入职日期', '到职时间'
     ],
     workEnd: [
-      'workend', 'work_end', '工作结束', '任职结束', '工作结束时间'
+      'workend', 'work_end', '工作结束', '任职结束', '工作结束时间', '离职时间', '离职日期'
     ],
     endDate: [
       'enddate', 'end_date', '结束日期', '结束时间'
@@ -468,7 +473,9 @@
     ],
     expectedCity: [
       'expectedcity', 'expected_city', 'preferredcity', 'preferred_location', 'preferredlocation',
-      'intentioncity', '期望城市', '意向城市', '期望工作地', '意向工作城市', '目标城市'
+      'intentioncity', '期望城市', '意向城市', '期望工作地', '意向工作城市', '目标城市',
+      '期望工作城市', '期望工作地点', '意向工作地点', '意向工作地', '期望工作地区', '工作地点偏好',
+      '意向工作地区', 'preferredworklocation'
     ],
     interviewCity: [
       'interviewcity', 'interview_city', '面试城市', '面试地点'
@@ -520,7 +527,9 @@
     ],
     certName: ['certname', 'cert_name', '证书名称', '资质证书名称'],
     certType: ['certtype', 'cert_type', '证书类型', '资质证书类型'],
-    certDate: ['certdate', 'cert_date', '证书获取时间', '获证时间', '发证日期', '资质获取时间'],
+    certDate: ['certdate', 'cert_date', '证书获取时间', '获证时间', '发证日期', '资质获取时间',
+      '证书获得时间', '证书获得日期', '证书取得时间', '获得证书时间', '获证日期', '发证时间',
+      '获得时间', '获得日期', '取得时间', '取得日期'],
     certNo: ['certno', 'cert_no', '证书编号', '资质证书编号'],
     certIssuer: ['certissuer', 'cert_issuer', '颁发机构', '发证机构'],
     certScore: ['certscore', 'cert_score', '证书成绩'],
@@ -543,7 +552,8 @@
     familyEthnicity: ['familyethnicity', 'family_ethnicity', '家庭成员民族'],
     familyIdNumber: ['familyidnumber', 'family_id_number', '家庭成员身份证号', '家人身份证'],
     familyBirthday: ['familybirthday', 'family_birthday', '家庭成员出生日期'],
-    familyPhone: ['familyphone', 'family_phone', '家庭成员联系电话', '家人电话'],
+    familyPhone: ['familyphone', 'family_phone', '家庭成员联系电话', '家人电话', '家庭成员电话',
+      '家庭成员手机', '家人手机', '家人联系电话'],
     familyEmployer: ['familyemployer', 'family_employer', '家庭成员工作单位', '家人工作单位'],
     familyTitle: ['familytitle', 'family_title', '家庭成员职位'],
     familyPoliticalStatus: ['familypoliticalstatus', '家庭成员政治面貌'],
@@ -570,7 +580,7 @@
     paperImpactFactor: ['paperimpactfactor', '影响因子'],
     paperJournalLevel: ['paperjournallevel', '刊物等级', '期刊等级'],
     paperAuthorOrder: ['paperauthororder', '作者顺序'],
-    paperDate: ['paperdate', 'paper_date', '发表时间', '论文发表时间'],
+    paperDate: ['paperdate', 'paper_date', '发表时间', '论文发表时间', '发表日期', '论文发表日期'],
     paperDoi: ['paperdoi', 'paper_doi', 'doi'],
     paperLink: ['paperlink', 'paper_link', '论文链接'],
     paperAbstract: ['paperabstract', 'paper_abstract', '论文摘要'],
@@ -620,6 +630,7 @@
     'eduCertNo', 'degreeCertNo', 'studentId', 'advisorName', 'labName',
     'isNationalKeyLab', 'isJointTraining', 'counselorName', 'counselorContact', 'isOverseasSchool',
     'eduDescription', 'majorDescription', 'majorCourses', 'researchDirection', 'thesisTitle',
+    'degreeType', 'degreeCategory',
     'school', 'degree', 'major', 'department',
     'internRefereeName', 'internRefereeContact', 'internRefereeTitle',
     'internCompany', 'internCompanySize', 'internOverseas', 'internDepartment', 'internTitle',
@@ -716,18 +727,60 @@
     return nk.length <= 3 && /^[a-z0-9]+$/.test(nk);
   }
 
+  // v1.5.23：关键词匹配是每个字段 × 1400+ 关键词的热路径。
+  // 短词边界正则 / normalize 结果 / hints 的 token 切分都只算一次（之前每次调用都 new RegExp）。
+  var SHORT_RE_CACHE = {};
+  var NORM_CACHE = {};
+  var NORM_CACHE_SIZE = 0;
+
+  function normalizeCached(kw) {
+    var k = String(kw);
+    var v = NORM_CACHE[k];
+    if (v === undefined) {
+      if (NORM_CACHE_SIZE > 4000) { NORM_CACHE = {}; NORM_CACHE_SIZE = 0; }
+      v = normalize(k);
+      NORM_CACHE[k] = v;
+      NORM_CACHE_SIZE += 1;
+    }
+    return v;
+  }
+
+  function shortKeywordRe(keyword) {
+    var kw = String(keyword).toLowerCase().replace(/[\s_\-]+/g, '');
+    var hit = SHORT_RE_CACHE[kw];
+    if (!hit) {
+      hit = { kw: kw, re: new RegExp('(?:^|[^a-z0-9])' + escapeRegExp(kw) + '(?:[^a-z0-9]|$)', 'i') };
+      SHORT_RE_CACHE[kw] = hit;
+    }
+    return hit;
+  }
+
+  var lastTokenSrc = null;
+  var lastTokens = null;
+  function hintTokens(rawLower) {
+    if (rawLower !== lastTokenSrc) {
+      lastTokenSrc = rawLower;
+      lastTokens = rawLower.split(/[^a-z0-9\u4e00-\u9fff]+/).filter(Boolean).map(function (t) {
+        return { raw: t, norm: normalize(t) };
+      });
+    }
+    return lastTokens;
+  }
+
+  /** camelCase 拆词：userEmail → user email（之前在已小写的串上拆，永远拆不开） */
+  function splitCamel(raw) {
+    return String(raw || '').replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+  }
+
   function keywordOccurs(rawLower, normalizedHints, keyword) {
-    var nk = normalize(keyword);
+    var nk = normalizeCached(keyword);
     if (!nk) return false;
     if (isShortAsciiKeyword(nk)) {
-      var kw = String(keyword).toLowerCase().replace(/[\s_\-]+/g, '');
-      var re = new RegExp('(?:^|[^a-z0-9])' + escapeRegExp(kw) + '(?:[^a-z0-9]|$)', 'i');
-      if (re.test(rawLower)) return true;
-      var camel = rawLower.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
-      if (camel !== rawLower && re.test(camel)) return true;
-      var tokens = rawLower.split(/[^a-z0-9\u4e00-\u9fff]+/).filter(Boolean);
+      var sk = shortKeywordRe(keyword);
+      if (sk.re.test(rawLower)) return true;
+      var tokens = hintTokens(rawLower);
       for (var t = 0; t < tokens.length; t++) {
-        if (tokens[t] === kw || normalize(tokens[t]) === nk) return true;
+        if (tokens[t].raw === sk.kw || tokens[t].norm === nk) return true;
       }
       return false;
     }
@@ -746,16 +799,19 @@
     return null;
   }
 
+  var EMBEDDED_AC = null;
   function mapAutocompleteFromHints(rawLower) {
-    var keys = Object.keys(AUTOCOMPLETE_MAP).filter(function (k) {
-      return k.indexOf('-') !== -1;
-    });
-    keys.sort(function (a, b) { return b.length - a.length; });
-    var i;
-    for (i = 0; i < keys.length; i++) {
-      var token = keys[i];
-      var re = new RegExp('(?:^|[^a-z0-9])' + escapeRegExp(token) + '(?:[^a-z0-9]|$)', 'i');
-      if (re.test(rawLower)) return AUTOCOMPLETE_MAP[token];
+    if (!EMBEDDED_AC) {
+      EMBEDDED_AC = Object.keys(AUTOCOMPLETE_MAP).filter(function (k) {
+        return k.indexOf('-') !== -1;
+      }).sort(function (a, b) { return b.length - a.length; }).map(function (token) {
+        return { token: token, re: new RegExp('(?:^|[^a-z0-9])' + escapeRegExp(token) + '(?:[^a-z0-9]|$)', 'i') };
+      });
+    }
+    // 快速排除：内嵌 autocomplete token 一定带连字符
+    if (rawLower.indexOf('-') === -1) return null;
+    for (var i = 0; i < EMBEDDED_AC.length; i++) {
+      if (EMBEDDED_AC[i].re.test(rawLower)) return AUTOCOMPLETE_MAP[EMBEDDED_AC[i].token];
     }
     return null;
   }
@@ -849,6 +905,8 @@
       return false;
     }
     if (h.indexOf('证明人') !== -1 || h.indexOf('referee') !== -1) return true;
+    // v1.5.23：父母/配偶/亲属/推荐人/（非紧急）联系人 —— 都是别人，不能写申请人的姓名电话
+    if (THIRD_PARTY_RE.test(h)) return true;
     if (h.indexOf('家庭成员') !== -1 || h.indexOf('家人') !== -1 ||
         h.indexOf('family') !== -1) {
       // family_name 作为姓氏 autocomplete 不在此；有「家庭」中文或 family member 才拦
@@ -861,6 +919,9 @@
     }
     return false;
   }
+
+  /** 第三方人物（不是申请人本人）的称谓 */
+  var THIRD_PARTY_RE = /父亲|母亲|父母|配偶|爱人|丈夫|妻子|子女|兄弟|姐妹|亲属姓名|亲属电话|推荐人|内推人|介绍人|联系人(?!邮箱)|担保人|监护人|father|mother|spouse|guardian|referrer/;
 
   /** Levenshtein distance */
   function levenshtein(a, b) {
@@ -896,18 +957,27 @@
     return 1 - levenshtein(s, t) / maxLen;
   }
 
-  function tokenize(str) {
-    return String(str || '')
-      .toLowerCase()
-      .split(/[^a-z0-9\u4e00-\u9fff]+/)
-      .filter(function (t) { return t && t.length > 0; });
-  }
-
   /**
    * 模糊评分：includes / token overlap / Levenshtein，返回 0–1
    */
-  function scoreKeywordAgainstHints(rawLower, normalizedHints, keyword) {
-    var nk = normalize(keyword);
+  var CJK_RE = /[\u4e00-\u9fff]/;
+
+  /** 字符级预筛：关键词里至少 60% 的字符出现在 hints 里，才值得算编辑距离（剪掉 99% 的关键词） */
+  function charOverlapEnough(nk, charSet) {
+    if (!charSet) return true;
+    var need = Math.ceil(nk.length * 0.6);
+    var hit = 0;
+    for (var i = 0; i < nk.length; i++) {
+      if (charSet[nk.charAt(i)]) {
+        hit += 1;
+        if (hit >= need) return true;
+      }
+    }
+    return false;
+  }
+
+  function scoreKeywordAgainstHints(rawLower, normalizedHints, keyword, charSet) {
+    var nk = normalizeCached(keyword);
     if (!nk) return 0;
     if (keywordOccurs(rawLower, normalizedHints, keyword)) return 1;
 
@@ -916,11 +986,17 @@
 
     var score = 0;
     if (!normalizedHints || nk.length < 4) return 0;
+    if (!charOverlapEnough(nk, charSet)) return 0;
 
-    var tokens = tokenize(rawLower);
+    // v1.5.23：中文关键词换一个字往往就是另一个字段（入职↔入党、邮寄↔邮件、入学↔入职），
+    // 4 字中文关键词差 1 字 = 0.75，必须拦下；中文模糊至少 0.8（5 字以上才允许差 1 字）
+    var cjk = CJK_RE.test(nk);
+    var minScore = cjk ? 0.8 : FUZZY_THRESHOLD;
+
+    var tokens = hintTokens(rawLower);
     var hi, tn, incl, sim, pos, slice, s2;
     for (hi = 0; hi < tokens.length; hi++) {
-      tn = normalize(tokens[hi]);
+      tn = tokens[hi].norm;
       if (!tn || tn.length < 3) continue;
       if (tn === nk) return 1;
       // 仅当较短一方长度 ≥ 4，且为整词级包含，才给 includes 分
@@ -940,13 +1016,15 @@
     if (nk.length >= 4 && normalizedHints.length >= 4) {
       for (pos = 0; pos + nk.length <= normalizedHints.length; pos++) {
         slice = normalizedHints.substr(pos, nk.length);
+        // 首尾字都不同的窗口不可能达到阈值，跳过编辑距离
+        if (slice.charAt(0) !== nk.charAt(0) && slice.charAt(nk.length - 1) !== nk.charAt(nk.length - 1)) continue;
         s2 = similarity(slice, nk);
         if (s2 >= FUZZY_THRESHOLD) score = Math.max(score, s2);
       }
       // 也允许 hints 明显包含较长关键词
       if (normalizedHints.indexOf(nk) !== -1) score = Math.max(score, 1);
     }
-    return score;
+    return score >= minScore ? score : 0;
   }
 
 
@@ -1051,8 +1129,166 @@
   }
 
   /**
+   * v1.5.23：实体 + 属性组合识别。
+   * 「父亲姓名 / 母亲工作单位 / 紧急联系人与本人关系 / 家庭成员手机号」——
+   * 关键词表逐条穷举不完，而且旧逻辑会把「父亲姓名」命中成申请人的 name（错填红线）。
+   * 先认出「这是谁的」，再认「这是什么属性」，组合成专用键；认不出属性就整体放弃。
+   */
+  var ENTITY_RULES = [
+    {
+      id: 'family',
+      re: /家庭成员|家庭关系|家人|父亲|母亲|父母|配偶|爱人|丈夫|妻子|子女|兄弟|姐妹|familymember|father|mother|spouse/,
+      strict: true,   // 认不出属性 → 不填（不能落回申请人的 company/title/address）
+      attrs: [
+        [/关系|称谓|relation/, 'familyRelation'],
+        [/身份证|证件号/, 'familyIdNumber'],
+        [/电话|手机|联系方式|phone|mobile|tel/, 'familyPhone'],
+        [/出生|生日|birth/, 'familyBirthday'],
+        [/政治面貌/, 'familyPoliticalStatus'],
+        [/工作单位|单位|公司|employer|company/, 'familyEmployer'],
+        [/职位|职务|岗位|职业|title|position|occupation/, 'familyTitle'],
+        [/学历|文化程度|教育程度|education/, 'familyEducation'],
+        [/民族/, 'familyEthnicity'],
+        [/性别|gender/, 'familyGender'],
+        [/地址|住址|address/, 'familyAddress'],
+        [/姓名|名字|称呼|name/, 'familyName']
+      ]
+    },
+    {
+      id: 'emergency',
+      re: /紧急联系人|紧急联络人|应急联系人|紧急联系|emergencycontact|^(其他|备用)?联系人/,
+      strict: false,
+      attrs: [
+        [/关系|称谓|relation/, 'emergencyContactRelation'],
+        [/电话|手机|号码|联系方式|phone|mobile|tel/, 'emergencyContactPhone'],
+        [/姓名|名字|称呼|name/, 'emergencyContactName']
+      ]
+    },
+    {
+      id: 'internReferee',
+      re: /实习证明人/,
+      strict: false,
+      attrs: [
+        [/职位|职务|title/, 'internRefereeTitle'],
+        [/电话|手机|联系方式|phone|contact/, 'internRefereeContact'],
+        [/姓名|名字|name/, 'internRefereeName']
+      ]
+    },
+    {
+      id: 'projectReferee',
+      re: /项目证明人/,
+      strict: false,
+      attrs: [
+        [/职位|职务|title/, 'projectRefereeTitle'],
+        [/电话|手机|联系方式|phone|contact/, 'projectRefereeContact'],
+        [/姓名|名字|name/, 'projectRefereeName']
+      ]
+    },
+    {
+      id: 'referee',
+      re: /证明人|referee/,
+      strict: false,
+      attrs: [
+        [/职位|职务|title/, 'refereeTitle'],
+        [/电话|手机|联系方式|phone|contact/, 'refereeContact'],
+        [/姓名|名字|name/, 'refereeName']
+      ]
+    },
+    {
+      // 推荐人 / 内推人 不是工作证明人，也不是申请人：一律不填
+      id: 'referrer',
+      re: /推荐人|内推人|介绍人|担保人|监护人|referrer|guardian/,
+      strict: true,
+      attrs: []
+    }
+  ];
+
+  /** @returns {{key:string|null, strict:boolean, id:string}|null} 没有第三方实体时返回 null */
+  function entityKeyFor(h) {
+    if (!h) return null;
+    // 「是否有亲属在本公司」「家庭住址」「家庭电话」是申请人自己的信息，不是家庭成员
+    if (/是否|有无|有没有/.test(h)) return null;
+    for (var i = 0; i < ENTITY_RULES.length; i++) {
+      var rule = ENTITY_RULES[i];
+      if (!rule.re.test(h)) continue;
+      // 「家庭关系」本身就是 familyRelation；其余去掉实体词再判属性，避免「家庭成员」里的「成员」干扰
+      var rest = h.replace(rule.re, '|');
+      for (var j = 0; j < rule.attrs.length; j++) {
+        if (rule.attrs[j][0].test(rest)) return { key: rule.attrs[j][1], strict: rule.strict, id: rule.id };
+      }
+      if (rule.id === 'family' && /家庭关系/.test(h)) return { key: 'familyRelation', strict: true, id: rule.id };
+      return { key: null, strict: rule.strict, id: rule.id };
+    }
+    return null;
+  }
+
+  /**
+   * v1.5.23：同义归一（只在原样关键词匹配失败后才用）。
+   * 「入职日期」=「入职时间」，「手机号码」=「手机号」，「六级分数」=「六级成绩」——
+   * 把两侧都折成同一写法再做一次精确包含，比编辑距离安全得多（不会把入职折成入党）。
+   */
+  var CANON_RULES = [
+    [/日期|年月日|年月|年份/g, '时间'],
+    [/号码/g, '号'],
+    [/分数|得分/g, '成绩'],
+    [/全称|名字/g, '名称'],
+    [/地区|地点/g, '城市'],
+    [/您的|你的|本人的|请填写|请输入|请选择/g, ''],
+    [/e-?mail|电子邮件|电子邮箱|邮件地址/g, '邮箱'],
+    [/移动电话|手机号|手机/g, '手机'],
+    [/取得|获取|获得/g, '获得']
+  ];
+
+  function canonical(s) {
+    var t = String(s || '');
+    for (var i = 0; i < CANON_RULES.length; i++) t = t.replace(CANON_RULES[i][0], CANON_RULES[i][1]);
+    return t;
+  }
+
+  var CANON_INDEX = null;
+  function canonIndex() {
+    if (CANON_INDEX) return CANON_INDEX;
+    CANON_INDEX = [];
+    for (var i = 0; i < FIELD_ORDER.length; i++) {
+      var key = FIELD_ORDER[i];
+      var kws = FIELD_KEYWORDS[key] || [];
+      for (var j = 0; j < kws.length; j++) {
+        var nk = normalize(kws[j]);
+        // 只收中文关键词：英文 id 走词界匹配，归一对它没意义还会放大误命中
+        if (!nk || !CJK_RE.test(nk)) continue;
+        var ck = canonical(nk);
+        if (ck.length < 2) continue;
+        CANON_INDEX.push({ key: key, order: i, ck: ck, nk: nk });
+      }
+    }
+    return CANON_INDEX;
+  }
+
+  /** 关键词命中之后的语义护栏：哪些「看起来像」其实不是 */
+  function semanticGuard(key, h) {
+    // 户口/户籍/籍贯/生源/出生所在城市 不是现居城市
+    if ((key === 'city' || key === 'currentCity' || key === 'address') && /户口|户籍|籍贯|生源|出生地|档案/.test(h)) return false;
+    // 「期望/意向」的城市不是工作城市（工作经历里的那个）
+    if ((key === 'workCity' || key === 'city' || key === 'currentCity') && /期望|意向|偏好|希望|目标/.test(h)) return false;
+    // 「邮寄地址」是地址，不是邮箱
+    if (key === 'email' && /地址|address/.test(h) && !/邮箱|email|mail地址|邮件地址/.test(h)) return false;
+    // 证书/语言/奖项的「时间」不是证书本身（证书获得日期 → certDate 而非 certificates）
+    if ((key === 'certificates' || key === 'languages') && /时间|日期|编号|成绩|分数|机构|类型|名称|等级|级别/.test(h)) return false;
+    return true;
+  }
+
+  // 匹配结果缓存：同一页同一标签反复查（扫描 / 填写 / 未填清单各一遍），上限防止长会话涨内存
+  var MATCH_CACHE = {};
+  var MATCH_CACHE_SIZE = 0;
+  var MATCH_CACHE_MAX = 1500;
+
+  function cloneScored(r) {
+    return r ? { key: r.key, confidence: r.confidence, method: r.method } : null;
+  }
+
+  /**
    * 带置信度的匹配：{ key, confidence, method }
-   * method: autocomplete | keyword | fuzzy | null
+   * method: autocomplete | context | entity | keyword | canonical | fuzzy | null
    */
   function matchFieldKeyScored(hints, options) {
     var autocomplete = '';
@@ -1061,14 +1297,22 @@
     } else if (options && typeof options === 'object') {
       autocomplete = options.autocomplete || '';
     }
+    var context = (options && typeof options === 'object' && options.context) || '';
+    var cacheKey = String(hints || '') + '\u0001' + autocomplete + '\u0001' + context;
+    if (Object.prototype.hasOwnProperty.call(MATCH_CACHE, cacheKey)) return cloneScored(MATCH_CACHE[cacheKey]);
+    var res = matchFieldKeyScoredUncached(hints, autocomplete, context);
+    if (MATCH_CACHE_SIZE >= MATCH_CACHE_MAX) { MATCH_CACHE = {}; MATCH_CACHE_SIZE = 0; }
+    MATCH_CACHE[cacheKey] = res;
+    MATCH_CACHE_SIZE += 1;
+    return cloneScored(res);
+  }
 
+  function matchFieldKeyScoredUncached(hints, autocomplete, context) {
     var acKey = mapAutocomplete(autocomplete);
     if (acKey) return { key: acKey, confidence: 1, method: 'autocomplete' };
 
-    var context = (options && typeof options === 'object' && options.context) || '';
-
     var raw = String(hints || '');
-    var rawLower = raw.toLowerCase();
+    var rawLower = splitCamel(raw).toLowerCase();
     var h = normalize(raw);
     if (!h && !autocomplete) return null;
 
@@ -1077,6 +1321,11 @@
 
     if (isSkipContext(rawLower, h)) return null;
     if (isOtherPersonContactContext(raw)) return null;
+
+    // 第三方实体（家庭成员 / 紧急联系人 / 证明人 / 推荐人）：先认人，再认属性
+    var ent = entityKeyFor(h);
+    if (ent && ent.key) return { key: ent.key, confidence: 0.95, method: 'entity' };
+    if (ent && ent.strict) return null;
 
     // 区块上下文优先（教育块的「城市」= 学校城市；工作块的「城市」= 工作城市）
     var ctxKey = contextKeyFor(rawLower, h, context);
@@ -1089,34 +1338,61 @@
     var bestLen = -1;
     var bestOrder = 9999;
     var bestScore = 0;
-    var bestMethod = 'keyword';
 
     var i, j, key, keywords, kw, nk, sc;
-    // Pass 1: exact keyword
+    // Pass 1: exact keyword（最长关键词优先，同长按 FIELD_ORDER）
     for (i = 0; i < FIELD_ORDER.length; i++) {
       key = FIELD_ORDER[i];
       keywords = FIELD_KEYWORDS[key] || [];
       for (j = 0; j < keywords.length; j++) {
         kw = keywords[j];
-        nk = normalize(kw);
-        if (!nk || nk.length < 1) continue;
+        nk = normalizeCached(kw);
+        if (!nk) continue;
+        if (nk.length < bestLen) continue;          // 不可能胜出，省掉匹配
         if (!keywordOccurs(rawLower, h, kw)) continue;
         if (!addressCityGuard(key, nk, rawLower, h)) continue;
+        if (!semanticGuard(key, h)) continue;
         if (nk.length > bestLen || (nk.length === bestLen && i < bestOrder)) {
           bestLen = nk.length;
           bestKey = key;
           bestOrder = i;
-          bestScore = 1;
-          bestMethod = 'keyword';
         }
       }
     }
     if (bestKey) {
       if (isApplicantOnlyKeyBlocked(bestKey, raw)) return null;
-      return { key: bestKey, confidence: bestScore, method: bestMethod };
+      return { key: bestKey, confidence: 1, method: 'keyword' };
+    }
+
+    // Pass 1b: 同义归一后的精确包含（入职日期 → 入职时间、六级分数 → 六级成绩）
+    if (CJK_RE.test(h)) {
+      var ch = canonical(h);
+      var idx = canonIndex();
+      for (i = 0; i < idx.length; i++) {
+        var ent2 = idx[i];
+        if (ent2.ck.length < bestLen) continue;
+        if (ch.indexOf(ent2.ck) === -1) continue;
+        if (!semanticGuard(ent2.key, h)) continue;
+        if (!addressCityGuard(ent2.key, ent2.nk, rawLower, h)) continue;
+        if (ent2.ck.length > bestLen || (ent2.ck.length === bestLen && ent2.order < bestOrder)) {
+          bestLen = ent2.ck.length;
+          bestKey = ent2.key;
+          bestOrder = ent2.order;
+        }
+      }
+      // 归一后只剩 2 个字的命中太泛（「时间」「名称」），不算
+      if (bestKey && bestLen >= 3) {
+        if (isApplicantOnlyKeyBlocked(bestKey, raw)) return null;
+        return { key: bestKey, confidence: 0.92, method: 'canonical' };
+      }
+      bestKey = null;
+      bestLen = -1;
+      bestOrder = 9999;
     }
 
     // Pass 2: fuzzy synonym / token / Levenshtein
+    var charSet = {};
+    for (i = 0; i < h.length; i++) charSet[h.charAt(i)] = 1;
     bestKey = null;
     bestScore = 0;
     bestOrder = 9999;
@@ -1125,22 +1401,22 @@
       keywords = FIELD_KEYWORDS[key] || [];
       for (j = 0; j < keywords.length; j++) {
         kw = keywords[j];
-        nk = normalize(kw);
+        nk = normalizeCached(kw);
         if (!nk || nk.length < 2) continue;
-        sc = scoreKeywordAgainstHints(rawLower, h, kw);
+        sc = scoreKeywordAgainstHints(rawLower, h, kw, charSet);
         if (sc < FUZZY_THRESHOLD) continue;
         if (!addressCityGuard(key, nk, rawLower, h)) continue;
+        if (!semanticGuard(key, h)) continue;
         if (sc > bestScore || (sc === bestScore && i < bestOrder)) {
           bestScore = sc;
           bestKey = key;
           bestOrder = i;
-          bestMethod = 'fuzzy';
         }
       }
     }
     if (bestKey && bestScore >= FUZZY_THRESHOLD) {
       if (isApplicantOnlyKeyBlocked(bestKey, raw)) return null;
-      return { key: bestKey, confidence: Math.round(bestScore * 1000) / 1000, method: bestMethod };
+      return { key: bestKey, confidence: Math.round(bestScore * 1000) / 1000, method: 'fuzzy' };
     }
     return null;
   }
@@ -1587,35 +1863,61 @@
     return '';
   }
 
+  // 「研究生 / graduate」既可能是硕士也可能泛指研究生阶段：只在没有更具体的词时才用来归组，
+  // 否则「博士研究生」会同时落进硕士组，选项只有「硕士 / 博士」时就选成硕士（v1.5.23 前的错填）
+  var WEAK_DEGREE_TOKENS = { '研究生': 1, 'graduate': 1 };
+
+  function degreeTokenHit(lower, norm, syn) {
+    var sl = syn.toLowerCase();
+    if (lower === sl || norm === normalize(syn)) return true;
+    if (/^[a-z.' ]+$/.test(sl)) {
+      // 英文缩写（ba / ms / ma）只认整词，避免 ma ⊂ diploma
+      var tokens = lower.split(/[^a-z.']+/);
+      if (sl.length <= 4) return tokens.indexOf(sl) !== -1 || tokens.indexOf(sl.replace(/\./g, '')) !== -1;
+      return new RegExp('(?:^|[^a-z])' + escapeRegExp(sl) + '(?:[^a-z]|$)').test(lower);
+    }
+    return lower.indexOf(sl) !== -1;
+  }
+
+  /** 学历值所属的同义组（只取一个组；拿不准返回 -1） */
+  function degreeGroupOf(value) {
+    var raw = String(value || '').trim();
+    if (!raw) return -1;
+    var lower = raw.toLowerCase();
+    var norm = normalize(raw);
+    var best = -1;
+    var bestLen = 0;
+    var tie = false;
+    var weak = -1;
+    for (var g = 0; g < DEGREE_SYNONYM_GROUPS.length; g++) {
+      var group = DEGREE_SYNONYM_GROUPS[g];
+      for (var i = 0; i < group.length; i++) {
+        var syn = group[i];
+        if (!degreeTokenHit(lower, norm, syn)) continue;
+        if (WEAK_DEGREE_TOKENS[syn.toLowerCase()]) { if (weak === -1) weak = g; continue; }
+        var len = syn.length;
+        if (len > bestLen) { best = g; bestLen = len; tie = false; }
+        else if (len === bestLen && best !== g) tie = true;
+      }
+    }
+    if (best !== -1) return tie ? -1 : best;
+    return weak;
+  }
+
   function expandDegreeSynonyms(value) {
     var raw = String(value || '').trim();
     if (!raw) return [];
-    var lower = raw.toLowerCase();
-    var norm = normalize(raw);
     var out = [raw];
+    var g = degreeGroupOf(raw);
+    if (g === -1) return out;
     var seen = {};
-    seen[lower] = 1;
-    var g, i, syn, sl;
-    for (g = 0; g < DEGREE_SYNONYM_GROUPS.length; g++) {
-      var group = DEGREE_SYNONYM_GROUPS[g];
-      var hit = false;
-      for (i = 0; i < group.length; i++) {
-        syn = group[i];
-        sl = syn.toLowerCase();
-        if (lower === sl || norm === normalize(syn) ||
-            lower.indexOf(sl) !== -1 || sl.indexOf(lower) !== -1) {
-          hit = true;
-          break;
-        }
-      }
-      if (!hit) continue;
-      for (i = 0; i < group.length; i++) {
-        syn = group[i];
-        sl = syn.toLowerCase();
-        if (!seen[sl]) {
-          seen[sl] = 1;
-          out.push(syn);
-        }
+    seen[raw.toLowerCase()] = 1;
+    var group = DEGREE_SYNONYM_GROUPS[g];
+    for (var i = 0; i < group.length; i++) {
+      var sl = group[i].toLowerCase();
+      if (!seen[sl]) {
+        seen[sl] = 1;
+        out.push(group[i]);
       }
     }
     return out;
@@ -1666,6 +1968,10 @@
       if (/^(yes|y|true|是|有|可以)$/i.test(raw)) return 'Yes';
       return 'No';
     }
+    // v1.5.23：调剂 / 分配 / 出差这类是非题的常见答法（否定写法必须先判）
+    // 整句匹配：「能源行业」「需要沟通」这类不是是非答案
+    if (/^(不接受|不同意|不服从|不愿意|不能|不可以|不需要|拒绝)(调剂|分配|调配|安排|出差|加班|外派)?$/.test(raw)) return 'No';
+    if (/^(接受|同意|服从|愿意|能|可以接受|可接受|需要)(调剂|分配|调配|安排|出差|加班|外派)?$/.test(raw)) return 'Yes';
 
     // 句首 Yes / No（含 "No I am citizen…" / "Yes, I need sponsorship"）
     if (/^(yes|y)\b/i.test(raw)) return 'Yes';
@@ -1730,48 +2036,179 @@
     return false;
   }
 
+  // ── v1.5.23：选项匹配改为「打分 + 歧义拒填」────────────────────────
+  // 旧实现按「第一个包含就选」：接受 → 不接受调剂、可以 → 不可以、北京 → 北京大学、
+  // 党员 → 中共预备党员、选项编码 "3" ⊂ "3.8" 都会命中。现在：
+  //   精确 > 归一精确 > 包含（按长度占比打分）> 数值区间；否定词不一致直接拒绝；
+  //   最高分并列且不是同一项 → 拿不准，不填。
+  var NEG_BEFORE_RE = /(?:不|非|未|无需|没有|無|免|not\s*|no\s*|non[-\s]?|un)$/i;
+  var NEG_START_RE = /^(?:不|非|未|无需|没有|無|not\b|no\b|non[-\s]?)/i;
+
+  /**
+   * 长串 a 在 idx 处包含短串 b 时，b 前面紧挨着否定词、而 b 自己不带否定 → 语义相反。
+   * 「不接受调剂」⊃「接受」、「非全日制」⊃「全日制」、「unwilling」⊃「willing」。
+   */
+  function negatedAt(a, idx, b) {
+    if (idx <= 0) return false;
+    if (NEG_START_RE.test(b)) return false;
+    return NEG_BEFORE_RE.test(a.slice(Math.max(0, idx - 4), idx));
+  }
+
+  /** 两段文本是否一正一反（供页面侧的同义词 / 单选组复用） */
+  function hasNegationConflict(a, b) {
+    var x = String(a || '').toLowerCase().replace(/\s+/g, '');
+    var y = String(b || '').toLowerCase().replace(/\s+/g, '');
+    if (!x || !y || x === y) return false;
+    var i = x.indexOf(y);
+    if (i !== -1) return negatedAt(x, i, y);
+    i = y.indexOf(x);
+    if (i !== -1) return negatedAt(y, i, x);
+    return NEG_START_RE.test(x) !== NEG_START_RE.test(y) &&
+      x.replace(NEG_START_RE, '') === y.replace(NEG_START_RE, '');
+  }
+
+  function isAsciiWordish(s) { return /^[a-z0-9.'+#\s-]+$/i.test(s); }
+
+  /** 包含关系打分：短的一方在长的一方里，且不是被否定的那半截 */
+  function containScore(longer, shorter) {
+    if (!longer || !shorter || shorter.length >= longer.length) return 0;
+    var idx = longer.indexOf(shorter);
+    if (idx === -1) return 0;
+    if (negatedAt(longer, idx, shorter)) return -1;
+    // 「本科以下 / 北京以外」语义相反
+    if (/^(?:以下|以外|除外|之外|及以下)/.test(longer.slice(idx + shorter.length))) return -1;
+    // 英文短词只认整词（ma ⊂ diploma、us ⊂ business 不算）
+    if (isAsciiWordish(shorter)) {
+      var before = idx > 0 ? longer.charAt(idx - 1) : '';
+      var after = longer.charAt(idx + shorter.length);
+      if (/[a-z0-9]/i.test(before) || /[a-z0-9]/i.test(after)) return 0;
+    }
+    // 单个汉字太泛（「男」⊂「男女不限」可以，「本」⊂「本地」不行）：至少占一半
+    var ratio = shorter.length / longer.length;
+    if (shorter.length < 2 && ratio < 0.5) return 0;
+    return ratio;
+  }
+
+  /** 纯数字候选落进「3.5-4.0 / 3年以上 / 60以下」这类区间选项 */
+  function numericRangeScore(text, num) {
+    var t = String(text || '').replace(/\s+/g, '');
+    var m = t.match(/^[^\d]*(\d+(?:\.\d+)?)[^\d.]{0,3}?[-~～至到](\d+(?:\.\d+)?)/);
+    if (m) {
+      var lo = parseFloat(m[1]);
+      var hi = parseFloat(m[2]);
+      if (lo > hi) { var tmp = lo; lo = hi; hi = tmp; }
+      if (num > lo && num < hi) return 2;
+      if (num === lo || num === hi) return 1;   // 落在边界：两个相邻区间都会命中，留给歧义判断
+      return 0;
+    }
+    m = t.match(/(\d+(?:\.\d+)?)[^\d]{0,2}(及以上|以上|或以上|\+)$/) || t.match(/^(?:>=?|≥|大于|高于)(\d+(?:\.\d+)?)/);
+    if (m) return num >= parseFloat(m[1]) ? (num > parseFloat(m[1]) ? 2 : 1) : 0;
+    m = t.match(/(\d+(?:\.\d+)?)[^\d]{0,2}(及以下|以下|或以下)$/) || t.match(/^(?:<=?|≤|小于|低于)(\d+(?:\.\d+)?)/);
+    if (m) return num <= parseFloat(m[1]) ? (num < parseFloat(m[1]) ? 2 : 1) : 0;
+    return 0;
+  }
+
+  /** 选项 value 是否像内部编码（"1" / "03" / "a1b2"），这种 value 不参与包含匹配 */
+  function looksLikeCode(v) {
+    return /^\d{1,6}$/.test(v) || (/^[a-z0-9_-]{1,12}$/i.test(v) && /\d/.test(v));
+  }
+
+  /** 去掉行政区 / 民族这类修饰后缀：北京市 ≈ 北京，汉族 ≈ 汉 */
+  function stripDecorSuffix(n) {
+    return String(n || '').replace(/(特别行政区|自治区|自治州|省|市|地区|县|族)$/, '');
+  }
+
+  // 包含类命中（< 90 分）只在「唯一一个选项包含它」时才算数：
+  // 计算机 → [计算机科学与技术, 计算机应用]、党员 → [中共党员, 中共预备党员] 都是猜，宁可不填
+  var CONTAIN_TIER = 90;
+  var CONTAIN_MIN = 45;
+
   function matchAgainstCandidates(options, candidates) {
-    var i, o, ot, ov, on, c, lower, norm;
+    var best = null;
+    var bestScore = 0;
+    var bestTie = false;
+    var perOption = typeof Map === 'function' ? new Map() : null;
+    function consider(o, score) {
+      if (score <= 0) return;
+      if (perOption) {
+        var prev = perOption.get(o);
+        if (prev == null || score > prev) perOption.set(o, score);
+      }
+      if (score > bestScore + 1e-9) { best = o; bestScore = score; bestTie = false; }
+      else if (Math.abs(score - bestScore) <= 1e-9 && best !== o &&
+               String(best.text || '').trim() !== String(o.text || '').trim()) {
+        bestTie = true;
+      }
+    }
+    function runnerUp() {
+      if (!perOption) return 0;
+      var second = 0;
+      perOption.forEach(function (sc, o) {
+        if (o === best || String(o.text || '').trim() === String(best.text || '').trim()) return;
+        if (sc > second) second = sc;
+      });
+      return second;
+    }
+    var c, i, o, ot, ov, on, raw, lower, norm, penalty, sc, sc2;
+    var ranged = [];
     for (c = 0; c < candidates.length; c++) {
-      var raw = String(candidates[c] || '').trim();
+      raw = String(candidates[c] == null ? '' : candidates[c]).trim();
       if (!raw) continue;
       lower = raw.toLowerCase();
       norm = normalize(raw);
+      // 原值优先于同义扩展：同一档里第 n 个候选稍微降一点分
+      penalty = Math.min(c, 20) * 0.1;
+      var longFree = lower.length > 48;   // 段落不做包含匹配（永不把段落贴进 select）
       for (i = 0; i < options.length; i++) {
         o = options[i];
-        ov = String(o.value || '').toLowerCase();
+        if (optionLooksEmpty(o)) continue;
         ot = String(o.text || '').toLowerCase().trim();
-        if (ov === lower || ot === lower) return o;
-      }
-    }
-    for (c = 0; c < candidates.length; c++) {
-      lower = String(candidates[c] || '').trim().toLowerCase();
-      if (!lower) continue;
-      // 禁止用很长的自由文本去做 includes 子串匹配（避免段落误命中短 option）
-      if (lower.length > 48) continue;
-      for (i = 0; i < options.length; i++) {
-        o = options[i];
-        ot = String(o.text || '').toLowerCase().trim();
-        ov = String(o.value || '').toLowerCase();
-        if (!ot && !ov) continue;
-        if ((ot && (ot.indexOf(lower) !== -1 || lower.indexOf(ot) !== -1)) ||
-            (ov && (ov.indexOf(lower) !== -1 || lower.indexOf(ov) !== -1))) {
-          return o;
+        ov = String(o.value || '').toLowerCase().trim();
+        if ((ot && ot === lower) || (ov && ov === lower)) { consider(o, 100 - penalty); continue; }
+        on = normalize(o.text || '');
+        if (on && norm && on === norm) { consider(o, 95 - penalty); continue; }
+        if (on && norm && stripDecorSuffix(on) && stripDecorSuffix(on) === stripDecorSuffix(norm)) {
+          consider(o, 92 - penalty);
+          continue;
+        }
+        if (longFree || !norm) continue;
+        if (on) {
+          // 英文对英文：保留空格做整词包含（normalize 会把 Master of Arts 粘成 masterofarts）
+          var ascii = isAsciiWordish(lower) && isAsciiWordish(ot);
+          var a1 = ascii ? ot.replace(/\s+/g, ' ') : on;
+          var b1 = ascii ? lower.replace(/\s+/g, ' ') : norm;
+          sc = containScore(a1, b1);
+          sc2 = containScore(b1, a1);
+          if (sc < 0 || sc2 < 0) continue;     // 否定词冲突：这项绝对不选
+          if (sc > 0) consider(o, 60 + 30 * sc - penalty);
+          if (sc2 > 0) consider(o, 50 + 30 * sc2 - penalty);
+        }
+        if (ov && !looksLikeCode(ov)) {
+          var nv = normalize(ov);
+          var vs = containScore(nv, norm);
+          if (vs > 0) consider(o, 45 + 20 * vs - penalty);
         }
       }
+      if (c === 0 && /^\d+(\.\d+)?$/.test(raw)) ranged.push(parseFloat(raw));
     }
-    for (c = 0; c < candidates.length; c++) {
-      var cand = String(candidates[c] || '').trim();
-      if (cand.length > 48) continue;
-      norm = normalize(cand);
-      if (!norm) continue;
+    if (best && bestTie) return null;   // 两个不同选项同分：拿不准，不填
+    if (best && bestScore < CONTAIN_TIER && runnerUp() >= CONTAIN_MIN) return null;
+    if (best && bestScore >= 50) return best;
+    // 数值区间兜底（GPA 3.8 → 「3.5-4.0」、工作年限 4 → 「3-5年」）；落在两个区间边界上 → 不填
+    if ((!best || bestScore < 50) && ranged.length) {
+      var num = ranged[0];
+      var hits = [];
+      var top = 0;
       for (i = 0; i < options.length; i++) {
-        o = options[i];
-        on = normalize(String(o.text || '') + ' ' + String(o.value || ''));
-        if (on && (on.indexOf(norm) !== -1 || norm.indexOf(on) !== -1)) return o;
+        if (optionLooksEmpty(options[i])) continue;
+        sc = numericRangeScore(options[i].text, num);
+        if (!sc) continue;
+        if (sc > top) { top = sc; hits = [options[i]]; }
+        else if (sc === top) hits.push(options[i]);
       }
+      if (hits.length === 1) return hits[0];
     }
-    return null;
+    return bestTie ? null : (bestScore >= 50 ? best : null);
   }
 
   /**
@@ -1788,6 +2225,8 @@
       var yn = normalizeToYesNo(raw);
       if (!yn) return null;
       candidates = [yn, yn.toLowerCase()];
+      // 原值也作为候选（「接受」直接对上「接受调剂」）；否定冲突由打分里的护栏挡掉
+      if (raw.length <= 12 && raw.toLowerCase() !== yn.toLowerCase()) candidates.push(raw);
       if (yn === 'Yes') candidates.push('是', '有', '可以', 'true', 'Y', 'y', '1');
       if (yn === 'No') candidates.push('否', '无', '不可以', 'false', 'N', 'n', '0');
     } else {
@@ -2129,6 +2568,16 @@
     return cleanLabelPunctuation(String(prev.textContent || visibleLabelText(prev) || ''));
   }
 
+  /** 日期能力层（浏览器里是全局；Node 单测里按相对路径加载） */
+  function dateCapability() {
+    var g = typeof globalThis !== 'undefined' ? globalThis : null;
+    if (g && g.ResumeAutofillDate) return g.ResumeAutofillDate;
+    if (typeof module === 'object' && module.exports && typeof require === 'function') {
+      try { return require('./date-capability.js'); } catch (_) { return null; }
+    }
+    return null;
+  }
+
   /** 可拆分的日期类 profile 键 */
   var DATE_PART_KEYS = {
     birthday: 1,
@@ -2137,7 +2586,12 @@
     eduEnd: 1,
     gradYear: 1,
     earliestStart: 1,
-    availability: 1
+    availability: 1,
+    // v1.5.23：实习 / 项目 / 工作结束 / 证书 / 获奖 等日期也会被拆成年、月两栏
+    workEnd: 1, endDate: 1, internStart: 1, internEnd: 1, projectStart: 1, projectEnd: 1,
+    campusStart: 1, campusEnd: 1, socialStart: 1, socialEnd: 1, trainingStart: 1, trainingEnd: 1,
+    awardDate: 1, certDate: 1, englishDate: 1, langDate: 1, degreeAwardDate: 1, expectedStartDate: 1,
+    partyJoinDate: 1, leagueOrPartyJoinDate: 1, gaokaoDate: 1, paperDate: 1
   };
 
   /**
@@ -2168,8 +2622,18 @@
     var day = '';
 
     var m;
+    // v1.5.23：先交给日期能力层（英文月份 / 09/2020 / 202009 / 全角数字都认），认不出再走老规则
+    var cap = dateCapability();
+    if (cap && cap.parseModel) {
+      var mo = cap.parseModel(raw);
+      if (mo && mo.y) {
+        year = mo.y;
+        month = mo.m || '';
+        day = mo.d || '';
+      }
+    }
     // 2020年6月12日 / 2020年6月
-    m = raw.match(/(\d{4})\s*年\s*(\d{1,2})\s*月(?:\s*(\d{1,2})\s*日)?/);
+    m = year ? null : raw.match(/(\d{4})\s*年\s*(\d{1,2})\s*月(?:\s*(\d{1,2})\s*日)?/);
     if (m) {
       year = m[1];
       month = m[2];
@@ -2463,6 +2927,8 @@
     isRegionCountryEnumSelect: isRegionCountryEnumSelect,
     isBasedRegionQuestion: isBasedRegionQuestion,
     expandDegreeSynonyms: expandDegreeSynonyms,
+    degreeGroupOf: degreeGroupOf,
+    hasNegationConflict: hasNegationConflict,
     visibleLabelText: visibleLabelText,
     resolveAriaLabelledByText: resolveAriaLabelledByText,
     labelTextFromFormItem: labelTextFromFormItem,

@@ -49,7 +49,36 @@
     return false;
   }
 
+  // —————— v1.5.23：一轮填写 / 扫描内的 DOM 读缓存 ——————
+  // getLabelText / detectSectionContext / collectHints 每个字段会被调 5~6 次，每次都要 closest +
+  // querySelectorAll 往上爬（区块推断还会在每一层 querySelectorAll 整个子树）。
+  // 轮次开始建 WeakMap、结束即丢弃：不持有 DOM 节点，也不会把上一轮的结果带进下一轮。
+  var memo = null;
+
+  function beginMemo() {
+    if (memo || typeof WeakMap !== 'function') return false;
+    memo = { label: new WeakMap(), section: new WeakMap(), hints: new WeakMap(), scope: new WeakMap() };
+    return true;
+  }
+
+  function endMemo(owned) {
+    if (owned) memo = null;
+  }
+
+  function memoGet(kind, el, compute) {
+    if (!memo || !el || typeof el !== 'object') return compute();
+    var m = memo[kind];
+    if (m.has(el)) return m.get(el);
+    var v = compute();
+    m.set(el, v);
+    return v;
+  }
+
   function getLabelText(el) {
+    return memoGet('label', el, function () { return computeLabelText(el); });
+  }
+
+  function computeLabelText(el) {
     // 1. label[for]
     if (el.id) {
       try {
@@ -223,6 +252,10 @@
   }
 
   function collectHints(el) {
+    return memoGet('hints', el, function () { return computeHints(el); });
+  }
+
+  function computeHints(el) {
     var label = getLabelText(el);
     var adjacentRole = detectAdjacentDatePairRole(el);
     var groupLabel = '';
@@ -264,6 +297,10 @@
   }
 
   function detectSectionContext(el) {
+    return memoGet('section', el, function () { return computeSectionContext(el); });
+  }
+
+  function computeSectionContext(el) {
     // v1.5.5：北森 Phoenix 的区块标题在 .form 的孪生 div 上（同 id），不在祖先链里
     var phoenixForm = el && el.closest ? el.closest('.form[id*="_Recruitment_"]') : null;
     if (phoenixForm) {
@@ -299,9 +336,13 @@
     var node = el.closest('.ant-form-item, .form-item, .field, .row, tr') || el.parentElement;
     for (var up = 0; up < 6 && node && node.parentElement; up++) {
       var scope = node.parentElement;
+      // 同一组里的兄弟字段共享同一个 scope：结果按 scope 缓存，一组只算一次
+      var cached = memo ? memo.scope.get(scope) : undefined;
+      if (cached === 'stop') return '';
+      if (cached) return cached;
       var items = scope.querySelectorAll('.ant-form-item, .form-item, .field, tr').length;
       // 一段通常 2~14 个字段；到 40+ 说明已经上溯到整页，别再猜
-      if (items > 14) return '';
+      if (items > 14) { if (memo) memo.scope.set(scope, 'stop'); return ''; }
       if (items >= 2) {
         var labels = [];
         Array.prototype.forEach.call(scope.querySelectorAll('label'), function (lab) {
@@ -309,9 +350,11 @@
           if (t) labels.push(t);
         });
         var joined = labels.join('|');
-        if (/学校|院校|院系|所学专业|就读/.test(joined)) return 'edu';
-        if (/企业名称|公司名称|工作描述|所在部门|工作内容|职位名称/.test(joined)) return 'work';
-        if (/项目名称|项目描述|项目职责/.test(joined)) return 'project';
+        var found = '';
+        if (/学校|院校|院系|所学专业|就读/.test(joined)) found = 'edu';
+        else if (/企业名称|公司名称|工作描述|所在部门|工作内容|职位名称/.test(joined)) found = 'work';
+        else if (/项目名称|项目描述|项目职责/.test(joined)) found = 'project';
+        if (found) { if (memo) memo.scope.set(scope, found); return found; }
       }
       node = scope;
     }
@@ -430,8 +473,51 @@
     return /附件|文件|上传|视频|图片|照片|logo|简历|扫描|二维码|关注|反馈|删除|清空|移除|取消/i.test(String(text || ''));
   }
 
+  var ADD_BUTTON_NODE_SEL = 'button, a, [role="button"], .ant-btn, .el-button, span, div, i';
+  var ADD_WORD_RE = /添加|新增|增加|再加|add/i;
+
+  /**
+   * v1.5.23：只从「含添加/新增字样的文本节点」往上找候选，而不是对整页每个 span/div 取 textContent
+   * （外层 div 的 textContent 是整棵子树，几千个节点就是几十毫秒，expandAddSections 还要跑多轮）。
+   * 候选集合与旧实现一致：文本 ≤16 字、命中 ADD_BUTTON_RE 的元素，按文档顺序返回。
+   */
+  function addButtonNodes() {
+    var root = document.body || document.documentElement;
+    if (!root || !document.createTreeWalker) {
+      return Array.prototype.slice.call(document.querySelectorAll(ADD_BUTTON_NODE_SEL));
+    }
+    var walker = document.createTreeWalker(root, 4 /* NodeFilter.SHOW_TEXT */, null);
+    var picked = [];
+    var mark = typeof Set === 'function' ? new Set() : null;
+    var tn;
+    while ((tn = walker.nextNode())) {
+      var v = tn.nodeValue;
+      if (!v || v.length > 40 || !ADD_WORD_RE.test(v)) continue;
+      var n = tn.parentElement;
+      for (var up = 0; up < 5 && n && n !== root; up++, n = n.parentElement) {
+        var len = String(n.textContent || '').replace(/\s+/g, ' ').trim().length;
+        if (len > 16) break;
+        if (!n.matches || !n.matches(ADD_BUTTON_NODE_SEL)) continue;
+        if (mark ? mark.has(n) : picked.indexOf(n) !== -1) continue;
+        if (mark) mark.add(n);
+        picked.push(n);
+      }
+    }
+    // 图标按钮可能没有文本节点（<i class="add">），保留按钮类元素的老路径
+    Array.prototype.forEach.call(document.querySelectorAll('button, [role="button"], .ant-btn, .el-button'), function (b) {
+      if (mark ? mark.has(b) : picked.indexOf(b) !== -1) return;
+      if (mark) mark.add(b);
+      picked.push(b);
+    });
+    picked.sort(function (a, b) {
+      if (a === b) return 0;
+      return (a.compareDocumentPosition(b) & 4 /* FOLLOWING */) ? -1 : 1;
+    });
+    return picked;
+  }
+
   function addButtonCandidates() {
-    var nodes = document.querySelectorAll('button, a, [role="button"], .ant-btn, .el-button, span, div, i');
+    var nodes = addButtonNodes();
     var out = [];
     var seen = [];
     Array.prototype.forEach.call(nodes, function (n) {
@@ -737,16 +823,24 @@
       }
     } catch (_) { /* ignore */ }
     if (!committed) {
-      // 没有 Vue 实例的兜底：只派发 input（el-range-input 派发 change 会触发
-      // Element 的 handleStartChange/handleEndChange，未提交时读 this.value 直接抛错）
-      setInputRaw(inputs[0], formatDateYmd(start));
-      setInputRaw(inputs[1], formatDateYmd(end));
+      // Vue 3（Element Plus）：直接调 v-model 的 onUpdate:modelValue
+      var v3 = vue3ModelHandler(inputs[0], /DatePicker|^Picker$/i) || vue3ModelHandler(editor, /DatePicker|^Picker$/i);
+      if (v3) {
+        var monthOnly = /monthrange/.test(String(editor.className || ''));
+        try {
+          v3.fn([vueDateModelValue(v3.props, start, monthOnly), vueDateModelValue(v3.props, end, monthOnly)]);
+          committed = true;
+        } catch (_) { committed = false; }
+      }
     }
     await sleep(120);
     try { if (vm && typeof vm.handleClose === 'function') vm.handleClose(); } catch (_) { /* ignore */ }
     await sleep(120);
+    // 没有组件实例可提交：不往 input 里硬塞文字（那只是「看起来填了」，表单收不到），如实报告失败
     if (!committed) return false;
-    return !!String(inputs[0].value || '').trim() && !!String(inputs[1].value || '').trim();
+    var a0 = String(inputs[0].value || '').trim();
+    var b0 = String(inputs[1].value || '').trim();
+    return !!a0 && !!b0 && dateValueMatches(a0, formatDateYmd(start)) && dateValueMatches(b0, formatDateYmd(end));
   }
 
   // —————— v1.5.16：Moka 的「年 + 月」下拉对（毕业时间 / 就读时间 / 起止时间）——————
@@ -768,6 +862,13 @@
     return null;
   }
 
+  var ymPartial = [];
+  // 每轮填写内已处理过的字段块 / 联动下拉（主循环跑两遍，第二遍不能再重复计数）
+  var runDone = null;
+  function resetRunDone() {
+    runDone = typeof WeakSet === 'function' ? { ym: new WeakSet(), chain: new WeakSet() } : null;
+  }
+
   async function fillYearMonthPairs(profile, filledKeys) {
     var filled = 0;
     var blocks = Array.prototype.slice.call(document.querySelectorAll('[class*="apply-block"]'));
@@ -781,6 +882,7 @@
         var fields = group.querySelectorAll('[class*="apply-field"]');
         for (var fi = 0; fi < fields.length; fi++) {
           var field = fields[fi];
+          if (runDone && runDone.ym.has(field)) continue;
           var title = String((field.querySelector('[class*="title-"]') || {}).textContent || '').replace(/\s+/g, ' ').trim();
           if (!/时间|起止/.test(title)) continue;
           var yms = Array.prototype.filter.call(field.querySelectorAll('input'), function (i) {
@@ -803,21 +905,39 @@
             wants = [sp.y, String(parseInt(sp.m, 10))];
           }
           var ok = 0;
+          var need = 0;
+          var hostsYm = [];
           for (var wi = 0; wi < wants.length && wi < yms.length; wi++) {
-            if (!wants[wi]) continue;
             var host = findCustomSelectHost(yms[wi]);
+            hostsYm[wi] = host;
+            if (!wants[wi]) continue;
+            need += 1;
             if (!host) continue;
             if (customSelectLooksFilled(host)) { ok += 1; continue; }
             try {
               if (await fillCustomSelect(host, wants[wi], sec.startKey)) ok += 1;
             } catch (_) { /* ignore */ }
           }
-          if (ok) {
+          // 只有年、月都落地才算填上（半截日期在「未填」清单里露出来，不能当成功）
+          if (ok && ok === need) {
+            if (runDone) runDone.ym.add(field);
             filled += 1;
-            [sec.startKey, sec.endKey].forEach(function (k) {
-              if (k && filledKeys.indexOf(k) === -1) filledKeys.push(k);
-            });
-            recordFill(sec.el || null, sec.startKey, M.profileValue(profile, sec.startKey) || '', 'date');
+            var ymText = function (a, b) {
+              return function () {
+                var y = a ? customSelectText(a) : '';
+                var m = b ? customSelectText(b) : '';
+                return y && m ? String(y).replace(/\D/g, '') + '-' + String(m).replace(/\D/g, '') : '';
+              };
+            };
+            if (filledKeys.indexOf(sec.startKey) === -1) filledKeys.push(sec.startKey);
+            recordFill(hostsYm[0], sec.startKey, start, 'date', ymText(hostsYm[0], hostsYm[1]));
+            if (sec.endKey && ep && yms.length >= 4) {
+              if (filledKeys.indexOf(sec.endKey) === -1) filledKeys.push(sec.endKey);
+              recordFill(hostsYm[2], sec.endKey, end, 'date', ymText(hostsYm[2], hostsYm[3]));
+              fillRecords[fillRecords.length - 1].noCount = true;
+            }
+          } else if (ok) {
+            ymPartial.push(sec.startKey);
           }
         }
       }
@@ -857,7 +977,11 @@
       [map.startKey, map.endKey].forEach(function (k) {
         if (filledKeys.indexOf(k) === -1) filledKeys.push(k);
       });
-      recordFill(ed, map.startKey, start + '~' + end, 'date');
+      recordFill(inputs[0], map.startKey, start, 'date');
+      if (!isCurrentJobValue(end)) {
+        recordFill(inputs[1], map.endKey, end, 'date');
+        fillRecords[fillRecords.length - 1].noCount = true;   // 一个范围控件只计一次「已填」
+      }
     }
     return filled;
   }
@@ -985,8 +1109,54 @@
    * Element 的 input-number / date-editor 是包装组件：直接写 input.value 不会更新 v-model，
    * 页面一重渲染值就被打回去。这里直接走组件实例的 input 事件（实测有效）。
    */
+  /**
+   * v1.5.23：Vue 3（Element Plus 等）没有 __vue__，组件实例挂在 __vueParentComponent 上。
+   * 往上找名字像 DatePicker / InputNumber 的组件，拿它 v-model 的 onUpdate:modelValue ——
+   * 调它就等于用户在面板里选完（与 React 的 props.onChange 同理），不依赖任何点击。
+   */
+  function vue3ModelHandler(el, nameRe) {
+    var inst = el && el.__vueParentComponent;
+    for (var i = 0; i < 15 && inst; i++, inst = inst.parent) {
+      var type = inst.type || {};
+      var name = String(type.name || type.__name || '');
+      var vp = inst.vnode && inst.vnode.props;
+      if (nameRe.test(name) && vp && typeof vp['onUpdate:modelValue'] === 'function') {
+        return { fn: vp['onUpdate:modelValue'], props: inst.props || {} };
+      }
+    }
+    return null;
+  }
+
+  /** 按组件的 valueFormat 生成 v-model 值；没有 valueFormat 就给 Date（Element Plus 的默认） */
+  function vueDateModelValue(props, dateObj, monthOnly) {
+    var vf = String((props && (props.valueFormat || props['value-format'])) || '');
+    if (!vf) return dateObj;
+    if (/^x$/i.test(vf)) return dateObj.getTime();
+    var fmt = D && D.detectFormat ? D.detectFormat(vf) : null;
+    var model = { y: String(dateObj.getFullYear()), m: String(dateObj.getMonth() + 1), d: monthOnly ? null : String(dateObj.getDate()) };
+    if (fmt) return D.formatModel(model, fmt);
+    return formatDateYmd(dateObj);
+  }
+
   function commitFrameworkWidget(el, value) {
     if (!el || !el.closest) return false;
+    var v3num = el.closest('.el-input-number') ? vue3ModelHandler(el, /InputNumber/i) : null;
+    if (v3num) {
+      var rawN = String(value == null ? '' : value).trim();
+      var num = Number(rawN.replace(/[^\d.\-]/g, ''));
+      if (rawN && isFinite(num)) {
+        try { v3num.fn(num); return true; } catch (_) { /* ignore */ }
+      }
+    }
+    var v3date = el.closest('.el-date-editor') && !el.closest('.el-range-editor')
+      ? vue3ModelHandler(el, /DatePicker|TimePicker|^Picker$/i) : null;
+    if (v3date) {
+      var p3 = parseDateParts(value);
+      if (p3) {
+        var d3 = new Date(parseInt(p3.y, 10), parseInt(p3.m, 10) - 1, p3.d ? parseInt(p3.d, 10) : 1);
+        try { v3date.fn(vueDateModelValue(v3date.props, d3, !p3.d)); return true; } catch (_) { /* ignore */ }
+      }
+    }
     var numBox = el.closest('.el-input-number');
     if (numBox && numBox.__vue__) {
       var raw = String(value == null ? '' : value).trim();
@@ -1019,6 +1189,13 @@
       var matched = M.matchSelectOption(opts, value);
       if (!matched) return false;
       el.value = matched.value;
+      // 同 value 的选项有多个 / value 为空时，el.value 赋值可能落不到目标项：按下标再落一次
+      if (el.value !== matched.value || (el.options[el.selectedIndex] || {}).text !== matched.text) {
+        for (var si = 0; si < el.options.length; si++) {
+          if (el.options[si].value === matched.value && el.options[si].text === matched.text) { el.selectedIndex = si; break; }
+        }
+      }
+      if (el.value !== matched.value) return false;
     } else if (el.type === 'checkbox' || el.type === 'radio') {
       return false;
     } else {
@@ -1037,6 +1214,168 @@
     return true;
   }
 
+  // —————— v1.5.23：写入必须回读确认（杜绝「点了 / 写了，但页面上没有」）——————
+
+  /** 等框架把这次事件处理完（React 18 / Vue 的重渲染都排在微任务里） */
+  function settle() {
+    return Promise.resolve().then(function () { return null; }).then(function () { return null; });
+  }
+
+  /**
+   * 回读值与期望是否一致：允许格式化差异（空格 / 分隔符 / 大小写 / 手机号掩码 / 日期写法），
+   * 不允许内容差异（被截断、被清空、被改成别的值）。
+   */
+  function writtenValueMatches(actual, want) {
+    var a = String(actual == null ? '' : actual).trim();
+    var w = String(want == null ? '' : want).trim();
+    if (a === w) return true;
+    if (!a || !w) return false;
+    var squash = function (t) { return t.replace(/[\s\u00a0,，\-_/.:：()（）]/g, '').toLowerCase(); };
+    if (squash(a) === squash(w)) return true;
+    // 数字被格式化：15000 → 15,000.00 / ¥15,000
+    if (/^[\s\d,.¥$€+-]+$/.test(w) && /\d/.test(w)) {
+      var nA = parseFloat(a.replace(/[^\d.\-]/g, ''));
+      var nW = parseFloat(w.replace(/[^\d.\-]/g, ''));
+      if (isFinite(nA) && isFinite(nW) && nA === nW) return true;
+    }
+    // 掩码 / 区号：「+86 138 0013 8000」包含「13800138000」的全部数字
+    var da = a.replace(/\D/g, '');
+    var dw = w.replace(/\D/g, '');
+    if (dw.length >= 6 && da.length >= dw.length && da.slice(da.length - dw.length) === dw &&
+        squash(a).replace(/\d/g, '').replace(/^\+/, '') === squash(w).replace(/\d/g, '')) return true;
+    if (D && D.parseModel) {
+      var mw = D.parseModel(w);
+      if (mw && mw.y && mw.m) {
+        var lv = D.matchLevel(a, mw).level;
+        return lv === 'exact' || lv === 'day-approx' || lv === 'month-only';
+      }
+    }
+    return false;
+  }
+
+  function rawSetValue(el, v) {
+    var proto = el.tagName.toLowerCase() === 'textarea'
+      ? window.HTMLTextAreaElement.prototype
+      : window.HTMLInputElement.prototype;
+    var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (desc && desc.set) desc.set.call(el, v);
+    else el.value = v;
+  }
+
+  /** 重试 1：浏览器自己生成的输入（execCommand insertText）——受控组件最认这条路 */
+  function retryInsertText(el, value) {
+    if (typeof document.execCommand !== 'function') return false;
+    try {
+      el.focus();
+      // execCommand 写进的是「当前焦点」：焦点没落到目标上（被遮挡 / 不可聚焦）就绝不能执行，否则会写进别的字段
+      if (document.activeElement !== el) return false;
+      if (typeof el.select === 'function') el.select();
+      var ok = document.execCommand('insertText', false, String(value));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return !!ok;
+    } catch (_) { return false; }
+  }
+
+  /** 重试 2：逐字键入（监听 keydown / keyup / beforeinput 才更新的组件） */
+  function typeLikeUser(el, value) {
+    try {
+      el.focus();
+      try { el.dispatchEvent(new FocusEvent('focusin', { bubbles: true })); } catch (_) { /* ignore */ }
+      rawSetValue(el, '');
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      var text = String(value);
+      var acc = '';
+      for (var i = 0; i < text.length; i++) {
+        var ch = text.charAt(i);
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, bubbles: true }));
+        try { el.dispatchEvent(new InputEvent('beforeinput', { data: ch, inputType: 'insertText', bubbles: true, cancelable: true })); } catch (_) { /* ignore */ }
+        acc += ch;
+        rawSetValue(el, acc);
+        try {
+          el.dispatchEvent(new InputEvent('input', { data: ch, inputType: 'insertText', bubbles: true }));
+        } catch (_) {
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, bubbles: true }));
+      }
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true }));
+      try { el.dispatchEvent(new FocusEvent('focusout', { bubbles: true })); } catch (_) { /* ignore */ }
+      return true;
+    } catch (_) { return false; }
+  }
+
+  function restoreValue(el, before) {
+    try {
+      rawSetValue(el, before);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (_) { /* ignore */ }
+  }
+
+  /**
+   * 值超过 maxlength：长文本（自我评价 / 工作描述）在句末截断；短值（证件号 / 电话 / 姓名）返回 ''（跳过）。
+   */
+  function fitToMaxLength(value, maxLen) {
+    var v = String(value == null ? '' : value);
+    if (!maxLen || v.length <= maxLen) return v;
+    if (v.length <= 40 || maxLen < 20) return '';
+    var head = v.slice(0, maxLen);
+    var cut = Math.max(head.lastIndexOf('。'), head.lastIndexOf('！'), head.lastIndexOf('？'),
+      head.lastIndexOf('；'), head.lastIndexOf('\n'), head.lastIndexOf('. '), head.lastIndexOf('; '));
+    if (cut >= maxLen * 0.5) return head.slice(0, cut + 1).trim();
+    return head;
+  }
+
+  /**
+   * 写入 + 回读确认。写不进去依次重试 execCommand / 逐字键入；
+   * 最后仍对不上（被清空、被截断、被改成别的）→ 还原原值并返回 false，让字段出现在「未填」清单里。
+   */
+  async function writeAndVerify(el, value) {
+    var tag = el.tagName.toLowerCase();
+    var before = String(el.value || '');
+    if (tag === 'select') {
+      if (!setNativeValue(el, value)) return false;
+      var want = el.value;
+      await settle();
+      return el.value === want && el.selectedIndex >= 0;
+    }
+    if (!setNativeValue(el, value)) return false;
+    await settle();
+    if (writtenValueMatches(el.value, value)) return true;
+    if (retryInsertText(el, value)) {
+      await settle();
+      if (writtenValueMatches(el.value, value)) return true;
+    }
+    if (String(value).length <= 120 && typeLikeUser(el, value)) {
+      await settle();
+      if (writtenValueMatches(el.value, value)) return true;
+    }
+    if (String(el.value || '') !== before) restoreValue(el, before);
+    return false;
+  }
+
+  /**
+   * 日期写进普通输入框前按控件要求的格式转换：
+   *   <input type=date|month|datetime-local> → 规范写法（否则浏览器直接清空）
+   *   placeholder / data-format 写明格式（YYYY/MM、yyyy年mm月、MM/DD/YYYY、例：2020-09）→ 按格式写
+   * 返回 null 表示不是日期场景（原样写）；返回 '' 表示是日期框但这个值写不进去（跳过）。
+   */
+  function dateValueForInput(el, value) {
+    if (!D || !D.parseModel || !el || el.tagName.toLowerCase() !== 'input') return null;
+    var type = String(el.type || '').toLowerCase();
+    var mo = D.parseModel(value);
+    if (type === 'date' || type === 'month' || type === 'datetime-local') {
+      return D.nativeInputValue ? D.nativeInputValue(type, mo) : '';
+    }
+    if (!mo || !mo.y || !mo.m || !D.detectFormat) return null;
+    var fmt = D.detectFormat(el.getAttribute('data-format') || el.getAttribute('format') || '') ||
+      D.detectFormat(el.getAttribute('placeholder') || '');
+    if (!fmt) return null;
+    return D.formatModel(mo, fmt) || null;
+  }
+
   function highlight(el) {
     el.style.outline = '2px solid #22c55e';
     setTimeout(function () {
@@ -1051,6 +1390,11 @@
   }
 
   function scanFields() {
+    var owned = beginMemo();
+    try { return scanFieldsInner(); } finally { endMemo(owned); }
+  }
+
+  function scanFieldsInner() {
     var results = [];
     var seen = {};
     iterFillableFields().forEach(function (el) {
@@ -1078,6 +1422,11 @@
    * 收集可填字段描述，供 AI / 启发式映射。
    */
   function collectFieldsDetailed() {
+    var owned = beginMemo();
+    try { return collectFieldsDetailedInner(); } finally { endMemo(owned); }
+  }
+
+  function collectFieldsDetailedInner() {
     var els = iterFillableFields();
     return els.map(function (el, index) {
       var tag = el.tagName.toLowerCase();
@@ -1165,15 +1514,33 @@
    * 在字段附近找「至今 / 在职 / 目前」开关并勾上。
    * 找不到就返回 false（调用方会跳过，而不是把“至今”写进日期框）。
    */
-  function clickCurrentJobToggle(el) {
+  /** 开关当前是否处于「开」：原生 checkbox / aria-checked / 各家组件库的选中类名 */
+  function toggleIsOn(b, cb) {
+    if (cb) return !!cb.checked;
+    var aria = b.getAttribute && b.getAttribute('aria-checked');
+    if (aria != null) return aria === 'true';
+    var cls = String(b.className || '');
+    if (/(^|\s)(is-checked|checked|ant-switch-checked|ant-checkbox-checked|el-switch--checked)(\s|$)/.test(cls)) return true;
+    return !!(b.querySelector && b.querySelector('.is-checked, .ant-checkbox-checked, .ant-switch-checked'));
+  }
+
+  /**
+   * 在字段附近找「至今 / 在职 / 目前」开关并勾上。
+   * v1.5.23：点完必须回读确认已勾上（之前点了就算成功，组件没响应时「至今」实际没生效）；
+   * 合成点击不生效时再用原生 click（antd v3 / 部分 Vue 组件只认原生 click）。
+   * 找不到或勾不上就返回 false（调用方会跳过，而不是把“至今”写进日期框）。
+   */
+  async function clickCurrentJobToggle(el) {
     if (!el || !el.parentElement) return false;
     var node = el;
     for (var up = 0; up < 4 && node && node.parentElement; up++) {
       node = node.parentElement;
-      var boxes = node.querySelectorAll('input[type="checkbox"], [role="switch"], [role="checkbox"], .ant-checkbox, .ant-switch, .el-checkbox');
+      var boxes = node.querySelectorAll('input[type="checkbox"], [role="switch"], [role="checkbox"], .ant-checkbox, .ant-switch, .el-checkbox, .el-switch');
       for (var i = 0; i < boxes.length; i++) {
         var b = boxes[i];
-        if (!isVisibleEl(b)) continue;
+        var cbIn = b.tagName.toLowerCase() === 'input' ? b : null;
+        // 原生 checkbox 常被样式藏起来（opacity:0），看它的包装层是否可见
+        if (!isVisibleEl(b) && !(cbIn && cbIn.closest && isVisibleEl(cbIn.closest('label') || cbIn.parentElement))) continue;
         var txt = String(b.parentElement ? b.parentElement.textContent : b.textContent || '').replace(/\s+/g, '');
         var near = txt || String(b.getAttribute('aria-label') || '') + String(b.title || '');
         // 控件自身没有文案时，看它所在 label/兄弟文本
@@ -1182,14 +1549,18 @@
           var rowTxt = row ? String(row.textContent || '').replace(/\s+/g, '') : '';
           if (!/至今|在职|目前|现在|present|current|now/i.test(rowTxt)) continue;
         }
-        var cb = b.tagName.toLowerCase() === 'input' ? b : b.querySelector('input[type="checkbox"]');
-        if (cb) {
-          if (cb.checked) return true;
-          simulateClick(cb);
-          return true;
-        }
-        simulateClick(b);
-        return true;
+        var cb = cbIn || b.querySelector('input[type="checkbox"]');
+        if (toggleIsOn(b, cb)) return true;
+        simulateClick(cb || b);
+        await settle();
+        await sleep(60);
+        if (toggleIsOn(b, cb)) return true;
+        // 合成事件没被组件接住：原生 click（先点包装 label，再点控件本身）
+        var wrap = (cb || b).closest ? (cb || b).closest('label, .ant-checkbox-wrapper, .el-checkbox') : null;
+        try { (wrap || cb || b).click(); } catch (_) { /* ignore */ }
+        await settle();
+        await sleep(60);
+        return toggleIsOn(b, cb);
       }
     }
     return false;
@@ -1493,12 +1864,16 @@
     if (!a) return false;
     var w = normText(value);
     if (!w) return false;
-    if (a === w || a.indexOf(w) !== -1 || w.indexOf(a) !== -1) return true;
+    if (a === w) return true;
+    // 「不接受」⊃「接受」这类正反相包含不算对上（之前会把「接受」当成「不接受调剂」的合理显示）
+    if (negationConflict(a, w)) return false;
+    if (a.indexOf(w) !== -1 || w.indexOf(a) !== -1) return true;
     // 档案值写「应届生」、选项是「应届毕业生」这类同义词，不能当选歪了撤掉
     var syns = valueSynonymVariants(value);
     for (var i = 0; i < syns.length; i++) {
       var sn = normText(syns[i]);
-      if (sn && (a === sn || a.indexOf(sn) !== -1 || sn.indexOf(a) !== -1)) return true;
+      if (!sn || negationConflict(a, sn)) continue;
+      if (a === sn || a.indexOf(sn) !== -1 || sn.indexOf(a) !== -1) return true;
     }
     return false;
   }
@@ -1766,25 +2141,49 @@
     ['否', '不接受', '不同意', '不服从']
   ];
 
+  /**
+   * v1.5.23：只取「被值包含的最长成员」所在的那一组。
+   * 旧逻辑是「包含任一成员就算」：不接受调剂 ⊃ 接受 → 命中「是」组；博士研究生 ⊃ 研究生 → 命中硕士组。
+   */
   function valueSynonymVariants(value) {
     var v = String(value == null ? '' : value).replace(/\s+/g, '');
     if (!v) return [];
-    var out = [];
+    var bestLen = 0;
+    var bestSets = [];
     VALUE_SYNONYM_SETS.forEach(function (set) {
-      var hit = set.some(function (x) { return x === v || v.indexOf(x) >= 0; });
-      if (!hit) return;
-      set.forEach(function (x) { if (x !== v && out.indexOf(x) === -1) out.push(x); });
+      set.forEach(function (x) {
+        if (v !== x && v.indexOf(x) === -1) return;
+        var len = v === x ? 1000 : x.length;
+        if (len > bestLen) { bestLen = len; bestSets = [set]; }
+        else if (len === bestLen && bestSets.indexOf(set) === -1) bestSets.push(set);
+      });
     });
+    // 两个组打平（拿不准是哪一类）→ 不扩展
+    if (bestSets.length !== 1) return [];
+    var out = [];
+    bestSets[0].forEach(function (x) { if (x !== v && out.indexOf(x) === -1) out.push(x); });
     return out;
+  }
+
+  function negationConflict(a, b) {
+    return !!(M.hasNegationConflict && M.hasNegationConflict(a, b));
   }
 
   function matchOptionByVariants(opts, variants) {
     for (var i = 0; i < variants.length; i++) {
       var v = String(variants[i]).replace(/\s+/g, '');
+      if (!v) continue;
+      var exact = null;
+      var contains = [];
       for (var j = 0; j < opts.length; j++) {
         var t = String((opts[j] && opts[j].text) || '').replace(/\s+/g, '');
-        if (t && (t === v || t.indexOf(v) >= 0)) return opts[j];
+        if (!t) continue;
+        if (t === v) { exact = opts[j]; break; }
+        if (t.indexOf(v) >= 0 && !negationConflict(t, v)) contains.push(opts[j]);
       }
+      if (exact) return exact;
+      // 多个选项都包含这个同义词：拿不准，换下一个同义词
+      if (contains.length === 1) return contains[0];
     }
     return null;
   }
@@ -1820,6 +2219,7 @@
     var filled = 0;
     var n = Math.min(langs.length, levels.length);
     for (var i = 0; i < n; i++) {
+      if (runDone && runDone.chain.has(levels[i].host)) continue;
       var res = null;
       try {
         res = await C.fillChain([
@@ -1828,12 +2228,14 @@
         ]);
       } catch (_) { res = null; }
       if (res && res.ok) {
+        if (runDone) runDone.chain.add(levels[i].host);
         filled += 1;
         ['langName', 'langLevel'].forEach(function (k) {
           if (filledKeys.indexOf(k) === -1) filledKeys.push(k);
         });
         recordFill(langs[i].host, 'langName', langName);
         recordFill(levels[i].host, 'langLevel', langLevel);
+        fillRecords[fillRecords.length - 1].noCount = true;
         highlight(levels[i].host);
       }
     }
@@ -2322,39 +2724,52 @@
   }
 
   /** 北森 Phoenix radio：纯 div 组，选中态是 .phoenix-radio--checked */
-  function fillPhoenixRadioGroups(profile, keyCounts, filledKeys) {
+  async function fillPhoenixRadioGroups(profile, keyCounts, filledKeys) {
     var filled = 0;
     var groups = Array.from(document.querySelectorAll('.phoenix-radio-group')).filter(function (g) {
       return isVisibleEl(g);
     });
-    groups.forEach(function (group) {
-      if (group.querySelector('.phoenix-radio--checked')) return;
+    for (var gi = 0; gi < groups.length; gi++) {
+      var r = await fillOnePhoenixRadioGroup(groups[gi], profile, keyCounts, filledKeys);
+      if (r) filled += 1;
+    }
+    return filled;
+  }
+
+  async function fillOnePhoenixRadioGroup(group, profile, keyCounts, filledKeys) {
+    {
+      if (group.querySelector('.phoenix-radio--checked')) return false;
       var item = group.closest ? group.closest('.form-item') : null;
       var labelEl = item ? item.querySelector('.form-item__text') : null;
       var label = labelEl ? String(labelEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
-      if (!label) return;
+      if (!label) return false;
       var scored = M.matchFieldKeyScored ? M.matchFieldKeyScored(label, {}) : null;
       var key = scored && scored.key;
-      if (!key || !RADIO_SAFE_KEYS[key]) return;
-      if (keyCounts['radio:' + key]) return;
+      if (!key || !RADIO_SAFE_KEYS[key]) return false;
+      if (keyCounts['radio:' + key]) return false;
       var gval = M.profileValue(profile, key);
-      if (!gval) return;
+      if (!gval) return false;
       var opts = Array.from(group.querySelectorAll('.phoenix-radio')).map(function (r) {
         return { el: r, text: String(r.textContent || '').replace(/\s+/g, ' ').trim() };
       }).filter(function (o) { return o.text; });
-      if (!opts.length) return;
+      if (!opts.length) return false;
       var want = phoenixChoiceValue(key, gval, opts.map(function (o) { return o.text; }));
       var matched = phoenixPick(opts, want);
-      if (!matched) return;
+      if (!matched) return false;
       simulateClick(matched.el);
-      if (matched.el.classList.contains('phoenix-radio--checked')) {
-        keyCounts['radio:' + key] = 1;
-        filled += 1;
-        if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
-        highlight(matched.el);
+      // 选中态由 Vue 异步渲染：等它落地再判，不能点完立刻读（之前会把成功判成失败、或反过来）
+      var isOn = function () { return matched.el.classList.contains('phoenix-radio--checked'); };
+      var on = await waitUntil(isOn, 600, 60);
+      if (!on) {
+        try { matched.el.click(); } catch (_) { /* ignore */ }
+        on = await waitUntil(isOn, 600, 60);
       }
-    });
-    return filled;
+      if (!on) return false;
+      keyCounts['radio:' + key] = 1;
+      if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
+      highlight(matched.el);
+      return true;
+    }
   }
 
   /** 北森分区标题：标题 div 与 .form 共用同一个 id（GUID_Recruitment_*） */
@@ -2461,7 +2876,14 @@
       }
       if (!target) return;
       simulateClick(target);
+      if (!target.checked) {
+        // 合成点击没生效（antd v3 Radio 只认原生 click）：点包装 label，再点 input 本身
+        var rl = target.closest ? target.closest('label') : null;
+        try { (rl || target).click(); } catch (_) { /* ignore */ }
+        if (!target.checked) { try { target.click(); } catch (_) { /* ignore */ } }
+      }
       if (target.checked) {
+        recordFill(target, gkey, gval);
         keyCounts['radio:' + gkey] = 1;
         filled += 1;
         if (filledKeys.indexOf(gkey) === -1) filledKeys.push(gkey);
@@ -2539,10 +2961,11 @@
   //   点 li 不提交、受控组件重渲染把值吞掉。审计是唯一能抓住它的本地手段。）
   var fillRecords = [];
 
-  function recordFill(el, key, expected, kind) {
+  function recordFill(el, key, expected, kind, read) {
     try {
       fillRecords.push({
         el: el,
+        read: typeof read === 'function' ? read : null,
         key: String(key || ''),
         label: String((el && (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('placeholder'))) ) || ''),
         expected: String(expected == null ? '' : expected),
@@ -2583,7 +3006,9 @@
     if (!A || !fillRecords.length) return null;
     try {
       var entries = fillRecords.map(function (r) {
-        return { key: r.key, label: r.label, expected: r.expected, actual: readBackValue(r.el), kind: r.kind };
+        var actual = '';
+        try { actual = r.read ? String(r.read() || '') : readBackValue(r.el); } catch (_) { actual = ''; }
+        return { key: r.key, label: r.label, expected: r.expected, actual: actual, kind: r.kind };
       });
       return A.auditEntries(entries, { ignoreEmpty: false });
     } catch (_) { return null; }
@@ -2765,7 +3190,19 @@
       else if (k === 'd') dayOk = okOne;
     }
     var ok = (!needY || yearOk) && (!needM || monthOk) && (!grp.d || !want.d || dayOk);
-    return { members: members, ok: ok, reason: ok ? '' : 'date_group_incomplete' };
+    return { members: members, parts: grp, ok: ok, reason: ok ? '' : 'date_group_incomplete' };
+  }
+
+  /** 年 / 月 / 日 三件套合起来回读（单读年份那一格，审计会误判成「只填了年」） */
+  function dateGroupReader(grp) {
+    return function () {
+      if (!grp || !grp.y) return '';
+      var y = readNumber(grp.y);
+      var m = grp.m ? readNumber(grp.m) : NaN;
+      var d = grp.d ? readNumber(grp.d) : NaN;
+      if (!y) return '';
+      return y + (m ? '-' + m : '') + (m && d ? '-' + d : '');
+    };
   }
 
   function readNumber(node) {
@@ -3400,6 +3837,11 @@
     var p = parseDateParts(desired);
     if (!p) return String(desired);
     var fmt = String(el.getAttribute('data-fmt') || el.getAttribute('format') || el.getAttribute('data-format') || '');
+    // v1.5.23：统一走能力层的格式识别（含 placeholder 写明的 YYYY/MM、yyyy年mm月、例：2020-09）
+    if (D && D.detectFormat) {
+      var f2 = D.detectFormat(fmt) || D.detectFormat(el.getAttribute('placeholder') || '');
+      if (f2) return D.formatModel(D.parseModel(desired), f2);
+    }
     var mm = ('0' + p.m).slice(-2);
     var dd = ('0' + p.d).slice(-2);
     if (/yyyy\/MM\/dd/i.test(fmt)) return p.y + '/' + mm + '/' + dd;
@@ -3667,6 +4109,7 @@
     for (var i = 0; i < radios.length; i++) {
       var opt = normalizeChoiceText(radioOptionText(radios[i]));
       if (!opt) continue;
+      if (opt !== want && negationConflict(opt, want)) continue;
       if (opt === want || (opt.length >= 2 && want.indexOf(opt) !== -1)) {
         var lab = radios[i].closest && radios[i].closest('label');
         if (lab && lab.classList && lab.classList.contains('ant-radio-wrapper') && typeof lab.click === 'function') {
@@ -3675,7 +4118,9 @@
         } else {
           simulateClick(radios[i]);
         }
+        if (!radios[i].checked) { try { (lab || radios[i]).click(); } catch (_) { /* ignore */ } }
         if (radios[i].checked) { highlight(radios[i]); return true; }
+        return false;   // 点了没选上：别再去点别的选项
       }
     }
     return false;
@@ -3731,12 +4176,23 @@
   }
 
   async function fillFromProfile(profile, options) {
+    var owned = beginMemo();
+    try {
+      return await fillFromProfileInner(profile, options);
+    } finally {
+      endMemo(owned);
+    }
+  }
+
+  async function fillFromProfileInner(profile, options) {
     var opts = options || {};
     var filled = 0;
     var filledKeys = [];
     var degradedDates = [];
     lastDateTries = [];
     fillRecords = [];
+    ymPartial = [];
+    resetRunDone();
     var forced = [];
     var skipped = [];
     var keyCounts = {};
@@ -3824,7 +4280,9 @@
         if (!dOk) { try { dOk = await fillReadonlyPickerAntd(el, value); } catch (_) { dOk = false; } }
         if (dOk) {
           filled += 1;
+          keyCounts[counterKey] = count + 1;
           if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
+          recordFill(el, key, value, 'date');
           continue;
         }
       }
@@ -3866,13 +4324,13 @@
 
       // 「至今 / 在职 / present」不是日期：找附近的开关（checkbox / switch）勾上，绝不写进日期框
       if (isCurrentJobValue(value)) {
-        var toggled = clickCurrentJobToggle(el);
+        var toggled = await clickCurrentJobToggle(el);
         if (toggled) {
           filled += 1;
           keyCounts[counterKey] = count + 1;
           if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
           highlight(el);
-        } else if (!looksLikeDateInput(el) && setNativeValue(el, String(value).trim())) {
+        } else if (!looksLikeDateInput(el) && (await writeAndVerify(el, String(value).trim()))) {
           // 没有「至今」开关、但这是个普通文本框（结束时间）→ 直接写“至今”
           filled += 1;
           keyCounts[counterKey] = count + 1;
@@ -3894,7 +4352,8 @@
             filled += 1;
             keyCounts[counterKey] = count + 1;
             if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
-            recordFill(grpFirst.members && grpFirst.members[0] ? grpFirst.members[0] : el, key, value, 'date');
+            recordFill(grpFirst.members && grpFirst.members[0] ? grpFirst.members[0] : el, key, value, 'date',
+              dateGroupReader(grpFirst.parts));
             grpFirst.members.forEach(function (m) { highlight(m); });
           } else if (skipped.length < 12) {
             skipped.push({ key: key, reason: grpFirst.reason || 'date_group_failed' });
@@ -3923,6 +4382,7 @@
             filled += 1;
             keyCounts[counterKey] = count + 1;
             if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
+            recordFill(grpRes.members[0] || el, key, value, 'date', dateGroupReader(grpRes.parts));
             grpRes.members.forEach(function (m) { highlight(m); });
           } else if (skipped.length < 12) {
             skipped.push({ key: key, reason: grpRes.reason || 'date_group_failed' });
@@ -3938,6 +4398,7 @@
       }
 
       var ok = false;
+      var dateText = null;
       if (isReadonlyPicker(el)) {
         // 只读展示框：真值需要点击弹层选择；默认开启，可用 options.allowPickerClick=false 关闭
         if (opts.allowPickerClick === false) {
@@ -3952,6 +4413,14 @@
             skipped.push({ key: key, reason: 'picker_error: ' + String((err && err.message) || err).slice(0, 60) });
           }
         }
+        if (ok) {
+          // 弹层点完 / 直写之后再等一拍回读：被框架重渲染吞掉的值不算填上
+          await settle();
+          if (!dateValueMatches(el.value, value) && !pickerValueMatches(el.value, value)) {
+            ok = false;
+            if (skipped.length < 12) skipped.push({ key: key, reason: 'picker_not_committed' });
+          }
+        }
         if (ok === 'forced') forced.push(key);
         if (ok) {
           var lvl = dateMatchLevel(el.value, value);
@@ -3959,26 +4428,58 @@
             degradedDates.push({ key: key, actual: String(el.value || ''), want: String(value || ''), level: lvl });
           }
         }
-        if (!ok) skipped.push({ key: key, reason: 'readonly_picker_not_found' });
-      } else {
-        ok = commitFrameworkWidget(el, value) || setNativeValue(el, value);
-        if (!ok && el.tagName && el.tagName.toLowerCase() === 'select') {
-          // 排名/绩点常常是区间下拉：15/120 要换算成「前20%」才匹配得上
-          var alts = valueCandidates(key, value);
-          for (var ai = 0; ai < alts.length && !ok; ai++) {
-            if (alts[ai] === value) continue;
-            ok = setNativeValue(el, alts[ai]);
-            if (ok) value = alts[ai];
-          }
+        if (!ok && !skipped.some(function (x) { return x.key === key && x.reason === 'picker_not_committed'; })) {
+          skipped.push({ key: key, reason: 'readonly_picker_not_found' });
         }
-        if (!ok) skipped.push({ key: key, reason: 'set_value_failed' });
+      } else {
+        // 日期写进普通输入框：按控件要求的格式（type=date/month、placeholder 的 YYYY/MM…）
+        dateText = dateValueForInput(el, value);
+        if (dateText === '') {
+          if (skipped.length < 12) skipped.push({ key: key, reason: 'date_value_unsupported' });
+          continue;
+        }
+        if (dateText) value = dateText;
+        // maxlength 放不下：长文本在句末截断；身份证 / 电话这类短值截断就是错值，直接跳过
+        var maxL = el.maxLength > 0 ? el.maxLength : 0;
+        if (maxL && String(value).length > maxL) {
+          var cut = fitToMaxLength(value, maxL);
+          if (!cut) {
+            if (skipped.length < 12) skipped.push({ key: key, reason: 'value_exceeds_maxlength' });
+            continue;
+          }
+          value = cut;
+        }
+        if (commitFrameworkWidget(el, value)) {
+          await settle();
+          ok = writtenValueMatches(el.value, value);
+          // 数字框提交的是「3年」里的 3：按数值比
+          if (!ok && el.closest && el.closest('.el-input-number')) {
+            var nWant = Number(String(value).replace(/[^\d.\-]/g, ''));
+            ok = isFinite(nWant) && parseFloat(el.value) === nWant;
+          }
+          if (!ok && skipped.length < 12) skipped.push({ key: key, reason: 'widget_not_committed' });
+        } else {
+          ok = await writeAndVerify(el, value);
+          if (!ok && el.tagName && el.tagName.toLowerCase() === 'select') {
+            // 排名/绩点常常是区间下拉：15/120 要换算成「前20%」才匹配得上
+            var alts = valueCandidates(key, value);
+            for (var ai = 0; ai < alts.length && !ok; ai++) {
+              if (alts[ai] === value) continue;
+              ok = await writeAndVerify(el, alts[ai]);
+              if (ok) value = alts[ai];
+            }
+          }
+          if (!ok) skipped.push({ key: key, reason: 'set_value_failed' });
+        }
       }
 
       if (ok) {
         filled += 1;
         keyCounts[counterKey] = count + 1;
         if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
-        recordFill(el, key, value, isReadonlyPicker(el) ? 'date' : '');
+        // 已逐项回读确认过（含格式化差异）：审计只需确认它一直留到本轮结束、没被后续重渲染吞掉
+        var landed = el.tagName.toLowerCase() === 'select' ? readBackValue(el) : String(el.value || '');
+        recordFill(el, key, landed || value, isReadonlyPicker(el) || dateText ? 'date' : '');
         highlight(el);
       }
     }
@@ -4007,13 +4508,15 @@
         }
       });
       filled += fillNamedRadioGroups(profile, keyCounts, filledKeys);
-      filled += fillPhoenixRadioGroups(profile, keyCounts, filledKeys);
+      filled += await fillPhoenixRadioGroups(profile, keyCounts, filledKeys);
     }
 
     // 无关联 input 的自定义下拉宿主（仅展示层）
     if (opts.allowCustomSelect !== false) {
       var hosts = iterCustomSelectHosts();
       for (var hi = 0; hi < hosts.length; hi++) {
+        // 与主循环共用 45s 总预算（之前这一段不受限，点不开的下拉每个耗 3~4s，整轮能拖到 70s）
+        if (Date.now() - startedAt > 45000) { timedOut = true; break; }
         var host = hosts[hi];
         if (customSelectLooksFilled(host)) continue;
         var hLabel = '';
@@ -4059,8 +4562,38 @@
     // 别把弹层留在页面上
     try { closePhoenixPanels(); } catch (_) { /* ignore */ }
 
-    // 填完审计：期望值 vs 页面真实值（本地比较，不发网络）
+    // 半截的「年 + 月」下拉对：报出来，别让它悄悄混在已填里
+    ymPartial.forEach(function (k) {
+      if (skipped.length < 20) skipped.push({ key: k, reason: 'date_pair_partial' });
+    });
+
+    // 填完审计：期望值 vs 页面真实值（本地比较，不发网络）。
+    // 先等一拍：有的组件在失焦 / 下一帧重渲染时才把值吞掉，立刻读会漏掉
+    try { await sleep(150); } catch (_) { /* ignore */ }
     var audit = runFillAudit();
+    var auditCount = fillRecords.length;
+    // v1.5.23：审计结果回写到统计 —— 写了但读不回来（empty）/ 页面显示别的值（mismatch）都不算填上
+    var notWritten = [];
+    if (audit && audit.entries && audit.entries.length === fillRecords.length) {
+      var goodKeys = {};
+      audit.entries.forEach(function (r) {
+        if (r.status === 'ok' || r.status === 'approx') goodKeys[r.key] = 1;
+      });
+      audit.entries.forEach(function (r, ri) {
+        if (r.status !== 'empty' && r.status !== 'mismatch') return;
+        if (!fillRecords[ri].noCount) filled = Math.max(0, filled - 1);
+        if (!goodKeys[r.key]) {
+          var fk = filledKeys.indexOf(r.key);
+          if (fk !== -1) filledKeys.splice(fk, 1);
+        }
+        if (r.status === 'empty') {
+          notWritten.push(r.key);
+          if (skipped.length < 20) skipped.push({ key: r.key, reason: 'not_written: 点了 / 写了但页面上没有值' });
+        }
+      });
+    }
+    // 审计完就放掉对 DOM 节点的引用（SPA 换页后旧节点不会被这份列表钉在内存里）
+    fillRecords = [];
     if (audit && audit.wrongFill) {
       // 有错填：宁可把这些字段报出来，也不能让它们静默进提交
       (audit.problems || []).forEach(function (p) {
@@ -4073,7 +4606,7 @@
     return {
       filled: filled, expanded: expanded, filledKeys: filledKeys, skipped: skipped,
       degradedDates: degradedDates, dateTries: lastDateTries, audit: audit,
-      auditRecords: fillRecords.length,
+      auditRecords: auditCount, notWritten: notWritten,
       forced: forced, timedOut: timedOut
     };
   }
@@ -4082,12 +4615,17 @@
    * 按映射结果填写（AI 巡查后的 AI 填写）。
    * mappings: { index, action, suggestedValue }[]
    */
-  function applyMappings(mappings) {
+  async function applyMappings(mappings) {
     var els = iterFillableFields();
     var filled = 0;
     var filledKeys = [];
     var list = mappings || [];
-    list.forEach(function (m) {
+    for (var li = 0; li < list.length; li++) {
+      await applyOneMapping(list[li]);
+    }
+    return { filled: filled, filledKeys: filledKeys };
+
+    async function applyOneMapping(m) {
       if (!m || (m.action !== 'fill' && m.action !== 'custom_answer')) return;
       var value = String(m.suggestedValue || '').trim();
       if (!value) return;
@@ -4116,15 +4654,16 @@
         }
       }
       if (!value) return;
-      if (setNativeValue(el, value)) {
+      var dv = dateValueForInput(el, value);
+      if (dv === '') return;
+      if (dv) value = dv;
+      if (await writeAndVerify(el, value)) {
         filled += 1;
         var k = m.profileKey || ('custom:' + m.index);
         if (filledKeys.indexOf(k) === -1) filledKeys.push(k);
-        recordFill(el, k, value, looksLikeDateInput(el) ? 'date' : '');
         highlight(el);
       }
-    });
-    return { filled: filled, filledKeys: filledKeys };
+    }
   }
 
   function loadProfile() {
@@ -4167,6 +4706,7 @@
       dateTries: result.dateTries || [],
       audit: result.audit || null,
       auditRecords: result.auditRecords || 0,
+      notWritten: result.notWritten || [],
       timedOut: !!result.timedOut
     };
   }
@@ -4250,6 +4790,11 @@
 
   /** 页面上还空着、且能认出标签的字段（供「未填字段」清单 + 点击定位） */
   function unfilledFields() {
+    var owned = beginMemo();
+    try { return unfilledFieldsInner(); } finally { endMemo(owned); }
+  }
+
+  function unfilledFieldsInner() {
     var out = [];
     var seen = {};
     UNFILLED_ELS = {};
@@ -4303,7 +4848,7 @@
   }
 
   async function handleApply(message) {
-    var result = applyMappings(message.mappings || []);
+    var result = await applyMappings(message.mappings || []);
     return { ok: true, filled: result.filled, filledKeys: result.filledKeys };
   }
 
@@ -4326,6 +4871,16 @@
   function collectFrameResults(ms) {
     return new Promise(function (resolve) {
       var agg = { filled: 0, filledKeys: [], frames: 0, skipped: [] };
+      // v1.5.23：页面里没有 iframe 就不用干等 900ms；有的话全部汇报完就提前结束
+      var frameCount = 0;
+      try { frameCount = document.querySelectorAll('iframe, frame').length; } catch (_) { frameCount = 0; }
+      if (!frameCount) { resolve(agg); return; }
+      var timer = null;
+      var finish = function () {
+        try { window.removeEventListener('message', onMsg); } catch (_) { /* ignore */ }
+        if (timer) clearTimeout(timer);
+        resolve(agg);
+      };
       var onMsg = function (e) {
         var d = e && e.data;
         if (!d || !d.__raFill) return;
@@ -4337,12 +4892,10 @@
         (d.__raFill.skipped || []).forEach(function (x) {
           if (agg.skipped.length < 20) agg.skipped.push(x);
         });
+        if (agg.frames >= frameCount) finish();
       };
       try { window.addEventListener('message', onMsg); } catch (_) { /* ignore */ }
-      setTimeout(function () {
-        try { window.removeEventListener('message', onMsg); } catch (_) { /* ignore */ }
-        resolve(agg);
-      }, ms);
+      timer = setTimeout(finish, ms);
     });
   }
 
