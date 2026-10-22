@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>e2e：Vue 3（Element Plus 风格）日期组件 —— 只认 v-model，不认 input 文本</title>
+<style>
+  body { font: 14px/1.6 sans-serif; padding: 16px; }
+  .el-date-editor { display: inline-flex; gap: 6px; border: 1px solid #ccc; padding: 2px 6px; }
+  .el-range-input { width: 110px; }
+</style>
+</head>
+<body>
+<!-- 单个日期：输入框可编辑，但组件只在 onUpdate:modelValue 被调时才更新显示；
+     往 input 里直接写字，下一拍就被组件按 modelValue（空）重渲染回去 -->
+<div class="el-form-item">
+  <label class="el-form-item__label" for="birth">出生日期</label>
+  <div class="el-date-editor el-input"><input id="birth" class="el-input__inner" placeholder="请选择日期"></div>
+</div>
+
+<!-- 起止时间：两个 input 共享一个范围组件 -->
+<div class="resume-section">
+  <div class="section-title"><span class="title">工作经历</span></div>
+  <div class="list-form-container">
+    <div class="el-form-item">
+      <label class="el-form-item__label">起止时间</label>
+      <div class="el-date-editor el-range-editor el-date-editor--daterange" id="range">
+        <input class="el-range-input" id="rs" placeholder="开始日期">
+        <span>至</span>
+        <input class="el-range-input" id="re" placeholder="结束日期">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 模拟 Vue 3 运行时挂在 DOM 上的组件实例（__vueParentComponent）
+  window.__models = {};
+  function picker(name, valueFormat, onModel) {
+    return { type: { name: name }, props: { valueFormat: valueFormat }, vnode: { props: { 'onUpdate:modelValue': onModel } }, parent: null };
+  }
+  (function () {
+    var birth = document.getElementById('birth');
+    var model = '';
+    var inner = { type: { name: 'ElInput' }, props: {}, vnode: { props: {} }, parent: null };
+    inner.parent = picker('ElDatePicker', 'YYYY-MM-DD', function (v) {
+      model = v; window.__models.birth = v;
+      Promise.resolve().then(function () { birth.value = v; });
+    });
+    birth.__vueParentComponent = inner;
+    // 直接写 input：下一拍按 model 重渲染回去（=「看起来写了，其实组件没收到」）
+    birth.addEventListener('input', function () {
+      Promise.resolve().then(function () { birth.value = model; });
+    });
+  })();
+  (function () {
+    var rs = document.getElementById('rs');
+    var re = document.getElementById('re');
+    var range = [];
+    var inst = picker('ElDatePicker', 'YYYY-MM-DD', function (v) {
+      range = v; window.__models.range = v;
+      Promise.resolve().then(function () { rs.value = v[0]; re.value = v[1]; });
+    });
+    rs.__vueParentComponent = { type: { name: 'ElInput' }, props: {}, vnode: { props: {} }, parent: inst };
+    re.__vueParentComponent = { type: { name: 'ElInput' }, props: {}, vnode: { props: {} }, parent: inst };
+    [rs, re].forEach(function (el, i) {
+      el.addEventListener('input', function () {
+        Promise.resolve().then(function () { el.value = range[i] || ''; });
+      });
+    });
+  })();
+</script>
+</body>
+</html>

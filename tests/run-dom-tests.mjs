@@ -321,6 +321,40 @@ const CAP_SCRIPT = path.join(__dirname, '..', 'shared', 'date-capability.js');
 const STRAT_SCRIPT = path.join(__dirname, '..', 'shared', 'date-strategies.js');
 const AUDIT_SCRIPT = path.join(__dirname, '..', 'shared', 'audit.js');
 const CHAIN_SCRIPT = path.join(__dirname, '..', 'shared', 'select-chain.js');
+const MATCH_SCRIPT = path.join(__dirname, '..', 'shared', 'match.js');
+const AUTOFILL_SCRIPT = path.join(__dirname, '..', 'content', 'autofill.js');
+
+/**
+ * 端到端：把整套内容脚本（match → 日期能力/策略 → 审计 → 联动 → autofill）装进页面，
+ * 用假的 chrome.storage 提供档案，直接跑「一键填写」。断言的是最终页面上的真实值 + 上报结果。
+ */
+async function loadExtension(page, profile) {
+  await page.addScriptTag({ path: MATCH_SCRIPT });
+  await page.evaluate((p) => {
+    const store = { profile: p };
+    window.chrome = window.chrome || {};
+    window.chrome.storage = { local: { get: (k, cb) => cb({ profile: store.profile }) } };
+    window.chrome.runtime = { onMessage: { addListener: () => {} } };
+  }, profile);
+  await page.addScriptTag({ path: AUTOFILL_SCRIPT });
+}
+
+const E2E_PROFILE = {
+  name: '张三',
+  phone: '13800138000',
+  email: 'zhangsan@example.com',
+  wechat: 'zs_wechat',
+  birthday: '1998-05-20',
+  eduStart: '2019-09',
+  eduEnd: '2023-06',
+  startDate: '2021-07',
+  eduDegree: '博士研究生',
+  acceptAdjustment: '接受',
+  workEnd: '至今',
+  familyName: '',
+  summary: '五年前端开发经验，熟悉 React 与 Vue。主导过两个中后台项目的重构。擅长性能优化与工程化建设，乐于分享。',
+  idNumber: '110101199805201234'
+};
 
 const CAP_CASES = [
   {
@@ -614,6 +648,59 @@ const CHAIN_CASES = [
   },
 ];
 
+const E2E_CASES = [
+  {
+    name: 'e2e：一键填写——回读确认 / 日期按控件格式 / 否定词与学历不错选 / 第三方不串填',
+    file: 'e2e-form.html',
+    async run(page) {
+      await loadExtension(page, E2E_PROFILE);
+      const r = await page.evaluate(async () => window.__resumeAutofill.fill({ allowAddSections: false }));
+      const v = (id) => page.evaluate((x) => document.getElementById(x).value, id);
+      eq(await v('name'), '张三', '普通文本');
+      eq(await v('phone'), '138 0013 8000', '掩码格式化后的值');
+      ok(r.filledKeys.includes('phone'), '掩码格式差异判为写入成功');
+      eq(await v('email'), 'zhangsan@example.com', '只认键盘的受控组件：逐字键入重试后写进去');
+      eq(await page.evaluate(() => window.__emailState()), 'zhangsan@example.com', '组件内部状态也对');
+      eq(await v('wechat'), '', '硬拒绝的输入框保持空');
+      ok(!r.filledKeys.includes('wechat'), '写不进去的不能计为已填：' + JSON.stringify(r.filledKeys));
+      ok(r.skipped.some((x) => x.key === 'wechat'), '写不进去要出现在跳过原因里');
+      eq(await v('birth'), '1998-05-20', 'type=date');
+      eq(await v('enroll'), '2019-09', 'type=month（旧逻辑会被浏览器清空）');
+      eq(await v('grad'), '2023/06', 'placeholder YYYY/MM');
+      eq(await v('hire'), '2021.07.01', 'placeholder 示例 2020.09.01（年月值补 1 号）');
+      eq(await page.evaluate(() => document.getElementById('deg').selectedOptions[0].text), '博士', '博士研究生 → 博士（不是硕士）');
+      eq(await page.evaluate(() => document.getElementById('adj').selectedOptions[0].text), '接受调剂', '接受 → 接受调剂（不是不接受调剂）');
+      eq(await v('father'), '', '父亲姓名不能填申请人姓名');
+      eq(await page.evaluate(() => document.getElementById('now').checked), true, '「至今」勾选回读确认');
+      eq(await v('leave'), '', '「至今」不写进日期框');
+      const intro = await v('intro');
+      ok(intro.length > 0 && intro.length <= 40 && /。$/.test(intro), 'maxlength 内句末截断：' + intro);
+      eq(await v('idno'), '', '证件号放不下就不填（截断就是错值）');
+      ok(r.skipped.some((x) => x.key === 'idNumber' && /maxlength/.test(x.reason)), '证件号跳过原因');
+      ok(!(r.audit && r.audit.wrongFill), '审计无错填：' + JSON.stringify(r.audit && r.audit.problems));
+    },
+  },
+  {
+    name: 'e2e：Vue 3 日期组件——走 onUpdate:modelValue 提交，按 valueFormat 写，不留「看起来填了」的假值',
+    file: 'e2e-vue3-date.html',
+    async run(page) {
+      await loadExtension(page, {
+        birthday: '1998-05-20',
+        workList: [{ company: '某科技', title: '前端', start: '2021-07', end: '2023-03' }]
+      });
+      const r = await page.evaluate(async () => window.__resumeAutofill.fill({ allowAddSections: false }));
+      const m = await page.evaluate(() => window.__models);
+      eq(m.birth, '1998-05-20', '单个日期：v-model 收到 valueFormat 格式的值');
+      eq(await page.evaluate(() => document.getElementById('birth').value), '1998-05-20', '单个日期回读');
+      ok(Array.isArray(m.range) && m.range[0] === '2021-07-01' && m.range[1] === '2023-03-31', '范围：起点补 1 号、终点补月末：' + JSON.stringify(m.range));
+      eq(await page.evaluate(() => document.getElementById('rs').value), '2021-07-01', '范围开始回读');
+      eq(await page.evaluate(() => document.getElementById('re').value), '2023-03-31', '范围结束回读');
+      ok(r.filledKeys.includes('birthday') && r.filledKeys.includes('startDate'), 'filledKeys：' + JSON.stringify(r.filledKeys));
+      ok(!(r.audit && r.audit.wrongFill), '审计无错填：' + JSON.stringify(r.audit && r.audit.problems));
+    },
+  },
+];
+
 // ── 运行 ──────────────────────────────────────────────────
 (async function main() {
   const filter = process.argv[2] || '';
@@ -622,7 +709,7 @@ const CHAIN_CASES = [
   let passed = 0;
   const failed = [];
 
-  for (const c of CASES.concat(CAP_CASES).concat(FILL_CASES).concat(AUDIT_CASES).concat(CHAIN_CASES)) {
+  for (const c of CASES.concat(CAP_CASES).concat(FILL_CASES).concat(AUDIT_CASES).concat(CHAIN_CASES).concat(E2E_CASES)) {
     if (filter && !c.name.includes(filter) && !c.file.includes(filter)) continue;
     const page = await browser.newPage();
     const pageErrors = [];

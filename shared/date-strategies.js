@@ -449,7 +449,9 @@
     await sleep(220);
     if (!step(p.m, 'month')) return false;
     await sleep(220);
-    if (p.d && !step(p.d, 'day')) return false;
+    // 期望只有年月、面板却必须点到日：点 1 号（day-approx，合法降级），否则永远提交不了
+    var dayText = p.d || (numericGroups(scope).some(function (g) { return g.type === 'day'; }) ? '1' : '');
+    if (dayText && !step(dayText, 'day')) return false;
     await sleep(180);
     if (!Cap.isAcceptable(matches(el, desired))) {
       if (!clickPanelConfirm(scope)) clickPanelConfirm(findDatePanel(p.y) || scope);
@@ -469,8 +471,10 @@
     if (!navOk) return false;
     await sleep(150);
     panel = findDatePanel(p.y) || panel;
-    if (p.d) {
-      if (!gridClickDay(panel, parseInt(p.d, 10))) return false;
+    // 日历网格只有点日格才会提交：期望只有年月时点 1 号（day-approx）
+    var day = p.d ? parseInt(p.d, 10) : (isCalendarGrid(panel) ? 1 : 0);
+    if (day) {
+      if (!gridClickDay(panel, day)) return false;
     }
     await sleep(220);
     if (!Cap.isAcceptable(matches(el, desired))) {
@@ -481,16 +485,30 @@
     return true;
   }
 
-  /** 原生输入框直写（<input type=date> 或普通文本框） */
+  /**
+   * 原生输入框直写（<input type=date|month|datetime-local> 或普通文本框）。
+   * v1.5.23：type=month 之前会被写成 YYYY-MM-DD（浏览器直接清空）；文本框按 placeholder 的格式写。
+   * 写完不在这里判成败——交给 fillDate 统一回读判级（掩码/格式化过的值也能判对）。
+   */
   function nativeInputFill(el, desired) {
     if (!el || String(el.tagName).toUpperCase() !== 'INPUT') return false;
     if (el.readOnly || el.disabled) return false;
     var p = parts(desired);
     if (!p || !p.m) return false;
     var type = String(el.getAttribute('type') || 'text').toLowerCase();
-    var text = type === 'date' ? Cap.toYmd(desired)
-      : (p.d ? Cap.toYmd(desired) : Cap.toYm(desired));
-    return setNativeValue(el, text);
+    var text = '';
+    if (type === 'date' || type === 'month' || type === 'datetime-local') {
+      text = Cap.nativeInputValue ? Cap.nativeInputValue(type, desired) : Cap.toYmd(desired);
+    } else {
+      var fmt = Cap.detectFormat
+        ? (Cap.detectFormat(el.getAttribute('data-format') || el.getAttribute('format') || '') ||
+           Cap.detectFormat(el.getAttribute('placeholder') || ''))
+        : null;
+      text = fmt ? Cap.formatModel(desired, fmt) : (p.d ? Cap.toYmd(desired) : Cap.toYm(desired));
+    }
+    if (!text) return false;
+    setNativeValue(el, text);
+    return true;
   }
 
   /** 年/月/日 三个原生 select */
@@ -589,6 +607,7 @@
     var attempts = [];
     var best = null;
     var budget = o.deadline || (Date.now() + (o.budgetMs || 20000));
+    var original = el ? String(el.value || '') : '';
 
     for (var i = 0; i < order.length; i++) {
       var id = order[i];
@@ -614,7 +633,15 @@
     if (best) {
       return { ok: true, level: best.level, strategy: best.id, attempts: attempts, value: String(el.value || '') };
     }
-    return { ok: false, level: matches(el, desired), strategy: null, attempts: attempts, value: String(el.value || '') };
+    // 全部失败：输入框里如果留下了错的值（策略写了但判级 mismatch），还原回去 —— 宁可空着也不留错值
+    var finalLevel = matches(el, desired);
+    var rolledBack = false;
+    if (el && String(el.value || '') !== original && finalLevel === 'mismatch' && !el.readOnly && !el.disabled &&
+        String(el.tagName).toUpperCase() !== 'SELECT') {
+      setNativeValue(el, original);
+      rolledBack = true;
+    }
+    return { ok: false, level: finalLevel, strategy: null, attempts: attempts, value: String(el.value || ''), rolledBack: rolledBack };
   }
 
   /** 供页面侧复用：探测这个输入框归哪类（委托能力层，缺了就按 readonly 猜） */

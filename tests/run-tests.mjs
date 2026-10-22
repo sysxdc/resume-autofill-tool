@@ -2383,6 +2383,70 @@ test('v1.5.22: EXTRA_LABEL_KEYS 目标键都在 PROFILE_FIELDS', () => {
   });
 });
 
+console.log('v1.5.23: 识别准确性 / 零错填');
+
+test('v1.5.23: 一字之差的中文标签不再模糊错配（入职≠入党、邮寄≠邮件）', () => {
+  assert.equal(Match.matchFieldKey('入职日期'), 'startDate');
+  assert.equal(Match.matchFieldKey('离职日期'), 'workEnd');
+  assert.equal(Match.matchFieldKey('邮寄地址'), 'address');
+  assert.equal(Match.matchFieldKey('户口所在城市'), 'hukou');
+  assert.equal(Match.matchFieldKey('证书获得日期'), 'certDate');
+  assert.equal(Match.matchFieldKey('论文发表日期'), 'paperDate');
+  assert.equal(Match.matchFieldKey('英语六级分数'), 'englishScore');
+  assert.equal(Match.matchFieldKey('意向工作地点'), 'expectedCity');
+  assert.equal(Match.matchFieldKey('期望工作城市'), 'expectedCity');
+});
+
+test('v1.5.23: 第三方实体（父母/家庭成员/紧急联系人）按「人 + 属性」组合，绝不落到申请人键', () => {
+  assert.equal(Match.matchFieldKey('父亲姓名'), 'familyName');
+  assert.equal(Match.matchFieldKey('母亲工作单位'), 'familyEmployer');
+  assert.equal(Match.matchFieldKey('家庭成员电话'), 'familyPhone');
+  assert.equal(Match.matchFieldKey('紧急联系人与本人关系'), 'emergencyContactRelation');
+  assert.equal(Match.matchFieldKey('紧急联系人姓名'), 'emergencyContactName');
+  assert.equal(Match.matchFieldKey('推荐人电话'), null, '推荐人不是申请人也不是证明人');
+  assert.equal(Match.matchFieldKey('父亲爱好'), null, '认不出属性就整体放弃');
+  assert.equal(Match.matchFieldKey('家庭住址'), 'address', '家庭住址是申请人自己的');
+  assert.equal(Match.matchFieldKey('是否有亲属在本公司任职'), 'hasRelativeAtCompany');
+});
+
+test('v1.5.23: 同义归一精确匹配（日期↔时间 / 号码↔号）', () => {
+  const r = Match.matchFieldKeyScored('单位全称');
+  assert.equal(r.key, 'company');
+  assert.equal(Match.matchFieldKey('学位类型'), 'degreeType', 'degreeType 之前不在 FIELD_ORDER，永远匹配不到');
+  assert.equal(Match.matchFieldKey('userEmail'), 'email', 'camelCase 拆词');
+});
+
+test('v1.5.23: 选项匹配——否定词不一致绝不选', () => {
+  const o = (arr) => arr.map((t) => ({ value: t, text: t }));
+  assert.equal(Match.matchSelectOption(o(['不接受调剂', '接受调剂']), '接受').text, '接受调剂');
+  assert.equal(Match.matchSelectOption(o(['不可以', '可以出差']), '可以').text, '可以出差');
+  assert.equal(Match.matchSelectOption(o(['非全日制', '全日制']), '全日制').text, '全日制');
+  assert.equal(Match.matchSelectOption(o(['本科以下', '硕士']), '本科'), null);
+  assert.equal(Match.hasNegationConflict('不接受', '接受'), true);
+  assert.equal(Match.hasNegationConflict('接受调剂', '接受'), false);
+});
+
+test('v1.5.23: 学历同义只取一个组（博士研究生 ≠ 硕士）', () => {
+  const o = (arr) => arr.map((t) => ({ value: t, text: t }));
+  assert.equal(Match.matchSelectOption(o(['硕士', '博士']), '博士研究生').text, '博士');
+  assert.equal(Match.matchSelectOption(o(['博士', '硕士']), '硕士研究生').text, '硕士');
+  assert.equal(Match.matchSelectOption(o(['Master', 'Bachelor']), 'Undergraduate').text, 'Bachelor');
+  assert.equal(Match.matchSelectOption(o(['Associate Diploma', 'Master of Arts']), 'MA').text, 'Master of Arts');
+  assert.equal(Match.degreeGroupOf('本科/硕士'), -1, '两个组打平 → 不扩展');
+});
+
+test('v1.5.23: 选项匹配——歧义拒填 / 修饰后缀 / 编码值 / 数值区间', () => {
+  const o = (arr) => arr.map((t) => ({ value: t, text: t }));
+  assert.equal(Match.matchSelectOption(o(['北京大学', '北京市']), '北京').text, '北京市');
+  assert.equal(Match.matchSelectOption(o(['计算机科学与技术', '计算机应用']), '计算机'), null);
+  assert.equal(Match.matchSelectOption(o(['中共预备党员', '中共党员']), '党员'), null);
+  assert.equal(Match.matchSelectOption(o(['中共预备党员', '中共党员']), '中共党员').text, '中共党员');
+  // 选项编码 "3" 不能被 "3.8" 反向包含命中
+  assert.equal(Match.matchSelectOption([{ value: '3', text: '2.0-3.0' }, { value: '4', text: '3.5-4.0' }], '3.8').text, '3.5-4.0');
+  assert.equal(Match.matchSelectOption(o(['1-3年', '3-5年']), '3'), null, '落在区间边界 → 不填');
+  assert.equal(Match.matchSelectOption(o(['1-3年', '3-5年', '5年以上']), '4').text, '3-5年');
+});
+
 console.log('');
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
