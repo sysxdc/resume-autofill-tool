@@ -17,6 +17,15 @@
     "element-ui": "2.15.14",
     "element-plus": "2.8.4",
     "ant-design-vue": "4.2.6",
-    "layui": "2.9.16"
+    "layui": "2.9.16",
+    "@beisen-phoenix/select": "3.3.55",
+    "@beisen-phoenix/select-list": "3.3.55",
+    "@beisen-phoenix/unmodeled-layer": "3.3.55",
+    "@beisen-phoenix/date-picker": "3.3.55",
+    "@beisen-phoenix/radio": "3.3.55",
+    "@beisen-phoenix/input": "3.3.55",
+    "core-js": "2.6.12",
+    "@babel/runtime": "7.23.9",
+    "esbuild": "0.21.5"
   }
 }

@@ -38,6 +38,10 @@ if (!fs.existsSync(path.join(HERE, 'node_modules', 'antd5'))) {
   console.log('（跳过：没装组件库。先执行 cd tests/real && npm install）');
   process.exit(0);
 }
+// 北森 Phoenix 是 ESM 包，先打成浏览器包（只在缺失时）
+if (!fs.existsSync(path.join(HERE, 'vendor', 'phoenix.bundle.js'))) {
+  execSync(process.execPath + ' ' + JSON.stringify(path.join(HERE, 'phoenix', 'build.mjs')), { stdio: 'inherit' });
+}
 
 const SMALL = {
   name: '张三', eduDegree: '硕士', highestDegree: '硕士', birthday: '1998-05-20',
@@ -74,10 +78,41 @@ const BIG_EXPECT = {
   eth: undefined, src: undefined, father: undefined
 };
 
+const BEISEN_PROFILE = {
+  name: '张三', gender: '男', birthday: '1998-05-20', phone: '13800138000', email: 'zs@example.com',
+  politicalStatus: '中共党员', highestDegree: '硕士', isFreshGraduate: '是', expectedStartDate: '2025-07',
+  emergencyContactName: '李四', emergencyContactPhone: '13900139000', studyMode: '全日制',
+  eduList: BIG.eduList, workList: [{ company: '甲科技', title: '前端工程师', start: '2024-07', end: '2025-08' }]
+};
+const BEISEN_EXPECT = {
+  name: '张三', gender: '男', birth: '1998-05-20', phone: '13800138000', email: 'zs@example.com', pol: '中共党员', hd: '硕士',
+  fresh: '是', report: '2025-07', emName: '李四', emPhone: '13900139000',
+  school0: '某理工大学', major0: '计算机科学与技术', deg0: '硕士', mode0: '全日制', es0: '2021-09', ee0: '2024-06',
+  school1: '某大学', major1: '软件工程', deg1: '本科', mode1: '全日制', es1: '2017-09', ee1: '2021-06',
+  co: '甲科技', ti: '前端工程师', ws: '2024-07', we: '2025-08'
+};
+
+const MOKA_PROFILE = {
+  name: '张三', phone: '13800138000', email: 'zs@example.com', gender: '男', birthday: '1998-05-20', highestDegree: '硕士',
+  isFreshGraduate: '是', currentCity: '深圳', eduList: BIG.eduList,
+  workList: [{ company: '甲科技', title: '前端实习生', start: '2024-07', end: '2025-08' }]
+};
+const MOKA_EXPECT = {
+  name: '张三', phone: '13800138000', email: 'zs@example.com', gender: '男', birthy: '1998', birthm: '05', hd: '硕士',
+  fresh: '应届毕业生', city: '深圳', ref: undefined,
+  school0: '某理工大学', major0: '计算机科学与技术', deg0: '硕士', edu0sy: '2021', edu0sm: '09', edu0ey: '2024', edu0em: '06',
+  school1: '某大学', major1: '软件工程', deg1: '本科', edu1sy: '2017', edu1sm: '09', edu1ey: '2021', edu1em: '06',
+  co: '甲科技', ti: '前端实习生', worksy: '2024', worksm: '07', workey: '2025', workem: '08'
+};
+
 const CASES = [
+  { page: 'moka', profile: MOKA_PROFILE, expect: MOKA_EXPECT, maxMs: 30000 },
+  { page: 'beisen', profile: BEISEN_PROFILE, expect: BEISEN_EXPECT, maxMs: 30000 },
   { page: 'antd3', profile: SMALL, expect: ANTD, maxMs: 8000 },
   { page: 'antd4', profile: SMALL, expect: ANTD, maxMs: 8000 },
   { page: 'antd5', profile: SMALL, expect: ANTD, maxMs: 8000 },
+  // 弹窗兜底注入（popup ensureContentScript）在已有内容脚本的页面上再跑一遍：仍只应答一次、照常填写
+  { page: 'antd5', name: 'antd5+reinject', reinject: true, profile: SMALL, expect: ANTD, maxMs: 8000 },
   { page: 'antdv', profile: SMALL, expect: Object.assign({}, ANTD, { eduRange: ['2019-09', '2023-06'] }), maxMs: 8000 },
   {
     page: 'element-ui', profile: SMALL, maxMs: 8000,
@@ -135,7 +170,6 @@ for (const c of CASES) {
     await page.goto(`http://127.0.0.1:${port}/pages/${c.page}.html`, { waitUntil: 'load' });
     await page.waitForFunction(() => typeof window.__state === 'function', null, { timeout: 10000 });
     await page.waitForTimeout(600);
-    const t0 = Date.now();
     // 必须精确命中「当前这个页面」：按 url 子串找 tab 会命中别的标签（或找到还没注入内容的 tab），
     // 于是 sendMessage 落到别的上下文 → 表现成 empty_profile / 字段全 undefined，非常难查。
     const tabId = await sw.evaluate(async (fullUrl) => {
@@ -144,6 +178,17 @@ for (const c of CASES) {
       return t ? t.id : null;
     }, page.url());
     if (!tabId) throw new Error('找不到当前测试页对应的 tab');
+    if (c.reinject) {
+      // 和 popup ensureContentScript 一样按 manifest 再注入一遍整套内容脚本
+      await sw.evaluate(async (id) => {
+        for (const cs of chrome.runtime.getManifest().content_scripts || []) {
+          const opts = { target: { tabId: id, allFrames: !!cs.all_frames }, files: cs.js };
+          if (cs.world === 'MAIN') opts.world = 'MAIN';
+          await chrome.scripting.executeScript(opts);
+        }
+      }, tabId);
+    }
+    const t0 = Date.now();
     const r = await sw.evaluate(async (id) => chrome.tabs.sendMessage(id, { type: 'FILL_FORM', options: { allowAddSections: false } }, { frameId: 0 }), tabId);
     const ms = Date.now() - t0;
     await page.waitForTimeout(300);
@@ -190,10 +235,10 @@ for (const c of CASES) {
     if (errs.length) bad.push('页面报错：' + errs.join('; '));
     if (bad.length) throw new Error(bad.join('\n     '));
     passed += 1;
-    console.log(`  ✓ ${c.page}  ${ms}ms  filled=${r.filled}`);
+    console.log(`  ✓ ${c.name || c.page}  ${ms}ms  filled=${r.filled}`);
   } catch (e) {
-    failed.push(c.page);
-    console.log(`  ✗ ${c.page}\n     ${e.message}`);
+    failed.push(c.name || c.page);
+    console.log(`  ✗ ${c.name || c.page}\n     ${e.message}`);
   } finally {
     await page.close();
   }

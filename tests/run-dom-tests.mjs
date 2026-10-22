@@ -322,7 +322,7 @@ const STRAT_SCRIPT = path.join(__dirname, '..', 'shared', 'date-strategies.js');
 const AUDIT_SCRIPT = path.join(__dirname, '..', 'shared', 'audit.js');
 const CHAIN_SCRIPT = path.join(__dirname, '..', 'shared', 'select-chain.js');
 const MATCH_SCRIPT = path.join(__dirname, '..', 'shared', 'match.js');
-const AUTOFILL_SCRIPT = path.join(__dirname, '..', 'content', 'autofill.js');
+const CONTENT_SCRIPTS = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'manifest.json'), 'utf8')).content_scripts[0].js;
 const BRIDGE_SCRIPT = path.join(__dirname, '..', 'content', 'page-bridge.js');
 
 /**
@@ -339,7 +339,11 @@ async function loadExtension(page, profile) {
     window.chrome.storage = { local: { get: (k, cb) => cb({ profile: store.profile }) } };
     window.chrome.runtime = { onMessage: { addListener: () => {} } };
   }, profile);
-  await page.addScriptTag({ path: AUTOFILL_SCRIPT });
+  // 其余内容脚本按 manifest 的顺序装（v1.6.0 起 autofill 拆成多个模块，漏一个就会缺函数）
+  for (const f of CONTENT_SCRIPTS) {
+    if (f === 'shared/match.js' || f === 'content/panel.js') continue;
+    await page.addScriptTag({ path: path.join(__dirname, '..', f) });
+  }
 }
 
 const E2E_PROFILE = {

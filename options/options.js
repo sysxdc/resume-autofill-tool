@@ -62,7 +62,7 @@
     root.innerHTML = arr.map(function (item, idx) {
       var fields = keys.map(function (k) {
         var lab = labels[k] || k;
-        var isLong = k === 'description' || k === 'tech';
+        var isLong = /^(description|tech|courses|achievements|responsibilities|outcome|research)$/.test(k);
         var val = item && item[k] != null ? String(item[k]) : '';
         if (isLong) {
           return '<label class="full">' + lab +

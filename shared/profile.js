@@ -19,16 +19,17 @@
   var PROFILE_FIELDS = [
     // —— 个人信息 / 身份 ——
     'resumeTitle',
-    'name', 'firstName', 'lastName', 'namePinyin', 'englishName', 'preferredName',
+    'name', 'firstName', 'lastName', 'namePinyin', 'pinyinLastName', 'pinyinFirstName', 'englishName', 'preferredName',
     'gender', 'birthday', 'age',
     'nationality', 'ethnicity', 'politicalStatus', 'maritalStatus',
     'idType', 'idNumber',
     // —— 联系 ——
-    'email', 'secondaryEmail', 'phone', 'wechat', 'qq',
+    'email', 'secondaryEmail', 'phoneCountryCode', 'phone', 'wechat', 'qq',
     'emergencyContact', 'emergencyContactName', 'emergencyContactRelation', 'emergencyContactPhone',
     // —— 地址 / 地点 ——
-    'city', 'currentCity', 'currentAddress', 'address', 'province', 'zip', 'country',
-    'nativePlace', 'studentOrigin', 'hukouType', 'hukou',
+    // v1.6.0：省 / 市 / 区 细分（网申常把籍贯、户籍、现居地拆成两三级下拉）；不填时从整串自动拆
+    'city', 'currentProvince', 'currentCity', 'currentDistrict', 'currentAddress', 'address', 'province', 'zip', 'country',
+    'nativePlace', 'nativeProvince', 'nativeCity', 'studentOrigin', 'hukouType', 'hukou', 'hukouProvince', 'hukouCity',
     'archiveLocation', 'willingToRelocate',
     // —— 链接 ——
     'linkedin', 'github', 'website',
@@ -44,8 +45,9 @@
     'highestDegree', 'isFreshGraduate', 'workStatus', 'years', 'lastCompany',
     'summary', 'personalStrengths', 'hobbies', 'careerPlan', 'additionalInfo',
     // —— 求职意向 ——
-    'jobTarget', 'expectedIndustry', 'currentIndustry', 'expectedStartDate',
-    'expectedCity', 'interviewCity', 'expectedSalary', 'expectedAnnualSalary', 'currentSalary',
+    // v1.6.0：校招常见第二志愿 / 第二意向城市
+    'jobTarget', 'jobTarget2', 'expectedIndustry', 'currentIndustry', 'expectedStartDate',
+    'expectedCity', 'expectedCity2', 'interviewCity', 'expectedSalary', 'expectedAnnualSalary', 'currentSalary',
     'hasRelativeAtCompany', 'referralSource', 'acceptAdjustment',
     'availability', 'noticePeriod', 'earliestStart', 'workAuth',
     // —— 教育背景（主条目） ——
@@ -89,7 +91,7 @@
     'familyName', 'familyRelation', 'familyGender', 'familyEducation', 'familyEthnicity', 'familyIdNumber',
     'familyBirthday', 'familyPhone', 'familyEmployer', 'familyTitle', 'familyPoliticalStatus', 'familyAddress',
     // —— 获奖 ——
-    'awardName', 'awardIssuer', 'awardDate', 'awardEnd', 'awardLevel', 'awardType', 'awardGrade', 'awardDescription',
+    'awardName', 'awardRank', 'awardIssuer', 'awardDate', 'awardEnd', 'awardLevel', 'awardType', 'awardGrade', 'awardDescription',
     'honors',
     // —— 专利 ——
     'patentName', 'patentNo', 'patentApplyDate', 'patentStatus', 'patentInventor', 'patentDescription',
@@ -102,43 +104,98 @@
 
   /**
    * v1.4.0：多段经历（解析简历后可能有多条）。
+   * v1.6.0：从 3 种扩到 9 种，并细分每段的字段 —— 网申的「实习 / 校园 / 获奖 / 证书 / 语言 / 家庭」
+   * 都是按段填的（填写代码早就按 internList / awardList / campusList 取值，但之前 schema 里没有这些列表，
+   * 永远是空的；workList 的 department / nature 也不在条目字段里，保存时被丢掉）。
    * 数组元素字段见 LIST_ITEM_FIELDS；扁平的主条目字段仍保留，自动取第一条以兼容旧匹配。
    */
-  var LIST_FIELDS = ['eduList', 'workList', 'projectList'];
+  var LIST_FIELDS = ['eduList', 'internList', 'workList', 'projectList', 'campusList', 'awardList', 'certList', 'langList', 'familyList'];
 
   var LIST_ITEM_FIELDS = {
-    eduList: ['school', 'department', 'major', 'degree', 'start', 'end', 'city', 'gpa', 'description'],
-    workList: ['company', 'title', 'start', 'end', 'city', 'description'],
-    projectList: ['name', 'role', 'start', 'end', 'tech', 'description']
+    // degree = 学历（本科 / 硕士），academicDegree = 学位（工学学士），两者在网申里是两个不同的下拉
+    eduList: ['school', 'department', 'major', 'majorCategory', 'degree', 'academicDegree', 'studyMode', 'start', 'end',
+      'city', 'gpa', 'rank', 'courses', 'advisor', 'research', 'thesis', 'description'],
+    internList: ['company', 'department', 'title', 'industry', 'start', 'end', 'city', 'description', 'leaveReason',
+      'refereeName', 'refereeContact'],
+    workList: ['company', 'department', 'title', 'nature', 'industry', 'start', 'end', 'city', 'salary', 'description',
+      'achievements', 'leaveReason', 'refereeName', 'refereeContact'],
+    projectList: ['name', 'role', 'start', 'end', 'link', 'tech', 'description', 'responsibilities', 'outcome'],
+    campusList: ['org', 'role', 'level', 'start', 'end', 'description'],
+    awardList: ['name', 'level', 'rank', 'issuer', 'date', 'description'],
+    certList: ['name', 'issuer', 'no', 'date', 'score'],
+    langList: ['name', 'level', 'score', 'date', 'listenSpeak', 'readWrite'],
+    familyList: ['name', 'relation', 'employer', 'title', 'phone', 'politicalStatus']
   };
 
   /** 选项页多段编辑：字段中文标签 */
   var LIST_ITEM_LABELS = {
     eduList: {
-      school: '学校', department: '院系', major: '专业', degree: '学历/学位', start: '开始', end: '结束',
-      city: '城市（学校所在）', gpa: 'GPA', description: '描述'
+      school: '学校', department: '院系', major: '专业', majorCategory: '专业类别', degree: '学历（本科/硕士）',
+      academicDegree: '学位（如 工学学士）', studyMode: '学习形式（全日制）', start: '开始', end: '结束',
+      city: '城市（学校所在）', gpa: 'GPA', rank: '排名（如 5/120）', courses: '主修课程', advisor: '导师',
+      research: '研究方向', thesis: '毕业论文', description: '描述'
+    },
+    internList: {
+      company: '公司', department: '部门', title: '职位', industry: '行业', start: '开始', end: '结束', city: '城市',
+      description: '实习内容', leaveReason: '离职原因', refereeName: '证明人', refereeContact: '证明人电话'
     },
     workList: {
-      company: '公司', title: '职位', start: '开始', end: '结束',
-      city: '城市', description: '描述'
+      company: '公司', department: '部门', title: '职位', nature: '工作性质（全职/实习）', industry: '行业',
+      start: '开始', end: '结束', city: '城市', salary: '月薪', description: '工作内容', achievements: '业绩',
+      leaveReason: '离职原因', refereeName: '证明人', refereeContact: '证明人电话'
     },
     projectList: {
-      name: '项目名称', role: '角色', start: '开始', end: '结束',
-      tech: '技术栈', description: '描述'
-    }
+      name: '项目名称', role: '角色', start: '开始', end: '结束', link: '项目链接',
+      tech: '技术栈', description: '描述', responsibilities: '本人职责', outcome: '项目成果'
+    },
+    campusList: { org: '组织 / 社团', role: '职务', level: '级别（校级/院级）', start: '开始', end: '结束', description: '内容' },
+    awardList: { name: '奖项名称', level: '级别（国家级/省级）', rank: '名次 / 等级', issuer: '颁发机构', date: '获奖时间', description: '描述' },
+    certList: { name: '证书名称', issuer: '颁发机构', no: '证书编号', date: '获得时间', score: '成绩' },
+    langList: { name: '语种', level: '等级 / 证书（CET-6、N1）', score: '成绩', date: '获得时间', listenSpeak: '听说', readWrite: '读写' },
+    familyList: { name: '姓名', relation: '关系', employer: '工作单位', title: '职务', phone: '电话', politicalStatus: '政治面貌' }
   };
 
   var LIST_SECTION_TITLES = {
     eduList: '教育经历（多段）',
+    internList: '实习经历（多段）',
     workList: '工作经历（多段）',
-    projectList: '项目经历（多段）'
+    projectList: '项目经历（多段）',
+    campusList: '校园经历（多段）',
+    awardList: '获奖（多段）',
+    certList: '证书（多段）',
+    langList: '外语（多段）',
+    familyList: '家庭成员（多段）'
   };
 
   /** 数组第一条 → 扁平主条目字段名映射 */
   var MAIN_ENTRY_MAP = {
-    eduList: { school: 'school', department: 'department', major: 'major', degree: 'eduDegree', start: 'eduStart', end: 'eduEnd', city: 'schoolCity' },
-    workList: { company: 'company', title: 'title', start: 'startDate', end: 'workEnd', city: 'workCity', nature: 'workNature' },
-    projectList: { name: 'projectName', role: 'projectRole', start: 'projectStart', end: 'projectEnd', tech: 'techSkills', description: 'projectDesc' }
+    eduList: {
+      school: 'school', department: 'department', major: 'major', majorCategory: 'majorCategory', degree: 'eduDegree',
+      academicDegree: 'degree', studyMode: 'studyMode', start: 'eduStart', end: 'eduEnd', city: 'schoolCity', gpa: 'gpa',
+      rank: 'majorRank', courses: 'majorCourses', advisor: 'advisorName', research: 'researchDirection', thesis: 'thesisTitle'
+    },
+    internList: {
+      company: 'internCompany', department: 'internDepartment', title: 'internTitle', industry: 'internIndustry',
+      start: 'internStart', end: 'internEnd', city: 'internCity', description: 'internDescription',
+      leaveReason: 'internLeaveReason', refereeName: 'internRefereeName', refereeContact: 'internRefereeContact'
+    },
+    workList: {
+      company: 'company', department: 'workDepartment', title: 'title', nature: 'workNature', industry: 'industry',
+      start: 'startDate', end: 'workEnd', city: 'workCity', salary: 'monthlySalary', description: 'workDescription',
+      achievements: 'achievements', leaveReason: 'leaveReason', refereeName: 'refereeName', refereeContact: 'refereeContact'
+    },
+    projectList: {
+      name: 'projectName', role: 'projectRole', start: 'projectStart', end: 'projectEnd', link: 'projectLink',
+      tech: 'techSkills', description: 'projectDesc', responsibilities: 'projectResponsibilities', outcome: 'projectOutcome'
+    },
+    campusList: { org: 'campusOrg', role: 'campusRole', level: 'campusLevel', start: 'campusStart', end: 'campusEnd', description: 'campusWorkContent' },
+    awardList: { name: 'awardName', level: 'awardLevel', rank: 'awardRank', issuer: 'awardIssuer', date: 'awardDate', description: 'awardDescription' },
+    certList: { name: 'certName', issuer: 'certIssuer', no: 'certNo', date: 'certDate', score: 'certScore' },
+    langList: { name: 'langName', level: 'langLevel', score: 'langScore', date: 'langDate', listenSpeak: 'langListenSpeak', readWrite: 'langReadWrite' },
+    familyList: {
+      name: 'familyName', relation: 'familyRelation', employer: 'familyEmployer', title: 'familyTitle',
+      phone: 'familyPhone', politicalStatus: 'familyPoliticalStatus'
+    }
   };
 
   function emptyList(listKey) {

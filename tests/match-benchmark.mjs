@@ -278,7 +278,7 @@ const CORPUS = [
   e("语义兼容", "离职日期", "workEnd"),
   e("语义兼容", "入学年份", "eduStart"),
   e("语义兼容", "邮寄地址", "address"),
-  e("语义兼容", "户口所在城市", "hukou"),
+  e("语义兼容", "户口所在城市", "hukouCity"),
   e("语义兼容", "证书获得日期", "certDate"),
   e("语义兼容", "论文发表日期", "paperDate"),
   e("语义兼容", "英语六级分数", "englishScore"),
@@ -291,6 +291,28 @@ const CORPUS = [
   e("语义兼容", "推荐人电话", "-"),
   e("语义兼容", "学位类型", "degreeType"),
   e("语义兼容", "单位全称", "company"),
+
+  // v1.6.0：字段细分（省 / 市 / 区拆分、拼音姓名、第二志愿、名次）（gen：北森 / Moka / 智联网申常见拆分写法）
+  e("字段细分", "拼音姓", "pinyinLastName"),
+  e("字段细分", "姓（拼音）", "pinyinLastName"),
+  e("字段细分", "拼音名", "pinyinFirstName"),
+  e("字段细分", "名（拼音）", "pinyinFirstName"),
+  e("字段细分", "姓名拼音", "namePinyin"),
+  e("字段细分", "籍贯省份", "nativeProvince"),
+  e("字段细分", "籍贯（省）", "nativeProvince"),
+  e("字段细分", "籍贯城市", "nativeCity"),
+  e("字段细分", "籍贯", "nativePlace"),
+  e("字段细分", "户口所在省份", "hukouProvince"),
+  e("字段细分", "户籍城市", "hukouCity"),
+  e("字段细分", "户口所在地", "hukou"),
+  e("字段细分", "现居住省份", "currentProvince"),
+  e("字段细分", "现居住城市", "currentCity"),
+  e("字段细分", "现居住区县", "currentDistrict"),
+  e("字段细分", "第二志愿", "jobTarget2"),
+  e("字段细分", "第一志愿", "jobTarget"),
+  e("字段细分", "第二意向城市", "expectedCity2"),
+  e("字段细分", "获奖名次", "awardRank"),
+  e("字段细分", "学位", "degree", { ctx: "edu" }),
 ];
 
 const M2 = Match;

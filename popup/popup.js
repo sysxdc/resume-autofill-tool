@@ -156,10 +156,16 @@
       await chrome.tabs.sendMessage(tabId, { type: 'PING_CONTENT' });
       return;
     } catch (_) { /* need inject */ }
-    await chrome.scripting.executeScript({
-      target: { tabId: tabId },
-      files: ['shared/match.js', 'content/autofill.js']
-    });
+    // 文件清单以 manifest 为准：只注入 match + autofill 会缺日期层 / 审计 / 拆出去的模块，
+    // 页面主环境桥接（world: MAIN）也得单独注入，否则 React / Vue 受控组件写不进去
+    var scripts = (chrome.runtime.getManifest().content_scripts || []);
+    for (var i = 0; i < scripts.length; i++) {
+      var cs = scripts[i];
+      if (!cs.js || !cs.js.length) continue;
+      var opts = { target: { tabId: tabId, allFrames: !!cs.all_frames }, files: cs.js };
+      if (cs.world === 'MAIN') opts.world = 'MAIN';
+      await chrome.scripting.executeScript(opts);
+    }
   }
 
   async function sendToTab(type, payload) {

@@ -139,6 +139,8 @@
           <label>名（可选覆盖）<input type="text" name="firstName" placeholder="显式优先于从姓名拆分" /></label>
           <label>姓（可选覆盖）<input type="text" name="lastName" placeholder="显式优先于从姓名拆分" /></label>
           <label>姓名拼音<input type="text" name="namePinyin" placeholder="例如：Zhang San" /></label>
+          <label>姓（拼音）<input type="text" name="pinyinLastName" placeholder="留空则从姓名拼音拆分" /></label>
+          <label>名（拼音）<input type="text" name="pinyinFirstName" placeholder="留空则从姓名拼音拆分" /></label>
           <label>英文姓名<input type="text" name="englishName" placeholder="例如：San Zhang" /></label>
           <label>常用名 / 昵称<input type="text" name="preferredName" placeholder="希望被称呼的名字" /></label>
           <label>性别<input type="text" name="gender" placeholder="男 / 女" /></label>
@@ -152,6 +154,7 @@
           <label>身份证号（选填）<input type="text" name="idNumber" placeholder="请谨慎填写敏感信息" /></label>
           <label>邮箱<input type="email" name="email" placeholder="you@example.com" /></label>
           <label>备用邮箱<input type="email" name="secondaryEmail" placeholder="" /></label>
+          <label>手机区号<input type="text" name="phoneCountryCode" placeholder="+86" /></label>
           <label>电话 / 手机<input type="tel" name="phone" placeholder="手机号" /></label>
           <label>微信<input type="text" name="wechat" placeholder="" /></label>
           <label>QQ<input type="text" name="qq" placeholder="" /></label>
@@ -160,16 +163,22 @@
           <label>紧急联系人关系<input type="text" name="emergencyContactRelation" placeholder="" /></label>
           <label>紧急联系人电话<input type="tel" name="emergencyContactPhone" placeholder="" /></label>
           <label>城市<input type="text" name="city" placeholder="上海" /></label>
+          <label>现居省份<input type="text" name="currentProvince" placeholder="留空则从现居地址拆分" /></label>
           <label>现居城市<input type="text" name="currentCity" placeholder="" /></label>
+          <label>现居区县<input type="text" name="currentDistrict" placeholder="留空则从现居地址拆分" /></label>
           <label class="full">现居住地址<input type="text" name="currentAddress" placeholder="" /></label>
           <label class="full">详细地址<input type="text" name="address" placeholder="与现居住地址可互为别名" /></label>
           <label>省/州<input type="text" name="province" placeholder="" /></label>
           <label>邮政编码<input type="text" name="zip" placeholder="" /></label>
           <label>国家<input type="text" name="country" placeholder="中国" /></label>
-          <label>籍贯<input type="text" name="nativePlace" placeholder="" /></label>
+          <label>籍贯<input type="text" name="nativePlace" placeholder="如：浙江省杭州市" /></label>
+          <label>籍贯省份<input type="text" name="nativeProvince" placeholder="留空则从籍贯拆分" /></label>
+          <label>籍贯城市<input type="text" name="nativeCity" placeholder="留空则从籍贯拆分" /></label>
           <label>生源地<input type="text" name="studentOrigin" placeholder="" /></label>
           <label>户口性质<input type="text" name="hukouType" placeholder="" /></label>
-          <label>户口所在地<input type="text" name="hukou" placeholder="" /></label>
+          <label>户口所在地<input type="text" name="hukou" placeholder="如：浙江省杭州市" /></label>
+          <label>户口省份<input type="text" name="hukouProvince" placeholder="留空则从户口所在地拆分" /></label>
+          <label>户口城市<input type="text" name="hukouCity" placeholder="留空则从户口所在地拆分" /></label>
           <label>档案所在地<input type="text" name="archiveLocation" placeholder="" /></label>
           <label class="full">是否愿意异地<input type="text" name="willingToRelocate" placeholder="" /></label>
           <label class="full">LinkedIn<input type="url" name="linkedin" placeholder="" /></label>
@@ -223,10 +232,12 @@
           <div class="pane-body">
         <div class="grid">
           <label>目标岗位<input type="text" name="jobTarget" placeholder="" /></label>
+          <label>第二志愿岗位<input type="text" name="jobTarget2" placeholder="" /></label>
           <label>期望行业<input type="text" name="expectedIndustry" placeholder="" /></label>
           <label>目前行业<input type="text" name="currentIndustry" placeholder="" /></label>
           <label>预计入职时间<input type="text" name="expectedStartDate" placeholder="" /></label>
           <label>期望城市<input type="text" name="expectedCity" placeholder="" /></label>
+          <label>第二期望城市<input type="text" name="expectedCity2" placeholder="" /></label>
           <label>面试城市<input type="text" name="interviewCity" placeholder="" /></label>
           <label>期望月薪<input type="text" name="expectedSalary" placeholder="" /></label>
           <label>期望年薪<input type="text" name="expectedAnnualSalary" placeholder="" /></label>
@@ -378,6 +389,10 @@
           <label class="full">实习描述<textarea name="internDescription" rows="3" placeholder=""></textarea></label>
           <label>实习离职原因<input type="text" name="internLeaveReason" placeholder="" /></label>
         </div>
+        <h3 class="list-sub">多段实习经历</h3>
+        <p class="pane-note">保存后写入 <code>internList</code>，网申页面的第 2、3 段记录按顺序取这里的值；第一段与上方主条目互为补充。</p>
+        <div id="list-internList" class="list-editor" data-list="internList"></div>
+        <button type="button" class="btn ghost list-add" data-list="internList">＋ 添加实习经历</button>
           </div>
         </section>
 
@@ -474,6 +489,10 @@
           <label class="full">工作内容<textarea name="campusWorkContent" rows="2" placeholder=""></textarea></label>
           <label class="full">本人职责<textarea name="campusDuty" rows="2" placeholder=""></textarea></label>
         </div>
+        <h3 class="list-sub">多段校园经历</h3>
+        <p class="pane-note">保存后写入 <code>campusList</code>，网申页面的第 2、3 段记录按顺序取这里的值；第一段与上方主条目互为补充。</p>
+        <div id="list-campusList" class="list-editor" data-list="campusList"></div>
+        <button type="button" class="btn ghost list-add" data-list="campusList">＋ 添加校园经历</button>
           </div>
         </section>
 
@@ -538,6 +557,10 @@
           <label>有效期<input type="text" name="certExpiry" placeholder="" /></label>
           <label class="full">证书描述<textarea name="certDescription" rows="2" placeholder=""></textarea></label>
         </div>
+        <h3 class="list-sub">多段证书</h3>
+        <p class="pane-note">保存后写入 <code>certList</code>，网申页面的第 2、3 段记录按顺序取这里的值；第一段与上方主条目互为补充。</p>
+        <div id="list-certList" class="list-editor" data-list="certList"></div>
+        <button type="button" class="btn ghost list-add" data-list="certList">＋ 添加证书</button>
           </div>
         </section>
 
@@ -560,6 +583,10 @@
           <label>听说<input type="text" name="langListenSpeak" placeholder="" /></label>
           <label>读写<input type="text" name="langReadWrite" placeholder="" /></label>
         </div>
+        <h3 class="list-sub">多段外语能力</h3>
+        <p class="pane-note">保存后写入 <code>langList</code>，网申页面的第 2、3 段记录按顺序取这里的值；第一段与上方主条目互为补充。</p>
+        <div id="list-langList" class="list-editor" data-list="langList"></div>
+        <button type="button" class="btn ghost list-add" data-list="langList">＋ 添加外语能力</button>
           </div>
         </section>
 
@@ -589,6 +616,10 @@
           <label>政治面貌（选填）<input type="text" name="familyPoliticalStatus" placeholder="" /></label>
           <label class="full">联系地址（选填）<input type="text" name="familyAddress" placeholder="" /></label>
         </div>
+        <h3 class="list-sub">多段家庭成员</h3>
+        <p class="pane-note">保存后写入 <code>familyList</code>，网申页面的第 2、3 段记录按顺序取这里的值；第一段与上方主条目互为补充。</p>
+        <div id="list-familyList" class="list-editor" data-list="familyList"></div>
+        <button type="button" class="btn ghost list-add" data-list="familyList">＋ 添加家庭成员</button>
           </div>
         </section>
 
@@ -605,6 +636,7 @@
         <div class="grid">
           <label>所获荣誉（自由文本）<textarea name="honors" rows="2" placeholder="校级优秀学生干部；CET-6 520…"></textarea></label>
           <label>奖项名称<input type="text" name="awardName" placeholder="" /></label>
+          <label>获奖名次<input type="text" name="awardRank" placeholder="如：一等奖 / 第 2 名" /></label>
           <label>颁发机构<input type="text" name="awardIssuer" placeholder="" /></label>
           <label>获奖时间<input type="text" name="awardDate" placeholder="" /></label>
           <label>结束时间<input type="text" name="awardEnd" placeholder="" /></label>
@@ -613,6 +645,10 @@
           <label>奖励等级<input type="text" name="awardGrade" placeholder="" /></label>
           <label class="full">获奖描述<textarea name="awardDescription" rows="2" placeholder=""></textarea></label>
         </div>
+        <h3 class="list-sub">多段获奖经历</h3>
+        <p class="pane-note">保存后写入 <code>awardList</code>，网申页面的第 2、3 段记录按顺序取这里的值；第一段与上方主条目互为补充。</p>
+        <div id="list-awardList" class="list-editor" data-list="awardList"></div>
+        <button type="button" class="btn ghost list-add" data-list="awardList">＋ 添加获奖经历</button>
           </div>
         </section>
 
