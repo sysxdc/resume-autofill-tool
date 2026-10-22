@@ -22,6 +22,17 @@ const Audit = require(path.join(root, 'shared/audit.js'));
 let passed = 0;
 let failed = 0;
 
+/** 内容脚本全部源码（v1.6.0 起 autofill 拆成 content/fill/*、content/sites/*；按 manifest 顺序拼起来） */
+let _contentSrc = null;
+function contentSrc() {
+  if (_contentSrc == null) {
+    const mf = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+    _contentSrc = mf.content_scripts[0].js.filter((f) => f.startsWith('content/'))
+      .map((f) => fs.readFileSync(path.join(root, f), 'utf8')).join('\n');
+  }
+  return _contentSrc;
+}
+
 function test(name, fn) {
   try {
     fn();
@@ -718,10 +729,10 @@ test('buildSystemPrompt mentions select option matching', () => {
 
 console.log('repo integrity');
 
-test('manifest is MV3 1.4+/1.5.x with icons', () => {
+test('manifest is MV3 1.4+ with icons', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   assert.equal(manifest.manifest_version, 3);
-  assert.ok(/^1\.[45]\.\d+$/.test(manifest.version), `version=${manifest.version}`);
+  assert.ok(/^1\.([4-9]|\d{2})\.\d+$/.test(manifest.version), `version=${manifest.version}`);
   assert.ok(manifest.icons['16']);
   assert.ok(manifest.action.default_icon['48']);
   assert.ok(manifest.content_scripts[0].js.includes('shared/match.js'));
@@ -812,7 +823,7 @@ test('simulate Greenhouse FP fields stay unmatched', () => {
 console.log('v1.2.2 source guards');
 
 test('autofill.js uses visibleLabelText; no parentLabel.textContent', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(src.includes('visibleLabelText'), 'must call visibleLabelText');
   assert.ok(!src.includes('parentLabel.textContent'), 'must not use parentLabel.textContent');
   assert.ok(src.includes('fieldLooksFilled'), 'must implement skip-if-filled');
@@ -1012,7 +1023,7 @@ test('semanticClassTokens drops ant- noise keeps name-like', () => {
 });
 
 test('autofill.js v1.3.0 uses form-item + date part + adjacent pair helpers', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(src.includes('labelTextFromFormItem'), 'must use form-item labels');
   assert.ok(src.includes('resolveAriaLabelledByText'), 'must use aria-labelledby');
   assert.ok(src.includes('maybeExtractDatePartValue'), 'must extract date parts');
@@ -1211,7 +1222,7 @@ test('v1.3.1: profile 新增 honors 字段（schema / 空档 / 样例）', () =>
 });
 
 test('v1.3.1: autofill 源守卫（搜索框跳过 / readonly 弹层 / radio 白名单 / 不提交）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function isSearchBox/.test(src), 'isSearchBox 应存在');
   assert.ok(/搜索\|查找\|关键字/.test(src), '搜索框关键词应存在');
   assert.ok(/function fillReadonlyPicker/.test(src), 'fillReadonlyPicker 应存在');
@@ -1234,7 +1245,7 @@ test('v1.3.1: 出生日期是整日期，不被拆成 day', () => {
 console.log('v1.3.2 表格布局 / Element-UI 下拉标签');
 
 test('v1.3.2: getLabelText 支持表格布局与 el-select 兄弟标签', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/closest\('td, th'\)/.test(src), '应支持 td/th 左列取标签');
   assert.ok(/previousElementSibling/.test(src), '应读取前一个兄弟/单元格');
   assert.ok(/dictionary-selector/.test(src), '应识别 Element-UI 下拉容器');
@@ -1243,7 +1254,7 @@ test('v1.3.2: getLabelText 支持表格布局与 el-select 兄弟标签', () => 
 
 test('v1.3.2: manifest 版本已递增', () => {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.ok(/^1\.[45]\.\d+$/.test(manifest.version), manifest.version);
+  assert.ok(/^1\.([4-9]|\d{2})\.\d+$/.test(manifest.version), manifest.version);
   assert.equal(manifest.content_scripts[0].all_frames, true);
 });
 
@@ -1251,19 +1262,21 @@ test('v1.3.2: manifest 版本已递增', () => {
 console.log('v1.3.3 多表格日期面板');
 
 test('v1.3.3: 日期面板分段选择 + 确认按钮', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function parseDateParts/.test(src), '应有日期拆分');
   assert.ok(/function findDatePanel/.test(src), '应有面板探测');
-  assert.ok(/function numericGroups/.test(src), '应有年/月/日分组识别');
+  // v1.6.0：分组识别 / 确定按钮只在策略层实现（页面侧那份没人调用的委托删了）
+  const strat = fs.readFileSync(path.join(root, 'shared/date-strategies.js'), 'utf8');
+  assert.ok(/function numericGroups/.test(strat), '应有年/月/日分组识别');
   assert.ok(/function tryDatePanel/.test(src), '应有分段点选');
-  assert.ok(/function clickPanelConfirm/.test(src), '应处理“确定”按钮');
+  assert.ok(/function clickPanelConfirm/.test(strat), '应处理“确定”按钮');
   assert.ok(/async function tryDatePanel\(el, desired\)/.test(src), '分段点选应能读回值判断是否需要确定');
 });
 
 test('v1.3.3: 日期比较按年月日（容忍分隔符差异）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function dateValueMatches/.test(src));
-  assert.ok(/parseInt\(a\.m, 10\) !== parseInt\(w\.m, 10\)/.test(src), '月应按数值比较');
+  assert.ok(/parseInt\(a\.m, 10\) === parseInt\(w\.m, 10\)/.test(src), '月应按数值比较');
   assert.ok(/parseInt\(a\.d, 10\) === parseInt\(w\.d, 10\)/.test(src), '日应按数值比较');
   assert.ok(/!w\.d \|\| !a\.d/.test(src), '只到年月的字段应只比年月');
 });
@@ -1296,7 +1309,7 @@ test('v1.3.4: 表头支持 2026年10月 / 十月 2026 / 2026-10 三种写法', (
 console.log('v1.3.5 六类日期组件');
 
 test('v1.3.5: 年/月/日 三件套（原生 select 组）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function collectDateGroup/.test(src), '应识别日期组');
   assert.ok(/function maxOptionNumber/.test(src), '应按选项范围判断年/月/日');
   assert.ok(/function setSelectByNumber/.test(src), '应能按数字选中 select 选项');
@@ -1306,7 +1319,7 @@ test('v1.3.5: 年/月/日 三件套（原生 select 组）', () => {
 });
 
 test('v1.3.5: 分页下拉 / 滚轮 / 英文表头', () => {
-  const page = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const page = contentSrc();
   const strat = fs.readFileSync(path.join(root, 'shared/date-strategies.js'), 'utf8');
   assert.ok(/function findPagerNext/.test(page), '应找“下一页”');
   assert.ok(/function pageUntilFound/.test(page), '应翻页找目标项');
@@ -1323,7 +1336,7 @@ test('v1.3.5: 分页下拉 / 滚轮 / 英文表头', () => {
 console.log('v1.3.6 focus 展开 + 直写兜底');
 
 test('v1.3.6: 打开弹层要 focus（Element el-date-picker 监听 focus）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function openPicker/.test(src), '应有统一的 openPicker');
   assert.ok(/el\.focus\(\)/.test(src), '应先 focus');
   assert.ok(/FocusEvent\('focusin'/.test(src), '应派发 focusin');
@@ -1332,7 +1345,7 @@ test('v1.3.6: 打开弹层要 focus（Element el-date-picker 监听 focus）', (
 });
 
 test('v1.3.6: 只读框按 data-fmt 直写兜底', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function formatDateByHint/.test(src), '应按 data-fmt 格式化');
   assert.ok(/data-fmt/.test(src), '应读取 data-fmt');
   assert.ok(/function forceSetReadonly/.test(src), '应有直写兜底');
@@ -1344,7 +1357,7 @@ test('v1.3.6: 只读框按 data-fmt 直写兜底', () => {
 
 console.log('v1.3.7 Ant Design DatePicker');
 test('v1.3.7: antd 年/月/日面板 + 年月字段', () => {
-  const html = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const html = contentSrc();
   assert.ok(/function tryAntdPanel/.test(html), '应有 antd 面板专用分支');
   assert.ok(/\.ant-picker-dropdown/.test(html), '应认得 antd 弹层');
   assert.ok(/ant-picker-header-super-prev-btn/.test(html), '应认得十年箭头');
@@ -1362,7 +1375,7 @@ test('v1.3.7: antd 年/月/日面板 + 年月字段', () => {
 console.log('v1.4.0 简历库 / 解析器');
 test('v1.4.0: manifest 版本与资源接线', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
-  assert.ok(/^1\.[45]\.\d+$/.test(pkg.version), 'manifest 应为 1.4+/1.5.x，实际 ' + pkg.version);
+  assert.ok(/^1\.([4-9]|\d{2})\.\d+$/.test(pkg.version), 'manifest 应为 1.4+，实际 ' + pkg.version);
   const html = fs.readFileSync(path.join(root, 'options/options.html'), 'utf8');
   ['../lib/pdf.min.js', '../lib/mammoth.browser.min.js', '../shared/db.js', '../shared/resume-parser.js'].forEach((src) => {
     assert.ok(html.indexOf(src) !== -1, 'options.html 应加载 ' + src);
@@ -1459,7 +1472,7 @@ test('v1.4.1: db.openDB 失败可重试；resume-parser 有文件上限', () => 
   assert.ok(/onversionchange/.test(dbSrc), '应处理 versionchange');
   const Parser = require(path.join(root, 'shared/resume-parser.js'));
   assert.equal(Parser.MAX_FILE_BYTES, 20 * 1024 * 1024);
-  assert.ok(/1\.[45]\.\d+/.test(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')));
+  assert.ok(/1\.([4-9]|\d{2})\.\d+/.test(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8')));
 });
 
 
@@ -1517,7 +1530,7 @@ test('v1.5.2: 无上下文时别名兜底 + 户籍不被抢成 schoolCity', () =
 });
 
 test('v1.5.4: id 结构映射覆盖 ATS 行级字段', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/resume\(education\|work\|project\|paper\|intern\)info_/.test(src), '应解析 resumeXxxInfo_N_field 形态的 id');
   for (const f of ['schoolname', 'collegename', 'scoreRank'.toLowerCase(), 'startdate', 'enddate']) {
     assert.ok(new RegExp("'?" + f).test(src) || src.indexOf(f) !== -1, '缺字段映射: ' + f);
@@ -1558,7 +1571,7 @@ test('v1.5.5: 工作描述类标签命中 workDescription', () => {
 });
 
 test('v1.5.5: 需要点「添加」才有输入框时自动展开', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/async function expandAddSections/.test(src), '应有 expandAddSections');
   assert.ok(/添加\|新增\|增加/.test(src) || src.indexOf('添加') !== -1, '应识别添加按钮文案');
   assert.ok(/isUnsafeAddButton/.test(src), '附件/上传类按钮必须排除');
@@ -1568,7 +1581,7 @@ test('v1.5.5: 需要点「添加」才有输入框时自动展开', () => {
 });
 
 test('v1.5.5: 「请选择 / Select」这类占位 option 不算已填', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/请选择\|选择\|select\|choose/.test(src), '占位文案识别');
   assert.ok(/function fieldLooksFilled/.test(src));
 });
@@ -1689,7 +1702,7 @@ test('v1.5.0: options 多段编辑器源守卫', () => {
 });
 
 test('v1.5.0: autofill 下拉适配器源守卫', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/fillCustomSelect/.test(src));
   assert.ok(/el-select/.test(src) && /ant-select/.test(src));
   assert.ok(/dictionary-selector/.test(src));
@@ -1742,7 +1755,7 @@ test('v1.5.6: 工作描述为空回落到 workList[0]', () => {
 });
 
 test('v1.5.6: 「至今」走开关，不写进日期框', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function isCurrentJobValue/.test(src));
   assert.ok(/function clickCurrentJobToggle/.test(src));
   assert.ok(/function looksLikeDateInput/.test(src));
@@ -1767,7 +1780,7 @@ test('manifest 版本与 README 一致（不绑死具体版本号）', () => {
 console.log('v1.5.7 加行按钮 / 起止时间合体控件');
 
 test('v1.5.7: 加行按钮解析到真正的可点元素', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/closest\('button, a, \[role="button"\], \.ant-btn, \.el-button'\)/.test(src), '应上溯到 button/a/[role=button]');
   assert.ok(/seen\.indexOf\(target\) !== -1/.test(src), '应按可点元素去重');
   assert.ok(/countListFormRows/.test(src), '应能数 .list-form-container 行数');
@@ -1775,7 +1788,7 @@ test('v1.5.7: 加行按钮解析到真正的可点元素', () => {
 });
 
 test('v1.5.7: 起止时间合体控件按分区/段序填', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/RANGE_EDITOR_SEL/.test(src) && /el-date-editor--daterange/.test(src), '应识别 el daterange');
   assert.ok(/RANGE_SECTION_MAP/.test(src), '应有 分区 → listKey/startKey/endKey 映射');
   assert.ok(/function rangeContext\(el\)/.test(src), '应能判断属于哪个分区、第几段');
@@ -1803,7 +1816,7 @@ test('v1.5.6: 有 label 包装的容器也能取到标签（form-item token）',
 });
 
 test('v1.5.6: Phoenix 弹层用「本次新出现」判定', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/async function phoenixOpenPanel/.test(src), '应有 phoenixOpenPanel');
   assert.ok(/before\.indexOf\(now\[i\]\) === -1/.test(src), '应按差集找新弹层');
   assert.ok(/phoenixVisiblePanels/.test(src), '应有可见弹层集合');
@@ -1811,7 +1824,7 @@ test('v1.5.6: Phoenix 弹层用「本次新出现」判定', () => {
 });
 
 test('v1.5.6: 勾选热区是 svg，simulateClick 必须派发 click 事件', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/\.icon-container svg/.test(src), '应优先点 svg');
   assert.ok(/new MouseEvent\('click', \{ bubbles: true \}\)/.test(src), 'simulateClick 应派发 click');
   assert.ok(/phoenixPanelSelectedCount/.test(src), '应校验已选计数');
@@ -1820,7 +1833,7 @@ test('v1.5.6: 勾选热区是 svg，simulateClick 必须派发 click 事件', ()
 });
 
 test('v1.5.6: 多段计数按 key+标签 分桶', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function occurrenceKey\(key, label\)/.test(src), '应有 occurrenceKey');
   assert.ok(/keyCounts\[counterKey\]/.test(src), '主循环应写 counterKey');
   assert.ok(/keyCounts\[hCounterKey\]/.test(src), '宿主循环应写 hCounterKey');
@@ -1828,7 +1841,7 @@ test('v1.5.6: 多段计数按 key+标签 分桶', () => {
 });
 
 test('v1.5.6: 面试站点不做猜测式硬填', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/interviewCity/.test(src), '应有面试站点保守校验');
   assert.ok(/hit\.text\.length > raw\.length \+ 3/.test(src), '选项比城市名长太多应跳过');
 });
@@ -1836,7 +1849,7 @@ test('v1.5.6: 面试站点不做猜测式硬填', () => {
 
 console.log('v1.5.1 命名 radio 组标题发现');
 test('v1.5.1: radio 组标题支持行首 span / 前兄弟文本', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function radioGroupHints/.test(src), '应有 radioGroupHints');
   assert.ok(/previousElementSibling/.test(src), '应尝试前一个兄弟节点的文本');
   assert.ok(/radio-group/.test(src), '克隆父容器时应剔除 .radio-group');
@@ -1857,7 +1870,7 @@ test('v1.5.8/1.5.22: 语言等级 → langLevel；英语专属仍走 englishLeve
 
 test('v1.5.8: 泛化「成绩」不直接映射（避免抢高考成绩/绩点）', () => {
   assert.notEqual(Match.matchFieldKey('成绩'), 'certScore');
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function sectionFallbackKey/.test(src), '应有分区兜底');
   assert.ok(/\/语言\|外语\//.test(src), '只在语言/外语分区兜底');
   assert.ok(/return 'englishScore'/.test(src), '语言分区里成绩 → englishScore');
@@ -1871,12 +1884,12 @@ test('v1.5.8: 电话所在区域 → phoneCountryCode，手机号码仍是 phone
 });
 
 test('v1.5.8: 加行候选只留最内层可点元素', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/\.el\.contains\(out\[j\]\.el\)/.test(src), '祖先容器要剔除');
 });
 
 test('v1.5.8: 下拉改轮询 + 组件实例提交', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/waited >= \d+/.test(src), '下拉要轮询到选项出现');
   assert.ok(/function hostDropdownOptions/.test(src), '优先读宿主自己的下拉节点');
   assert.ok(/function commitFrameworkWidget/.test(src), 'el-input-number / el-date-editor 走组件提交');
@@ -1905,12 +1918,12 @@ test('v1.5.9: 悬浮窗拖动 / 收起 / 调接口', () => {
   assert.ok(/clampX|clampY/.test(src), '拖动要限制在视口内');
   assert.ok(/data-act', 'fill'|data-act="fill"/.test(src) || src.indexOf("'fill'") !== -1, '要有填写按钮');
   assert.ok(/__resumeAutofill/.test(src), '走 autofill.js 暴露的 API');
-  const auto = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const auto = contentSrc();
   assert.ok(/window\.__resumeAutofill = \{/.test(auto), 'autofill.js 要暴露 API');
 });
 
 test('v1.5.9: 未填字段清单（标签 + 必填 + 分区）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function unfilledFields/.test(src), '应有 unfilledFields');
   assert.ok(/function fieldRequired/.test(src), '要能判断必填');
   assert.ok(/function sectionTitleFor/.test(src), '要能带分区名');
@@ -1931,14 +1944,14 @@ test('v1.5.9: 外语成绩 / 取得时间 独立成键并可回退证书', () =>
 });
 
 test('v1.5.9: 语言分区优先用外语键（不被 certDate 抢走）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/sectionFallbackKey\(el\) \|\| matchKeyForElement\(el\)/.test(src), '分区兜底要优先于全局匹配');
 });
 
 console.log('v1.5.10 Moka 字段块 / 胶囊展开 / 未填定位');
 
 test('v1.5.10: 字段块标签兜底 + 噪声过滤', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function labelNoise/.test(src), '要有标签噪声过滤');
   assert.ok(/未填写\|必填项/.test(src), '校验提示不能当字段名');
   assert.ok(src.indexOf('+\\d{1,4}') !== -1, '区号不能当字段名');
@@ -1947,13 +1960,13 @@ test('v1.5.10: 字段块标签兜底 + 噪声过滤', () => {
 });
 
 test('v1.5.10: Moka sd-Select 接入下拉写路径', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/sd-Select-container/.test(src), '宿主选择器要含 Moka 的 sd-Select');
   assert.ok(/sd-Menu-content-item/.test(src), '选项选择器要含 Moka 菜单项');
 });
 
 test('v1.5.10: 未填字段带 id / 行号 / 可定位', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function revealField/.test(src), '要能跳到字段');
   assert.ok(/UNFILLED_ELS/.test(src), '要记住字段引用');
   assert.ok(/row: row > 1 \? row : 0/.test(src), '同名列要带序号');
@@ -1969,7 +1982,7 @@ test('v1.5.10: 胶囊点击能展开（遮罩不吞 click）', () => {
 });
 
 test('v1.5.10: 单次填充 45s 上限', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/timedOut/.test(src), '要标记超时');
   assert.ok(/> 45000/.test(src) || /> 45e3/.test(src), '要有总时长预算');
 });
@@ -1977,14 +1990,14 @@ test('v1.5.10: 单次填充 45s 上限', () => {
 console.log('v1.5.12 快手（antd v5）下拉');
 
 test('v1.5.12: [role=combobox] 落在 input 上时要缩放到外层组件', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/CUSTOM_SELECT_HOST[\s\S]{0,400}role="combobox"/.test(src), '宿主选择器里要有 combobox');
   assert.ok(/tag === 'INPUT' \|\| tag === 'TEXTAREA'/.test(src), 'input 要能被识别出来并缩放');
   assert.ok(/\.el-select, \.ant-select, \.dictionary-selector/.test(src), '缩放目标要是外层组件');
 });
 
 test('v1.5.12: 弹层按 aria-controls 定位，多弹层只取最后打开的一组', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function dropdownForHost/.test(src), '要有按 aria 定位弹层的函数');
   assert.ok(/aria-controls/.test(src) && /aria-owns/.test(src), '两个属性都要认');
   assert.ok(/closest\('\.ant-select-dropdown'\)/.test(src), 'listbox 空壳要能上溯到弹层');
@@ -1992,7 +2005,7 @@ test('v1.5.12: 弹层按 aria-controls 定位，多弹层只取最后打开的�
 });
 
 test('v1.5.12: 组合学历标签不被 highestDegree 抢走', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function compoundEduKey/.test(src), '要有组合词判断');
   assert.ok(/最高学历\|最高学位/.test(src), '要认最高学历前缀');
   assert.ok(/return 'school'/.test(src) && /return 'major'/.test(src), '学校 / 专业要分开');
@@ -2000,7 +2013,7 @@ test('v1.5.12: 组合学历标签不被 highestDegree 抢走', () => {
 });
 
 test('v1.5.12: 可搜索下拉「先输入再选」+ 远程搜索等待', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function typeIntoSearch/.test(src), '要能往搜索框里输值');
   assert.ok(/sigAtType/.test(src), '要按选项指纹判断搜索是否生效');
   // v1.5.24：搜过的仍然等得最久；只读（不可搜索）下拉对不上就早放弃，不再一律空等 3 秒
@@ -2009,7 +2022,7 @@ test('v1.5.12: 可搜索下拉「先输入再选」+ 远程搜索等待', () => 
 });
 
 test('v1.5.12: 选之前核对、选之后复核，宁可不填', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function optionTextPlausible/.test(src), '要有选项合理性判断');
   // v1.6.0：按 checkValue 核对（「是」换算成「应届毕业生」这类两态选项时用换算后的词）
   assert.ok(/if \(!optionTextPlausible\(wantText, checkValue\)\)/.test(src), '点之前先核对');
@@ -2022,13 +2035,13 @@ test('v1.5.12: 选之前核对、选之后复核，宁可不填', () => {
 console.log('v1.5.13 快手：实习分区展开 / antd 日期框');
 
 test('v1.5.13: 「添加」按钮能认出 .edit-resume-form-item-title 这类标题', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/edit-resume-form-item-title/.test(src), '分区标题选择器');
   assert.ok(/\[class\*="form-item-title"\]/.test(src), '同类标题类名');
 });
 
 test('v1.5.13: 分区行数按 id 前缀统计（interShips_0_ / educations_0_）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function countIndexedRows/.test(src), '要有按 id 前缀计数');
   assert.ok(/interships/.test(src), '实习前缀');
   assert.ok(/educations\?/.test(src), '教育前缀');
@@ -2036,13 +2049,13 @@ test('v1.5.13: 分区行数按 id 前缀统计（interShips_0_ / educations_0_�
 });
 
 test('v1.5.13: 实习分区可从 workList 里挑实习条目展开', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/rule\.key === 'intern'/.test(src), '实习分区特判');
   assert.ok(/实习\|intern/.test(src), '按实习关键词筛 workList');
 });
 
 test('v1.5.13: antd 日期框走面板（React props 触发 + title 点日）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   // v1.5.24：React props 只有页面主环境读得到 → 在桥接里
   const bridge = fs.readFileSync(path.join(root, 'content/page-bridge.js'), 'utf8');
   assert.ok(/function reactPropsOf/.test(bridge), '要能拿到 React props');
@@ -2059,7 +2072,7 @@ test('v1.5.13: antd 日期框走面板（React props 触发 + title 点日）', 
 console.log('v1.5.14 antd 日期框走组件 onChange');
 
 test('v1.5.14: 从 fiber 找 Picker 的 onChange（不依赖点击）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   // v1.5.24：fiber 只有页面主环境读得到 → 实现在桥接里，autofill 只负责把日期交过去
   const src2 = fs.readFileSync(path.join(root, 'content/page-bridge.js'), 'utf8');
   assert.ok(/function fiberOfNode/.test(src2), '要能拿到 fiber');
@@ -2078,19 +2091,19 @@ test('v1.5.24: 页面主环境桥接已注册（world: MAIN），组件直改不
   assert.ok(entry, '桥接要进 content_scripts');
   assert.equal(entry.world, 'MAIN', '必须跑在页面主环境');
   assert.ok(entry.all_frames, 'iframe 里的表单也要能用');
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(!/__reactFiber\$|__vue__|_vnode|__vue_app__/.test(src), '隔离环境读不到这些属性，autofill.js 里不该再依赖它们');
 });
 
 test('v1.5.14: 先 onChange、失败再点日历（两条路都留着）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/fillAntdPickerByModel\(editor, startVal, endVal\)[\s\S]{0,400}fillAntdRangePicker/.test(src), '范围：先 model 后面板');
   assert.ok(/fillAntdPickerByModel\(el, value\)[\s\S]{0,300}fillReadonlyPickerAntd/.test(src), '单日期：先 model 后面板');
 });
 
 test('v1.5.14: 范围控件在实习分区可回落到 workList', () => {
   // v1.6.0：回落统一在 Match.listFor（范围控件 / 年月下拉对 / 逐字段取值共用），按行为断言
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/M\.listFor\(profile, map\.listKey\)/.test(src), '范围控件按 listFor 取段');
   const work = [{ company: '甲', title: '工程师' }, { company: '乙', title: '前端实习生' }];
   assert.deepEqual(Match.listFor({ workList: work }, 'internList').map((w) => w.company), ['乙'], '优先取写着实习的段');
@@ -2099,7 +2112,7 @@ test('v1.5.14: 范围控件在实习分区可回落到 workList', () => {
 });
 
 test('v1.5.15: 中华英才网 wecruit（antd v3）可控组件', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   // antd v3 的选项 / 已选值 / 日历面板类名都跟 v4 不一样
   assert.ok(src.includes('.ant-select-dropdown-menu-item'), 'v3 选项类名');
   assert.ok(src.includes('.ant-select-selection-selected-value'), 'v3 已选值类名');
@@ -2130,19 +2143,19 @@ test('v1.5.15: 中华英才网 wecruit（antd v3）可控组件', () => {
 console.log('v1.5.16 Moka（古茗）：sd-Select / 别名 / 同义词 / 年+月');
 
 test('v1.5.16: sd-Select 的 input 不再被当成搜索框过滤掉', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   const m = src.match(/var INNER_SELECT_SEARCH_SEL =([\s\S]*?);/);
   assert.ok(m, '要能找到选择器定义');
   assert.ok(!/sd-Select-container/.test(m[1]), 'sd-Select 不能在里面');
 });
 
 test('v1.5.16: 「必填项未填写」校验提示不算已选值', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/必填\|未填写\|不能为空/.test(src), 'customSelectLooksFilled 要忽略校验提示');
 });
 
 test('v1.5.16: 标签别名（所在地/工作经验/职责/语言/期望城市）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function aliasKeyForLabel/.test(src), '要有别名表');
   // v1.5.22: 别名必须落到真实 PROFILE_FIELDS（曾误写成 workYears/languageType 等幽灵键）
   ['currentCity', 'years', 'projectRole', 'langName', 'langLevel', 'expectedCity', 'acceptAdjustment'].forEach((k) => {
@@ -2154,7 +2167,7 @@ test('v1.5.16: 标签别名（所在地/工作经验/职责/语言/期望城市�
 });
 
 test('v1.5.16: 同义词（应届生 ↔ 应届毕业生）匹配与校验', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/function valueSynonymVariants/.test(src), '同义组展开');
   assert.ok(/应届生', '应届毕业生'/.test(src), '应届组');
   assert.ok(/function matchOptionByVariants/.test(src), '按同义组找选项');
@@ -2163,7 +2176,7 @@ test('v1.5.16: 同义词（应届生 ↔ 应届毕业生）匹配与校验', () 
 });
 
 test('v1.5.16: 年+月下拉对（fillYearMonthPairs）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/async function fillYearMonthPairs/.test(src), '要有年月对处理');
   assert.ok(/placeholder === '年' \|\| ph === '月'/.test(src) || /ph === '年' \|\| ph === '月'/.test(src), '按 placeholder 认年月下拉');
   assert.ok(/YM_SECTION_MAP/.test(src) && /教育背景/.test(src) && /实习经历/.test(src) && /项目经验/.test(src), '按分区取起止');
@@ -2172,7 +2185,7 @@ test('v1.5.16: 年+月下拉对（fillYearMonthPairs）', () => {
 });
 
 test('v1.5.16: 填写前等表单稳定（懒挂载）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(/async function waitForFormSettle/.test(src), '要等输入框数量稳定');
   assert.ok(/await waitForFormSettle\(/.test(src), '接进 fillFromProfile');
 });
@@ -2237,7 +2250,7 @@ test('v1.5.17 日期能力层：策略顺序固定（先精确后降级）', () 
 });
 
 test('v1.5.17 autofill 已接入能力层（不是各写一份）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(src.includes('ResumeAutofillDate'), '拿到能力层句柄');
   assert.ok(/function dateMatchLevel[\s\S]{0,200}D\.matchLevel/.test(src), 'dateMatchLevel 委托能力层');
   assert.ok(/function parseDateParts[\s\S]{0,160}D\.parseModel/.test(src), 'parseDateParts 委托能力层');
@@ -2332,7 +2345,7 @@ test('v1.5.19 填写审计：能区分「一致 / 近似 / 读不回 / 错填」
 });
 
 test('v1.5.19 诊断字段必须透传（否则悬浮窗永远看不到）', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   // handleFill 是白名单式重组，漏一个字段 = 该字段永远 undefined（degradedDates 就这么丢过）
   const handle = src.slice(src.indexOf('async function handleFill'), src.indexOf('async function handleFill') + 1200);
   ['degradedDates', 'dateTries', 'audit', 'auditRecords'].forEach((k) => {
@@ -2357,7 +2370,7 @@ test('v1.5.20 联动下拉：语种 → 语言等级', () => {
   assert.equal(Chain.pickBest([{ text: 'CET-4' }], 'N1'), null, '没有匹配项就不选');
   assert.equal(Chain.pickBest([{ text: '英语' }], '英语').text, '英语');
   // 页面侧已接入
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   assert.ok(src.includes('fillLinkedSelectChains'), 'fillFromProfile 里要调链条');
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
   const js = manifest.content_scripts[0].js;
@@ -2406,7 +2419,7 @@ test('v1.5.22: 所在地 → currentCity', () => {
 });
 
 test('v1.5.22: EXTRA_LABEL_KEYS 目标键都在 PROFILE_FIELDS', () => {
-  const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
+  const src = contentSrc();
   const block = src.match(/var EXTRA_LABEL_KEYS = \[[\s\S]*?\];/)[0];
   const keys = [...block.matchAll(/'([a-zA-Z]+)'/g)].map((m) => m[1]);
   const set = new Set(Profile.PROFILE_FIELDS);
@@ -2528,6 +2541,46 @@ test('v1.6.0: 新增多段列表逐段取值（第 2 段不回落到主条目）
   assert.equal(Match.profileValueForOccurrence({ studyMode: '全日制', eduList: edu }, 'studyMode', 1), '全日制', '各段都没写学习形式 → 沿用扁平值');
   assert.equal(Match.profileValueForOccurrence({ studyMode: '全日制', eduList: [{ school: '甲', studyMode: '非全日制' }, { school: '乙' }] }, 'studyMode', 1), '', '有段单独写了 → 不猜');
   assert.equal(Match.profileValueForOccurrence({ studyMode: '全日制', eduList: edu }, 'studyMode', 2), '', '不存在的段不填');
+});
+
+test('v1.6.0: 内容脚本模块化——加载顺序 / 依赖都有人导出 / 弹窗兜底注入按 manifest', () => {
+  const mf = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+  const js = mf.content_scripts[0].js;
+  const mods = js.filter((f) => /^content\/(fill|sites)\//.test(f));
+  assert.ok(mods.length >= 8, '拆出的模块都在 manifest 里');
+  const main = js.indexOf('content/autofill.js');
+  for (const f of mods) {
+    assert.ok(fs.existsSync(path.join(root, f)), f + ' 存在');
+    assert.ok(js.indexOf(f) < main, f + ' 先于编排层加载');
+    assert.ok(js.indexOf('shared/match.js') < js.indexOf(f), f + ' 晚于 match.js');
+    assert.ok(/if \(loaded\['[\w/-]+'\]\) return;/.test(fs.readFileSync(path.join(root, f), 'utf8')), f + ' 重复注入时跳过');
+  }
+  // 每个 C.xxx 依赖都要有模块导出；「已加载」依赖必须由更早的文件导出（否则拿到 undefined）
+  const exportedAt = {};
+  js.forEach((f, i) => {
+    if (!f.startsWith('content/')) return;
+    const src = fs.readFileSync(path.join(root, f), 'utf8');
+    for (const m of src.matchAll(/^  C\.(\w+) = \1;$/gm)) {
+      assert.ok(!(m[1] in exportedAt), m[1] + ' 只能由一个模块导出');
+      exportedAt[m[1]] = i;
+    }
+  });
+  js.forEach((f, i) => {
+    if (!f.startsWith('content/')) return;
+    const src = fs.readFileSync(path.join(root, f), 'utf8');
+    for (const m of src.matchAll(/^  var (\w+) = C\.(\w+);$/gm)) {
+      assert.equal(m[1], m[2]);
+      assert.ok(m[2] in exportedAt, f + ' 依赖的 ' + m[2] + ' 没有模块导出');
+      assert.ok(exportedAt[m[2]] < i, f + ' 依赖的 ' + m[2] + ' 在它之后才加载，应改成转发函数');
+    }
+    for (const m of src.matchAll(/^  function (\w+)\(\) \{ return C\.(\w+)\.apply\(this, arguments\); \}$/gm)) {
+      assert.ok(m[2] in exportedAt, f + ' 转发的 ' + m[2] + ' 没有模块导出');
+    }
+  });
+  const popup = fs.readFileSync(path.join(root, 'popup/popup.js'), 'utf8');
+  assert.ok(/getManifest\(\)\.content_scripts/.test(popup), '兜底注入的文件清单取自 manifest');
+  assert.ok(/world = 'MAIN'/.test(popup), '页面主环境桥接按 world: MAIN 注入');
+  assert.ok(/__resumeAutofillContentReady/.test(fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8')), '重复注入不重复挂监听');
 });
 
 console.log('');

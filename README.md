@@ -4,7 +4,7 @@
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.5.24**
+当前版本：**1.6.0**
 
 ## 功能概览
 
@@ -178,9 +178,9 @@ DOM 基线依赖可选的 `playwright`（见 `package.json` `devDependencies`）
 
 | 套件 | 断言什么 | 能不能证明「填得对」 |
 |---|---|---|
-| `tests/run-tests.mjs`（≈190+ 项） | 关键词/模糊评分、denylist、`profileValue`、select 匹配、AI merge 纯函数、manifest 结构 | **不能**，只做 smoke：防手滑删类名/常量 |
+| `tests/run-tests.mjs`（≈210 项） | 关键词/模糊评分、denylist、`profileValue`、select 匹配、AI merge 纯函数、manifest 结构 | **不能**，只做 smoke：防手滑删类名/常量 |
 | `tests/run-dom-tests.mjs`（29 项 + `fixtures/dom/*.html`） | 真实 Chromium 里「怎么打开 / 怎么写进去 / 回读是什么 / 有什么坑」（仿制控件，脚本注入页面主环境） | 能，但只覆盖仿制控件 |
-| `tests/real/run-real.mjs`（9 项 + `tests/real/pages/*.html`） | **真组件库**（antd 3/4/5、Element UI/Plus、ant-design-vue、layui）+ **加载解压扩展本体**、走 `FILL_FORM` 消息，断言组件自己的状态与耗时 | 能，最接近用户实际：内容脚本在隔离环境、组件提交经 `page-bridge.js` |
+| `tests/real/run-real.mjs`（12 项 + `tests/real/pages/*.html`） | **真组件库**（antd 3/4/5、Element UI/Plus、ant-design-vue、layui、北森 `@beisen-phoenix`）+ Moka 复刻页 + **加载解压扩展本体**、走 `FILL_FORM` 消息，断言组件自己的状态与耗时 | 能，最接近用户实际：内容脚本在隔离环境、组件提交经 `page-bridge.js` |
 | `tests/resume-parser.test.mjs`（20 项） | 简历文本 → 结构化 profile | 能（解析域） |
 
 ### 为什么要有 DOM 基线
@@ -207,20 +207,38 @@ DOM 基线依赖可选的 `playwright`（见 `package.json` `devDependencies`）
 
 ```text
 resume-autofill-tool/
-├── manifest.json                 # MV3，version 1.5.0
+├── manifest.json                 # MV3（内容脚本加载顺序以这里为准）
 ├── lib/                          # 打包的第三方库（离线，无 CDN）
 │   ├── pdf.min.js / pdf.worker.min.js
 │   └── mammoth.browser.min.js
 ├── shared/
 │   ├── profile.js                # 字段列表 / 示例 / normalize / 多段经历
-│   ├── match.js                  # 关键词、模糊评分、denylist
+│   ├── match.js                  # 关键词、模糊评分、denylist、逐段取值、省/市/区拆分
+│   ├── date-capability.js        # 日期能力层：统一模型 / 精度判级 / 控件探测
+│   ├── date-strategies.js        # 日期策略层：固定顺序试 + 每步回读
+│   ├── audit.js                  # 填写审计（回读核对、错填 / 未写入）
+│   ├── select-chain.js           # 联动下拉（省 → 市 → 区）
 │   ├── ai.js                     # AI 设置 + mergeAiMappingWithProfile
 │   ├── db.js                     # IndexedDB 多档案库
 │   └── resume-parser.js          # PDF/DOCX/TXT → 文本 → profile
 ├── background/
 │   └── service-worker.js         # AI_MAP_FIELDS / GET_AI_STATUS
 ├── content/
-│   └── autofill.js               # FILL / SCAN / COLLECT / APPLY
+│   ├── autofill.js               # 编排层：扫描 / 主填写循环 / 未填字段 / 多 frame / 消息入口
+│   ├── fill/                     # 通用填写层（按职责拆分，见 autofill.js 文件头）
+│   │   ├── recognize.js          #   字段识别：标签 / 提示词 / 区块上下文
+│   │   ├── write.js              #   写入与回读、页面主环境桥接调用、审计记录、本轮状态
+│   │   ├── sections.js           #   分区与多段、「添加 XX 经历」
+│   │   ├── select.js             #   下拉 / 弹层选择器 / 联动下拉
+│   │   ├── dates.js              #   日期控件
+│   │   ├── ranges.js             #   起止时间（范围控件、年 + 月下拉对、单输入框范围）
+│   │   └── radios.js             #   单选组
+│   ├── sites/                    # 站点 / 组件库专用适配
+│   │   ├── phoenix.js            #   北森 Phoenix
+│   │   ├── antd-date.js          #   Ant Design 日期面板 / 范围选择器
+│   │   └── laydate.js            #   layui laydate
+│   ├── page-bridge.js            # 页面主环境（world: MAIN）：React fiber / Vue 实例提交
+│   └── panel.js                  # 页面悬浮窗
 ├── popup/
 ├── options/
 ├── icons/
@@ -230,7 +248,10 @@ resume-autofill-tool/
 │   ├── beisen-phoenix.md         # 北森 Phoenix 组件结构 + 适配说明
 │   └── live-field-coverage.md
 ├── tests/
-│   ├── run-tests.mjs             # 匹配/填充/资源完整性
+│   ├── run-tests.mjs             # 匹配/填充/资源完整性/模块接线
+│   ├── run-dom-tests.mjs         # 仿制控件 DOM 基线（按 manifest 装整套内容脚本）
+│   ├── match-benchmark.mjs       # 网申字段匹配基准（12 个平台 / 分组）
+│   ├── real/                     # 真组件 × 真扩展（antd / Element / layui / 北森 Phoenix / Moka 复刻）
 │   ├── resume-parser.test.mjs    # 解析器 + 多档案 schema
 │   └── fixtures/                 # resume-zh.{txt,docx,pdf}
 ├── README.md
@@ -321,6 +342,54 @@ Date.STRATEGY_ORDER            // native-input → native-selects → fiber-prop
 （`#__ra_panel_host__.dataset.lastResult`），降级不再静默。
 
 ## Changelog
+
+### 1.6.0
+
+三件事：北森 / Moka 网申按「真组件 × 真扩展」实测并修复；简历字段细分；内容脚本按职责拆分。
+
+- **北森 Phoenix（真组件）**：`tests/real/` 用 npm 上发布的 `@beisen-phoenix/*@3.3.55`（select / select-list /
+  unmodeled-layer / date-picker / radio / input，esbuild 打包）按线上结构搭了网申页（个人信息 + 2 段教育 + 1 段工作）。
+  - 日期框以前一个都填不上：zh_CN 下输入格式是 `YYYY/MM/DD`，`YYYY-MM-DD` 会被判 `-invalid`。现在依次试
+    `YYYY/MM/DD`、`YYYY-MM-DD`、`YYYY/M/D`、`YYYY.MM.DD`、`YYYY年M月D日` 等，跳过被判无效的格式，回车后等宿主回显再算填上。
+  - 年月面板的月格是「七月」，以前按「7月」找不到；现在认 7月 / 七月 / Jul，也可按 12 格的位置点。
+  - 「紧急联系人 + 紧急联系电话」并排时，「紧急联系人」只填姓名（以前会填成「李四 13900139000」，属于错填）。
+  - div 单选的选中态多认一种类名（`.phoenix-radio__circle--checked`）。
+- **Moka（复刻页）**：Moka 的 sd-* 组件没有公开发布，按已记录的线上结构用 React 18 复刻：选中值渲染在 span 里、
+  输入框一直为空；选项 portal 到 body；年 / 月下拉对的月份是 `01`~`12`；+86 区号下拉；实习经历 600ms 后才挂载；
+  推荐码必须留空。
+  - 选项匹配新增「数值相等」一档：`5` = `05` = `5月`，`2021` = `2021年`（v1.5.24 的月份下拉全部漏填、还耗时 44s）。
+  - 「是否应届毕业生」：档案里是「是」，选项是「应届毕业生 / 往届毕业生」，现在能对上（是/否 ⇄ 两态词映射）。
+  - 出生年月的「月」下拉以前把旁边「年」下拉里已选的 `1998` 当成标签读，现在跳过含输入控件的兄弟节点。
+- **实测**（真实扩展：Playwright 加载解压扩展，走 `FILL_FORM`，断言组件自己的状态）：
+
+  | 页面 | v1.5.22 | v1.5.24 | v1.6.0 |
+  |---|---|---|---|
+  | 北森 Phoenix（27 项） | 7 个日期全空，紧急联系人错填 | 同左 | 6s，27 项全对 |
+  | Moka 复刻（30 项，推荐码须留空） | 漏「出生月份」「是否应届」 | 漏 8 项（所有月份），耗时 44s | 9.9s，全对 |
+  | 其余 10 个真组件用例 | — | 全过 | 全过，耗时不变 |
+
+- **字段细分**：
+  - 新增 `pinyinLastName` / `pinyinFirstName`（拼音姓 / 名），`phoneCountryCode`（手机区号），以及 `currentProvince` /
+    `currentDistrict`、`nativeProvince` / `nativeCity`、`hukouProvince` / `hukouCity` 这几对省 / 市 / 区分栏字段。
+    分栏字段没填时从整串拆（「浙江省杭州市西湖区」、「上海市浦东新区」、「广东深圳」），认不出省份就留空，不猜。
+  - 新增 `jobTarget2`（第二志愿）、`expectedCity2`、`awardRank`（获奖名次）。「户口所在城市」改为对应 `hukouCity`。
+  - 多段记录从 3 类扩到 9 类：新增 `internList`、`campusList`、`awardList`、`certList`、`langList`、`familyList`。
+    选项页每类都有「多段」编辑器，教育 / 工作每段的字段也补全了（如学位、学习形式、导师、研究方向、薪资、证明人）。
+    网申页上第 2、3 段按顺序取对应那一段的值，不会再拿第 1 段的值。
+  - 只有扁平「学习形式」、各段都没单独写时，第 2 段沿用扁平值，和 1.5.x 一致；只要有一段单独写了，其余段留空不猜。
+  - 匹配基准新增「字段细分」组，共 265 条，命中 100%，错配 0。
+- **结构**：
+  - 5200 行的 `content/autofill.js` 按职责拆成 `content/fill/*`（识别 / 写入回读 / 分区多段 / 下拉 / 日期 /
+    起止时间 / 单选）、`content/sites/*`（北森 Phoenix / antd 日期 / laydate）和编排层 `autofill.js`。模块之间经
+    `globalThis.ResumeAutofillContent` 共享，加载顺序以 manifest 为准，前置依赖在加载时取，后置依赖在调用时才取。
+  - 跨模块的本轮状态（审计记录、已处理块等）改成固定引用，清空用 `.length = 0`，不再重新赋值。
+    单测检查每个依赖都有模块导出、且加载顺序正确。
+  - 删掉日期层里早已没人调用的 11 个委托函数（实现都在 `shared/date-strategies.js`）。
+  - **修复**：弹窗在页面还没有内容脚本时会兜底注入，以前只注入 `match.js + autofill.js`，缺日期层、审计、联动下拉
+    和页面主环境桥接。这种情况出现在扩展安装或更新之前就已打开的标签页，React / Vue 控件因此写不进去。现在按
+    manifest 注入整套脚本（桥接按 `world: MAIN`），重复注入也不会重复挂消息监听。
+  - DOM 基线改为按 manifest 顺序装整套内容脚本，和真实扩展一致。
+- **测试**：单测 203 → 208（另有 DOM 基线 29、解析 20），真组件用例 9 → 12（北森、Moka、重复注入）。
 
 ### 1.5.24
 

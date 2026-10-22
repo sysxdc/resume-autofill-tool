@@ -108,6 +108,8 @@ const CASES = [
   { page: 'antd3', profile: SMALL, expect: ANTD, maxMs: 8000 },
   { page: 'antd4', profile: SMALL, expect: ANTD, maxMs: 8000 },
   { page: 'antd5', profile: SMALL, expect: ANTD, maxMs: 8000 },
+  // 弹窗兜底注入（popup ensureContentScript）在已有内容脚本的页面上再跑一遍：仍只应答一次、照常填写
+  { page: 'antd5', name: 'antd5+reinject', reinject: true, profile: SMALL, expect: ANTD, maxMs: 8000 },
   { page: 'antdv', profile: SMALL, expect: Object.assign({}, ANTD, { eduRange: ['2019-09', '2023-06'] }), maxMs: 8000 },
   {
     page: 'element-ui', profile: SMALL, maxMs: 8000,
@@ -162,6 +164,16 @@ for (const c of CASES) {
     await page.goto(`http://127.0.0.1:${port}/pages/${c.page}.html`);
     await page.waitForFunction(() => typeof window.__state === 'function', null, { timeout: 10000 });
     await page.waitForTimeout(600);
+    if (c.reinject) {
+      await sw.evaluate(async (u) => {
+        const tab = (await chrome.tabs.query({})).find((t) => t.url && t.url.indexOf(u) !== -1);
+        for (const cs of chrome.runtime.getManifest().content_scripts || []) {
+          const opts = { target: { tabId: tab.id, allFrames: !!cs.all_frames }, files: cs.js };
+          if (cs.world === 'MAIN') opts.world = 'MAIN';
+          await chrome.scripting.executeScript(opts);
+        }
+      }, `/pages/${c.page}.html`);
+    }
     const t0 = Date.now();
     const r = await sw.evaluate(async (u) => {
       const tabs = await chrome.tabs.query({});
@@ -183,10 +195,10 @@ for (const c of CASES) {
     if (errs.length) bad.push('页面报错：' + errs.join('; '));
     if (bad.length) throw new Error(bad.join('\n     '));
     passed += 1;
-    console.log(`  ✓ ${c.page}  ${ms}ms  filled=${r.filled}`);
+    console.log(`  ✓ ${c.name || c.page}  ${ms}ms  filled=${r.filled}`);
   } catch (e) {
-    failed.push(c.page);
-    console.log(`  ✗ ${c.page}\n     ${e.message}`);
+    failed.push(c.name || c.page);
+    console.log(`  ✗ ${c.name || c.page}\n     ${e.message}`);
   } finally {
     await page.close();
   }
