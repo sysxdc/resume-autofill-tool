@@ -35,6 +35,10 @@ if (!fs.existsSync(path.join(HERE, 'node_modules', 'antd5'))) {
   console.log('（跳过：没装组件库。先执行 cd tests/real && npm install）');
   process.exit(0);
 }
+// 北森 Phoenix 是 ESM 包，先打成浏览器包（只在缺失时）
+if (!fs.existsSync(path.join(HERE, 'vendor', 'phoenix.bundle.js'))) {
+  execSync(process.execPath + ' ' + JSON.stringify(path.join(HERE, 'phoenix', 'build.mjs')), { stdio: 'inherit' });
+}
 
 const SMALL = {
   name: '张三', eduDegree: '硕士', highestDegree: '硕士', birthday: '1998-05-20',
@@ -71,7 +75,36 @@ const BIG_EXPECT = {
   eth: undefined, src: undefined, father: undefined
 };
 
+const BEISEN_PROFILE = {
+  name: '张三', gender: '男', birthday: '1998-05-20', phone: '13800138000', email: 'zs@example.com',
+  politicalStatus: '中共党员', highestDegree: '硕士', isFreshGraduate: '是', expectedStartDate: '2025-07',
+  emergencyContactName: '李四', emergencyContactPhone: '13900139000', studyMode: '全日制',
+  eduList: BIG.eduList, workList: [{ company: '甲科技', title: '前端工程师', start: '2024-07', end: '2025-08' }]
+};
+const BEISEN_EXPECT = {
+  name: '张三', gender: '男', birth: '1998-05-20', phone: '13800138000', email: 'zs@example.com', pol: '中共党员', hd: '硕士',
+  fresh: '是', report: '2025-07', emName: '李四', emPhone: '13900139000',
+  school0: '某理工大学', major0: '计算机科学与技术', deg0: '硕士', mode0: '全日制', es0: '2021-09', ee0: '2024-06',
+  school1: '某大学', major1: '软件工程', deg1: '本科', mode1: '全日制', es1: '2017-09', ee1: '2021-06',
+  co: '甲科技', ti: '前端工程师', ws: '2024-07', we: '2025-08'
+};
+
+const MOKA_PROFILE = {
+  name: '张三', phone: '13800138000', email: 'zs@example.com', gender: '男', birthday: '1998-05-20', highestDegree: '硕士',
+  isFreshGraduate: '是', currentCity: '深圳', eduList: BIG.eduList,
+  workList: [{ company: '甲科技', title: '前端实习生', start: '2024-07', end: '2025-08' }]
+};
+const MOKA_EXPECT = {
+  name: '张三', phone: '13800138000', email: 'zs@example.com', gender: '男', birthy: '1998', birthm: '05', hd: '硕士',
+  fresh: '应届毕业生', city: '深圳', ref: undefined,
+  school0: '某理工大学', major0: '计算机科学与技术', deg0: '硕士', edu0sy: '2021', edu0sm: '09', edu0ey: '2024', edu0em: '06',
+  school1: '某大学', major1: '软件工程', deg1: '本科', edu1sy: '2017', edu1sm: '09', edu1ey: '2021', edu1em: '06',
+  co: '甲科技', ti: '前端实习生', worksy: '2024', worksm: '07', workey: '2025', workem: '08'
+};
+
 const CASES = [
+  { page: 'moka', profile: MOKA_PROFILE, expect: MOKA_EXPECT, maxMs: 30000 },
+  { page: 'beisen', profile: BEISEN_PROFILE, expect: BEISEN_EXPECT, maxMs: 30000 },
   { page: 'antd3', profile: SMALL, expect: ANTD, maxMs: 8000 },
   { page: 'antd4', profile: SMALL, expect: ANTD, maxMs: 8000 },
   { page: 'antd5', profile: SMALL, expect: ANTD, maxMs: 8000 },
@@ -116,7 +149,16 @@ for (const c of CASES) {
   const errs = [];
   page.on('pageerror', (e) => errs.push(e.message.slice(0, 160)));
   try {
-    await sw.evaluate((p) => chrome.storage.local.set({ profile: p }), c.profile);
+    // 写完回读确认（service worker 偶尔在写入完成前被换掉）
+    for (let k = 0; k < 5; k++) {
+      const ok = await sw.evaluate(async (p) => {
+        await chrome.storage.local.set({ profile: p });
+        const got = await chrome.storage.local.get('profile');
+        return !!(got.profile && got.profile.name === p.name);
+      }, c.profile);
+      if (ok) break;
+      await new Promise((r) => setTimeout(r, 300));
+    }
     await page.goto(`http://127.0.0.1:${port}/pages/${c.page}.html`);
     await page.waitForFunction(() => typeof window.__state === 'function', null, { timeout: 10000 });
     await page.waitForTimeout(600);

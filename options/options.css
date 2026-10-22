@@ -585,6 +585,13 @@ select {
 
 /* ───────────────────────── 多段列表编辑 ───────────────────────── */
 
+.list-sub {
+  margin: 18px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2, inherit);
+}
+
 .list-editor {
   display: flex;
   flex-direction: column;

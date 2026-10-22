@@ -396,7 +396,7 @@
       startdate: { field: 'start', key: 'eduStart' },
       enddate: { field: 'end', key: 'eduEnd' },
       scorerank: { field: 'rank', key: 'majorRank' },
-      mentor: { field: 'mentor', key: 'advisorName' },
+      mentor: { field: 'advisor', key: 'advisorName' },
       laboratory: { field: 'laboratory', key: 'labName' },
       researchdirection: { field: 'research', key: 'researchDirection' },
       gpa: { field: 'gpa', key: 'gpa' },
@@ -424,8 +424,18 @@
     paper: {
       name: { field: 'name', key: 'awardName' },
       rank: { field: 'rank', key: 'awardRank' },
-      time: { field: 'time', key: 'awardDate' },
-      remark: { field: 'desc', key: 'awardDescription' }
+      time: { field: 'date', key: 'awardDate' },
+      remark: { field: 'description', key: 'awardDescription' }
+    },
+    intern: {
+      companyname: { field: 'company', key: 'internCompany' },
+      department: { field: 'department', key: 'internDepartment' },
+      position: { field: 'title', key: 'internTitle' },
+      positionname: { field: 'title', key: 'internTitle' },
+      startdate: { field: 'start', key: 'internStart' },
+      enddate: { field: 'end', key: 'internEnd' },
+      city: { field: 'city', key: 'internCity' },
+      description: { field: 'description', key: 'internDescription' }
     },
     project: {
       name: { field: 'name', key: 'projectName' },
@@ -437,7 +447,7 @@
     }
   };
 
-  var STRUCT_LIST_KEY = { education: 'eduList', work: 'workList', project: 'projectList', paper: 'awardList' };
+  var STRUCT_LIST_KEY = { education: 'eduList', work: 'workList', project: 'projectList', paper: 'awardList', intern: 'internList' };
 
   /**
    * 从 id 里解析「第几段 + 哪个字段」。同一 id 的两个日期框（如 …_startDate）
@@ -467,7 +477,7 @@
   /** 第 N 段的值；第 0 段且条目为空时回落到扁平字段 */
   function structuredValue(profile, struct) {
     if (!struct) return '';
-    var list = profile && Array.isArray(profile[struct.listKey]) ? profile[struct.listKey] : [];
+    var list = M.listFor ? M.listFor(profile, struct.listKey) : (profile && Array.isArray(profile[struct.listKey]) ? profile[struct.listKey] : []);
     var item = list[struct.index] || null;
     if (item) {
       var v = item[struct.field];
@@ -676,8 +686,8 @@
   }
 
   function desiredRowsFor(profile, rule) {
-    var list = profile && Array.isArray(profile[rule.listKey]) ? profile[rule.listKey] : [];
-    if (list.length) return list.length;
+    var own = profile && Array.isArray(profile[rule.listKey]) ? profile[rule.listKey] : [];
+    if (own.length) return own.length;
     // 没有多段数据时，若扁平字段有值就展开 1 条
     if (rule.key === 'intern' && Array.isArray(profile && profile.workList)) {
       var internLike = profile.workList.filter(function (w) {
@@ -857,10 +867,10 @@
   // 一个字段块里可能有 4 个（起止）或 2 个（单个月）。
   var YM_SECTION_MAP = [
     { re: /教育背景/, listKey: 'eduList', startKey: 'eduStart', endKey: 'eduEnd' },
-    { re: /实习经历/, listKey: 'workList', startKey: 'startDate', endKey: 'workEnd' },
+    { re: /实习经历/, listKey: 'internList', startKey: 'internStart', endKey: 'internEnd' },
     { re: /工作经历/, listKey: 'workList', startKey: 'startDate', endKey: 'workEnd' },
     { re: /项目经验|项目经历/, listKey: 'projectList', startKey: 'projectStart', endKey: 'projectEnd' },
-    { re: /获奖经历/, listKey: 'awardList', startKey: 'awardDate', endKey: '' }
+    { re: /获奖经历/, listKey: 'awardList', startKey: 'awardDate', endKey: '', startField: 'date' }
   ];
 
   function ymSectionOf(blockEl) {
@@ -899,10 +909,11 @@
             return ph === '年' || ph === '月';
           });
           if (yms.length < 2) continue;
-          var list = profile && Array.isArray(profile[sec.listKey]) ? profile[sec.listKey] : [];
+          var list = M.listFor(profile, sec.listKey);
           var item = list[gi] || null;
-          var start = item && item.start ? String(item.start) : (M.profileValue(profile, sec.startKey) || '');
-          var end = sec.endKey ? (item && item.end ? String(item.end) : (M.profileValue(profile, sec.endKey) || '')) : '';
+          var sf = sec.startField || 'start';
+          var start = item && item[sf] ? String(item[sf]) : (gi === 0 ? (M.profileValue(profile, sec.startKey) || '') : '');
+          var end = sec.endKey ? (item && item.end ? String(item.end) : (gi === 0 ? (M.profileValue(profile, sec.endKey) || '') : '')) : '';
           if (!start) continue;
           var sp = parseDateParts(start);
           var ep = end && end !== '至今' ? parseDateParts(end) : null;
@@ -1055,10 +1066,7 @@
   /** 第 index 段的开始 / 结束（实习分区回落到 workList；列表空时用扁平主条目） */
   function rangeValuesFor(profile, ctxKey, index) {
     var map = RANGE_SECTION_MAP[ctxKey];
-    var list = profile && Array.isArray(profile[map.listKey]) ? profile[map.listKey] : [];
-    if (!list.length && (ctxKey === 'intern' || ctxKey === 'work') && Array.isArray(profile && profile.workList)) {
-      list = profile.workList;
-    }
+    var list = M.listFor(profile, map.listKey);
     var item = list[index] || null;
     var start = item && item.start ? String(item.start).trim() : '';
     var end = item && item.end ? String(item.end).trim() : '';
@@ -1133,16 +1141,13 @@
       rangeSeen[ctx.rule.key] = seenN + 1;
       if (!ctx.explicit) ctx.index = seenN;
       var map = RANGE_SECTION_MAP[ctx.rule.key];
-      var list = profile && Array.isArray(profile[map.listKey]) ? profile[map.listKey] : [];
-      // 实习分区常常只有 workList（实习写在 workList 里），不要因为 internList 为空就跳过
-      if (!list.length && (ctx.rule.key === 'intern' || ctx.rule.key === 'work') && Array.isArray(profile && profile.workList)) {
-        list = profile.workList;
-      }
+      // 实习分区常常只有 workList（实习写在 workList 里）：listFor 会回落到 workList
+      var list = M.listFor(profile, map.listKey);
       var item = list[ctx.index] || null;
       var start = item && item.start ? String(item.start).trim() : '';
       var end = item && item.end ? String(item.end).trim() : '';
-      if (!start) start = M.profileValue(profile, map.startKey) || '';
-      if (!end) end = M.profileValue(profile, map.endKey) || '';
+      if (!start && ctx.index === 0) start = M.profileValue(profile, map.startKey) || '';
+      if (!end && ctx.index === 0) end = M.profileValue(profile, map.endKey) || '';
       if (!start || !end) continue;
       if (!(await fillRangeEditor(ed, start, end))) continue;
       filled += 1;
@@ -2401,6 +2406,8 @@
     var langName = M.profileValue(profile, 'langName') || '';
     var langLevel = M.profileValue(profile, 'langLevel') || M.profileValue(profile, 'englishLevel') || '';
     if (!langName || !langLevel) return 0;
+    // v1.6.0：多段外语（langList）：第 i 组「语种 → 等级」取第 i 条
+    var rowLang = function (i, k, dflt) { return i === 0 ? dflt : (M.profileValueForOccurrence(profile, k, i) || ''); };
 
     // 收集带 label 的下拉宿主，按 label 归到「语种」/「语言等级」两桶
     var hosts = iterCustomSelectHosts();
@@ -2424,9 +2431,12 @@
       if (runDone && runDone.chain.has(levels[i].host)) continue;
       var res = null;
       try {
+        var ln = rowLang(i, 'langName', langName);
+        var lv = rowLang(i, 'langLevel', langLevel);
+        if (!ln || !lv) continue;
         res = await C.fillChain([
-          { host: langs[i].host, value: langName, label: langs[i].label },
-          { host: levels[i].host, value: langLevel, label: levels[i].label }
+          { host: langs[i].host, value: ln, label: langs[i].label },
+          { host: levels[i].host, value: lv, label: levels[i].label }
         ]);
       } catch (_) { res = null; }
       if (res && res.ok) {
@@ -2435,8 +2445,8 @@
         ['langName', 'langLevel'].forEach(function (k) {
           if (filledKeys.indexOf(k) === -1) filledKeys.push(k);
         });
-        recordFill(langs[i].host, 'langName', langName);
-        recordFill(levels[i].host, 'langLevel', langLevel);
+        recordFill(langs[i].host, 'langName', ln);
+        recordFill(levels[i].host, 'langLevel', lv);
         fillRecords[fillRecords.length - 1].noCount = true;
         highlight(levels[i].host);
       }
@@ -2467,6 +2477,7 @@
       // 一张表有几个对不上的下拉就会拖到整体超时
       var searchable = !!searchInputOf(host);
       var noMatchPolls = 0;
+      var checkValue = value;
 
       function candidates() {
         return hostDropdownOptions(host) || collectOpenDropdownOptions();
@@ -2492,6 +2503,14 @@
           var matched = M.findBestOption
             ? M.findBestOption(opts, value)
             : (M.matchSelectOption && M.matchSelectOption(opts, value));
+          // 「是 / 否」遇到「应届毕业生 / 往届毕业生」这类两态选项：先换成对应的词
+          if (!matched && CHOICE_VALUE_MAP[key]) {
+            var cv = phoenixChoiceValue(key, value, opts.map(function (o) { return String(o.text || ''); }));
+            if (cv && cv !== value) {
+              matched = M.findBestOption(opts, cv);
+              if (matched) checkValue = cv;   // 选完核对时按换算后的词比（「应届毕业生」≠「是」）
+            }
+          }
           // 籍贯这类「省 / 市」两级下拉拿到的是整串，按行政区后缀切出能对上的那一段
           if (!matched) {
             var syns = valueSynonymVariants(value);
@@ -2580,14 +2599,14 @@
         if (!hit) hit = want;
         var wantText = String(want.text || want.value || '');
         // 点之前先核对一遍：拿不准的宁可不点，别把「斯威本科技大学」这种填进学校
-        if (!optionTextPlausible(wantText, value)) { closeOpenDropdowns(); resolve(false); return; }
+        if (!optionTextPlausible(wantText, checkValue)) { closeOpenDropdowns(); resolve(false); return; }
         simulateClick(hit.el);
         setTimeout(function () {
           // 这里千万别 closeOpenDropdowns()：rc-select 的 Esc 会把旧值还原，
           // 刚选好的学校就被撤回去了（快手实测）
           var shown = customSelectText(host);
           // 只跟「要填的值」比：跟匹配到的选项比等于自证，斯威本科技大学就是这么混过去的
-          if (optionTextPlausible(shown, value)) { resolve(true); return; }
+          if (optionTextPlausible(shown, checkValue)) { resolve(true); return; }
           // 选歪了：撤掉，按失败处理（宁可空着，也别留个错的）
           clearCustomSelect(host);
           resolve(false);
@@ -2862,8 +2881,9 @@
     var cells = panel.querySelectorAll('.phoenix-calendar-month-panel-month');
     var target = null;
     for (var i = 0; i < cells.length; i++) {
-      var t = String(cells[i].textContent || '').replace(/\s+/g, '').trim();
-      if (t === wantMonth + '月') { target = cells[i]; break; }
+      // 「7月」「七月」「Jul」都有（随北森版本 / 语言包变）；12 格且读不出时按位置
+      var n = monthNumberOfText(cells[i].textContent);
+      if (n === wantMonth || (!n && cells.length === 12 && i + 1 === wantMonth)) { target = cells[i]; break; }
     }
     if (!target) { closePhoenixPanels(); return false; }
     simulateClick(target);
@@ -2881,12 +2901,22 @@
       return fillPhoenixMonth(host, value, panel);
     }
     var input = panel.querySelector('.phoenix-calendar-input');
-    var mm = ('0' + parts.m).slice(-2);
-    var dd = ('0' + (parts.d || '1')).slice(-2);
-    setInputRaw(input, parts.y + '-' + mm + '-' + dd);
-    await sleep(200);
-    pressEnter(input);
-    if (await waitUntil(function () { return phoenixHostFilled(host); }, 1200, 150)) return true;
+    if (!input) { closePhoenixPanels(); return false; }
+    // v1.6.0：日历输入框按语言包格式严格解析（zh_CN 是 YYYY/MM/DD，en_US 是 M/D/YYYY），格式不对
+    // 输入框会挂上 *-input-invalid、Enter 无效。依次试常见格式，以「没被判无效」为准再回车
+    var y = parts.y;
+    var m = parseInt(parts.m, 10);
+    var d = parseInt(parts.d || '1', 10);
+    var p2 = function (n) { return (n < 10 ? '0' : '') + n; };
+    var tries = [y + '/' + p2(m) + '/' + p2(d), y + '-' + p2(m) + '-' + p2(d), y + '/' + m + '/' + d, y + '-' + m + '-' + d,
+      y + '.' + p2(m) + '.' + p2(d), y + '年' + m + '月' + d + '日', m + '/' + d + '/' + y];
+    for (var ti = 0; ti < tries.length; ti++) {
+      setInputRaw(input, tries[ti]);
+      await sleep(80);
+      if (/-invalid\b/.test(String(input.className || ''))) continue;
+      pressEnter(input);
+      if (await waitUntil(function () { return phoenixHostFilled(host); }, 900, 100)) return true;
+    }
     closePhoenixPanels();
     return false;
   }
@@ -2919,6 +2949,20 @@
     }
   }
 
+  var CN_MONTH_NUM = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10, 十一: 11, 十二: 12 };
+  var EN_MONTH_NUM = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+
+  /** 月份格子的文字 → 1~12：「7月」「07」「七月」「Jul」「July」；读不出返回 0 */
+  function monthNumberOfText(text) {
+    var t = String(text || '').replace(/\s+/g, '').trim();
+    var m = t.match(/^(\d{1,2})月?$/);
+    if (m) { var n = parseInt(m[1], 10); return n >= 1 && n <= 12 ? n : 0; }
+    m = t.match(/^(十一|十二|十|[一二三四五六七八九])月$/);
+    if (m) return CN_MONTH_NUM[m[1]];
+    m = t.toLowerCase().match(/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)/);
+    return m ? EN_MONTH_NUM[m[1]] : 0;
+  }
+
   /** 应届/往届这类「是/否 ⇄ 两态词」的值映射 */
   var CHOICE_VALUE_MAP = {
     isFreshGraduate: { yes: '应届', no: '往届' }
@@ -2935,6 +2979,8 @@
   }
 
   /** 北森 Phoenix radio：纯 div 组，选中态是 .phoenix-radio--checked */
+  var PHOENIX_RADIO_CHECKED_SEL = '.phoenix-radio--checked, .phoenix-radio__circle--checked';
+
   async function fillPhoenixRadioGroups(profile, keyCounts, filledKeys) {
     var filled = 0;
     var groups = Array.from(document.querySelectorAll('.phoenix-radio-group')).filter(function (g) {
@@ -2949,7 +2995,8 @@
 
   async function fillOnePhoenixRadioGroup(group, profile, keyCounts, filledKeys) {
     {
-      if (group.querySelector('.phoenix-radio--checked')) return false;
+      // 选中态两个版本的写法都认：线上 .phoenix-radio--checked，npm 3.x .phoenix-radio__circle--checked
+      if (group.querySelector(PHOENIX_RADIO_CHECKED_SEL)) return false;
       var item = group.closest ? group.closest('.form-item') : null;
       var labelEl = item ? item.querySelector('.form-item__text') : null;
       var label = labelEl ? String(labelEl.textContent || '').replace(/\s+/g, ' ').trim() : '';
@@ -2969,7 +3016,9 @@
       if (!matched) return false;
       simulateClick(matched.el);
       // 选中态由 Vue 异步渲染：等它落地再判，不能点完立刻读（之前会把成功判成失败、或反过来）
-      var isOn = function () { return matched.el.classList.contains('phoenix-radio--checked'); };
+      var isOn = function () {
+        return matched.el.classList.contains('phoenix-radio--checked') || !!matched.el.querySelector(PHOENIX_RADIO_CHECKED_SEL);
+      };
       var on = await waitUntil(isOn, 600, 60);
       if (!on) {
         try { matched.el.click(); } catch (_) { /* ignore */ }
@@ -4398,6 +4447,14 @@
       try { filled += await fillLinkedSelectChains(profile, filledKeys); } catch (_) { /* ignore */ }
     }
     var els = fastFirst(iterFillableFields());
+    var pageKeys = null;
+    var pageHasKey = function (k) {
+      if (!pageKeys) {
+        pageKeys = {};
+        els.forEach(function (x) { var kk = matchKeyForElement(x); if (kk) pageKeys[kk] = 1; });
+      }
+      return !!pageKeys[k];
+    };
     for (var idx = 0; idx < els.length; idx++) {
       if (Date.now() - startedAt > 45000) { timedOut = true; break; }
       var el = els[idx];
@@ -4431,6 +4488,8 @@
         : (compoundEduKey(getLabelText(el)) || sectionFallbackKey(el) || matchKeyForElement(el));
       if (!key) key = aliasKeyForLabel(getLabelText(el), null);
       if (!key) continue;
+      // 「紧急联系人」单框：同页另有「紧急联系电话」时它就是姓名栏，别填「姓名 + 电话」组合串
+      if (key === 'emergencyContact' && pageHasKey('emergencyContactPhone')) key = 'emergencyContactName';
       var counterKey = occurrenceKey(key, getLabelText(el));
       // v1.5.24：第几段按「出现位置」算，不按「成功次数」算 —— 第 1 段没填上（已有值 / 写失败），
       // 第 2 段也必须拿 list[1]，否则会把第 1 段的值填进第 2 段（错位）
@@ -4477,6 +4536,13 @@
           recordFill(el, key, value, 'date');
           continue;
         }
+      }
+      // 「年」「月」成对的下拉（Moka 的出生年月 / 毕业年月）：先拆出这一格要的年或月，别拿整串日期去匹配选项
+      var pairRole = detectAdjacentDatePairRole(el);
+      if (pairRole) {
+        var pp = parseDateParts(value);
+        if (pp) value = pairRole === 'year' ? String(pp.y) : String(parseInt(pp.m, 10));
+        else if (!/^\d{1,4}$/.test(String(value).trim())) continue;
       }
       // 自定义下拉宿主：走 click → option 路径
       var customHost = findCustomSelectHost(el);

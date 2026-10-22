@@ -70,6 +70,9 @@
     namePinyin: [
       'namepinyin', 'name_pinyin', 'pinyinname', '姓名拼音', '拼音姓名'
     ],
+    // v1.6.0：拼音姓 / 拼音名分栏（外企、Workday 类网申）
+    pinyinLastName: ['pinyinlastname', 'lastnamepinyin', 'last name (pinyin)', '姓（拼音）', '姓(拼音)', '拼音姓', '姓拼音', '姓氏拼音'],
+    pinyinFirstName: ['pinyinfirstname', 'firstnamepinyin', 'first name (pinyin)', '名（拼音）', '名(拼音)', '拼音名', '名拼音', '名字拼音'],
     englishName: [
       'englishname', 'english_name', 'english-name', 'nameinenGLISH', 'name_en', 'enname',
       '英文名', '英文姓名'
@@ -166,6 +169,13 @@
     currentAddress: [
       'currentaddress', 'current_address', '现居住地址', '现住址', '目前住址'
     ],
+    // v1.6.0：省 / 市 / 区 分栏
+    currentProvince: ['currentprovince', '现居住省份', '现居省份', '所在省份', '现居住地省', '居住省份', '目前所在省'],
+    currentDistrict: ['currentdistrict', 'district', '所在区县', '现居住区县', '居住区县', '区县', '所在区'],
+    nativeProvince: ['nativeprovince', '籍贯省份', '籍贯（省）', '籍贯(省)', '籍贯省', '籍贯所在省'],
+    nativeCity: ['nativecity', '籍贯城市', '籍贯（市）', '籍贯(市)', '籍贯市', '籍贯所在市'],
+    hukouProvince: ['hukouprovince', '户籍省份', '户口所在省', '户籍所在省', '户口省份', '户籍（省）', '户籍(省)'],
+    hukouCity: ['hukoucity', '户口所在城市', '户籍所在城市', '户籍城市', '户口城市', '户籍（市）', '户籍(市)', '户口所在市', '户籍所在市'],
     address: [
       'streetaddress', 'street_address', 'address1', 'address_line', 'mailingaddress',
       '详细地址', '通讯地址', '居住地址', '住址', '街道地址', 'address', 'street', 'addr',
@@ -185,8 +195,7 @@
       'hukoutype', 'hukou_type', '户口性质', '户籍性质'
     ],
     hukou: [
-      'hukou', 'householdregister', '户籍', '户口所在地', '户口', '户籍所在地', '户口地址',
-      '户口所在城市', '户籍所在城市', '户籍城市', '户口城市', '户籍地'
+      'hukou', 'householdregister', '户籍', '户口所在地', '户口', '户籍所在地', '户口地址', '户籍地'
     ],
     nativePlace: [
       'nativeplace', 'native_place', 'hometown', '籍贯', '出生地', '籍贯所在地', '祖籍'
@@ -497,6 +506,8 @@
       '投递志愿', '志愿岗位', '志愿',
       '申请职位', '意向职位', '应征职位', '应聘岗位名称', '意向工作', '期望岗位', '申请岗位'
     ],
+    jobTarget2: ['jobtarget2', '第二志愿', '志愿二', '第二意向岗位', '意向岗位二', '第二意向职位', '第二目标岗位', '备选岗位'],
+    expectedCity2: ['expectedcity2', '第二意向城市', '意向城市二', '第二期望城市', '期望城市二', '备选城市'],
     hasRelativeAtCompany: [
       'hasrelativeatcompany', '是否有亲属在本公司', '是否有亲属在公司', '公司亲属'
     ],
@@ -604,12 +615,15 @@
   var FIELD_ORDER = [
     // 更具体 / 易冲突优先
     'emergencyContactName', 'emergencyContactRelation', 'emergencyContactPhone', 'emergencyContact',
+    'pinyinLastName', 'pinyinFirstName',
     'namePinyin', 'englishName', 'preferredName', 'firstName', 'lastName', 'resumeTitle',
     'secondaryEmail', 'email', 'wechat', 'qq', 'phoneCountryCode', 'phone',
     'englishScore', 'englishDate',
     'birthday', 'age', 'idType', 'idNumber', 'gender',
     'nationality', 'ethnicity', 'politicalStatus', 'maritalStatus',
     'linkedin', 'github', 'website',
+    'expectedCity2', 'jobTarget2',
+    'currentProvince', 'currentDistrict', 'nativeProvince', 'nativeCity', 'hukouProvince', 'hukouCity',
     'expectedCity', 'interviewCity', 'currentCity', 'currentAddress',
     'hukouType', 'hukou', 'nativePlace', 'studentOrigin', 'archiveLocation',
     'willingToRelocate', 'acceptAdjustment',
@@ -1527,20 +1541,38 @@
   }
 
   /**
-   * 同标签多行时：第 n 次出现取 list[n]（n 从 0）。
-   * 仅映射教育/工作/项目主字段；未映射键走扁平 profileValue。
+   * 同标签多行时：第 n 次出现取 list[n]（n 从 0）。值为 [列表, 字段, 回退字段?]。
+   * v1.6.0：覆盖全部 9 种列表；学位（degree）取 academicDegree，没填回退到学历。
    */
   var LIST_OCCURRENCE_MAP = {
     school: ['eduList', 'school'],
     major: ['eduList', 'major'],
+    majorCategory: ['eduList', 'majorCategory'],
     eduDegree: ['eduList', 'degree'],
-    degree: ['eduList', 'degree'],
+    degree: ['eduList', 'academicDegree', 'degree'],
+    studyMode: ['eduList', 'studyMode'],
     eduStart: ['eduList', 'start'],
     eduEnd: ['eduList', 'end'],
     schoolCity: ['eduList', 'city'],
     department: ['eduList', 'department'],
     gpa: ['eduList', 'gpa'],
+    majorRank: ['eduList', 'rank'],
+    majorCourses: ['eduList', 'courses'],
+    advisorName: ['eduList', 'advisor'],
+    researchDirection: ['eduList', 'research'],
+    thesisTitle: ['eduList', 'thesis'],
     eduDescription: ['eduList', 'description'],
+    internCompany: ['internList', 'company'],
+    internDepartment: ['internList', 'department'],
+    internTitle: ['internList', 'title'],
+    internIndustry: ['internList', 'industry'],
+    internStart: ['internList', 'start'],
+    internEnd: ['internList', 'end'],
+    internCity: ['internList', 'city'],
+    internDescription: ['internList', 'description'],
+    internLeaveReason: ['internList', 'leaveReason'],
+    internRefereeName: ['internList', 'refereeName'],
+    internRefereeContact: ['internList', 'refereeContact'],
     company: ['workList', 'company'],
     title: ['workList', 'title'],
     startDate: ['workList', 'start'],
@@ -1549,29 +1581,149 @@
     workCity: ['workList', 'city'],
     workDepartment: ['workList', 'department'],
     workNature: ['workList', 'nature'],
+    industry: ['workList', 'industry'],
+    monthlySalary: ['workList', 'salary'],
     workDescription: ['workList', 'description'],
+    achievements: ['workList', 'achievements'],
+    leaveReason: ['workList', 'leaveReason'],
+    refereeName: ['workList', 'refereeName'],
+    refereeContact: ['workList', 'refereeContact'],
     projectName: ['projectList', 'name'],
     projectRole: ['projectList', 'role'],
     projectStart: ['projectList', 'start'],
     projectEnd: ['projectList', 'end'],
-    projectDesc: ['projectList', 'description']
+    projectLink: ['projectList', 'link'],
+    projectDesc: ['projectList', 'description'],
+    projectResponsibilities: ['projectList', 'responsibilities'],
+    projectOutcome: ['projectList', 'outcome'],
+    campusOrg: ['campusList', 'org'],
+    campusRole: ['campusList', 'role'],
+    campusLevel: ['campusList', 'level'],
+    campusStart: ['campusList', 'start'],
+    campusEnd: ['campusList', 'end'],
+    campusWorkContent: ['campusList', 'description'],
+    awardName: ['awardList', 'name'],
+    awardLevel: ['awardList', 'level'],
+    awardRank: ['awardList', 'rank'],
+    awardIssuer: ['awardList', 'issuer'],
+    awardDate: ['awardList', 'date'],
+    awardDescription: ['awardList', 'description'],
+    certName: ['certList', 'name'],
+    certIssuer: ['certList', 'issuer'],
+    certNo: ['certList', 'no'],
+    certDate: ['certList', 'date'],
+    certScore: ['certList', 'score'],
+    langName: ['langList', 'name'],
+    langLevel: ['langList', 'level'],
+    langScore: ['langList', 'score'],
+    langDate: ['langList', 'date'],
+    langListenSpeak: ['langList', 'listenSpeak'],
+    langReadWrite: ['langList', 'readWrite'],
+    familyName: ['familyList', 'name'],
+    familyRelation: ['familyList', 'relation'],
+    familyEmployer: ['familyList', 'employer'],
+    familyTitle: ['familyList', 'title'],
+    familyPhone: ['familyList', 'phone'],
+    familyPoliticalStatus: ['familyList', 'politicalStatus']
   };
+
+  var INTERN_LIKE_RE = /实习|intern/i;
+
+  /**
+   * 取某个列表（实习列表空着时回落到 workList：先挑写着「实习」的段，一段都没有再用整个 workList ——
+   * 校招同学常把实习写在工作经历里，这与范围日期控件的回落规则一致）。
+   */
+  function listFor(profile, listKey) {
+    var arr = profile && Array.isArray(profile[listKey]) ? profile[listKey] : [];
+    if (arr.length || listKey !== 'internList') return arr;
+    var work = profile && Array.isArray(profile.workList) ? profile.workList : [];
+    var interns = work.filter(function (w) {
+      return w && INTERN_LIKE_RE.test(String(w.nature || '') + String(w.title || '') + String(w.company || ''));
+    });
+    return interns.length ? interns : work;
+  }
+
+  function itemValue(item, map) {
+    if (!item) return '';
+    var v = item[map[1]];
+    if ((v == null || !String(v).trim()) && map[2]) v = item[map[2]];
+    return v != null ? String(v).trim() : '';
+  }
 
   function profileValueForOccurrence(profile, key, occurrence) {
     var idx = occurrence | 0;
     if (idx > 0) {
       var map = LIST_OCCURRENCE_MAP[key];
       if (map) {
-        var list = profile && profile[map[0]];
-        if (Array.isArray(list) && list[idx] && list[idx][map[1]]) {
-          return String(list[idx][map[1]]).trim();
-        }
-        return '';
+        var rows = listFor(profile, map[0]);
+        var v = itemValue(rows[idx], map);
+        if (v || !SHARED_ROW_KEYS[key] || !rows[idx]) return v;
+        // 「学习形式」这类人人各段多半相同的属性：哪一段都没单独写 → 沿用扁平值（1.5.x 的行为）
+        for (var r = 0; r < rows.length; r++) if (itemValue(rows[r], map)) return '';
+        return profileValue(profile, key);
       }
     }
     return profileValue(profile, key);
   }
+  var SHARED_ROW_KEYS = { studyMode: 1 };
 
+  // —— v1.6.0：省 / 市 / 区 拆分（籍贯、户籍、现居地只填了一整串时，供分栏下拉用）——
+  var PROVINCES = ['黑龙江', '内蒙古', '北京', '天津', '上海', '重庆', '河北', '山西', '辽宁', '吉林', '江苏', '浙江', '安徽',
+    '福建', '江西', '山东', '河南', '湖北', '湖南', '广东', '海南', '四川', '贵州', '云南', '陕西', '甘肃', '青海',
+    '台湾', '广西', '西藏', '宁夏', '新疆', '香港', '澳门'];
+  var MUNICIPALITIES = { 北京: 1, 天津: 1, 上海: 1, 重庆: 1 };
+
+  /** 「广东省深圳市南山区」「广东-深圳」「北京市海淀区」→ { province, city, district } */
+  function splitRegion(str) {
+    var t = String(str || '').replace(/[\s\-–—·,，、/|>＞]+/g, '');
+    var out = { province: '', city: '', district: '' };
+    if (!t) return out;
+    for (var i = 0; i < PROVINCES.length; i++) {
+      var pv = PROVINCES[i];
+      if (t.indexOf(pv) !== 0) continue;
+      var m = t.slice(pv.length).match(/^(壮族自治区|回族自治区|维吾尔自治区|自治区|特别行政区|省|市)?/);
+      out.province = pv + (m && m[1] ? m[1] : '');
+      t = t.slice(out.province.length);
+      if (MUNICIPALITIES[pv]) {
+        out.city = pv + '市';
+        var dm = t.match(/^(.{1,6}?(区|县))/);
+        if (dm) out.district = dm[1];
+        return out;
+      }
+      break;
+    }
+    if (!t) return out;
+    var cm = t.match(/^(.{1,8}?(自治州|地区|盟|市))/);
+    if (cm) {
+      out.city = cm[1];
+      t = t.slice(cm[1].length);
+    } else if (out.province) {
+      // 「广东深圳」：省后面直接跟城市名、没写「市」
+      var bare = t.match(/^([一-鿿]{2,4}?)(?=[一-鿿]{1,6}(区|县)|$)/);
+      if (bare) { out.city = bare[1]; t = t.slice(bare[1].length); }
+    }
+    var dm2 = t.match(/^(.{1,6}?(区|县|旗|市))/);
+    if (dm2) out.district = dm2[1];
+    return out;
+  }
+
+  /** 整串里认不出省、也拆不出市（「深圳」）→ 它本身就是城市级，直接用 */
+  function cityLevelOnly(v) {
+    var t = String(v || '').trim();
+    if (!t || t.length > 8) return '';
+    var r = splitRegion(t);
+    return !r.province && !r.city && /^[\u4e00-\u9fff]{2,8}$/.test(t) ? t : '';
+  }
+
+  function regionPart(profile, sourceKeys, part) {
+    for (var i = 0; i < sourceKeys.length; i++) {
+      var v = profile[sourceKeys[i]] && String(profile[sourceKeys[i]]).trim();
+      if (!v) continue;
+      var r = splitRegion(v);
+      if (r[part]) return r[part];
+    }
+    return '';
+  }
 
   /**
    * 排名解析：把任意写法归一成 {ordinal, total, percent, band}
@@ -1700,10 +1852,7 @@
     var v = profileValueFlat(profile, key);
     if (v || !profile) return v;
     var lm = LIST_OCCURRENCE_MAP[key];
-    if (lm) {
-      var arr = profile[lm[0]];
-      if (Array.isArray(arr) && arr.length && arr[0] && arr[0][lm[1]]) return String(arr[0][lm[1]]).trim();
-    }
+    if (lm) return itemValue(listFor(profile, lm[0])[0], lm);
     return '';
   }
 
@@ -1728,7 +1877,9 @@
     if (key === 'currentCity') {
       var cc = profile.currentCity && String(profile.currentCity).trim();
       if (cc) return cc;
-      return (profile.city && String(profile.city).trim()) || '';
+      var cty = profile.city && String(profile.city).trim();
+      if (cty) return cty;
+      return regionPart(profile, ['currentAddress', 'address'], 'city');
     }
     if (key === 'city') {
       var c = profile.city && String(profile.city).trim();
@@ -1831,13 +1982,21 @@
     if (key === 'emergencyContactName') {
       var ecn = profile.emergencyContactName && String(profile.emergencyContactName).trim();
       if (ecn) return ecn;
-      // 无法可靠从组合串拆分时不回退，避免污染
+      // v1.6.0：老档案只有组合串「李四 13900139000」——能干净拆出（去掉手机号后剩 2~10 个字）才回退
+      var ecAll = String(profile.emergencyContact || '').trim();
+      var ecPh = ecAll.match(/(?:\+?86[-\s]?)?1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}|\d{3,4}-\d{7,8}/);
+      if (ecPh) {
+        var rest = ecAll.replace(ecPh[0], '').replace(/[(（][^)）]*[)）]/g, ' ')
+          .replace(/[，,;；:：\/|]+/g, ' ').replace(/\s+/g, ' ').trim();
+        if (rest.length >= 2 && rest.length <= 10 && !/\d/.test(rest)) return rest;
+      }
       return '';
     }
     if (key === 'emergencyContactPhone') {
       var ecp = profile.emergencyContactPhone && String(profile.emergencyContactPhone).trim();
       if (ecp) return ecp;
-      return '';
+      var ecm = String(profile.emergencyContact || '').match(/(?:\+?86[-\s]?)?1[3-9]\d[-\s]?\d{4}[-\s]?\d{4}|\d{3,4}-\d{7,8}/);
+      return ecm ? ecm[0].replace(/[\s-]/g, '').replace(/^\+?86/, '') : '';
     }
     // endDate ↔ workEnd
     if (key === 'endDate') {
@@ -1868,13 +2027,18 @@
     var v = profile[key];
     var flat = v != null ? String(v).trim() : '';
     if (flat) return flat;
-    // 扁平字段为空时，回落到列表首条（工作描述这类值只存在 workList[0] 里很常见）
-    var lm = LIST_OCCURRENCE_MAP[key];
-    if (lm) {
-      var arr = profile[lm[0]];
-      if (Array.isArray(arr) && arr.length && arr[0] && arr[0][lm[1]]) {
-        return String(arr[0][lm[1]]).trim();
-      }
+    // v1.6.0：省 / 市 / 区 分栏字段没填 → 从整串里拆
+    if (key === 'nativeProvince') return regionPart(profile, ['nativePlace'], 'province');
+    if (key === 'nativeCity') return regionPart(profile, ['nativePlace'], 'city') || cityLevelOnly(profile.nativePlace);
+    if (key === 'hukouProvince') return regionPart(profile, ['hukou'], 'province');
+    if (key === 'hukouCity') return regionPart(profile, ['hukou'], 'city') || cityLevelOnly(profile.hukou);
+    if (key === 'currentProvince') return regionPart(profile, ['province', 'currentAddress', 'address', 'currentCity'], 'province');
+    if (key === 'currentDistrict') return regionPart(profile, ['currentAddress', 'address'], 'district');
+    // 拼音姓 / 名：从「Zhang San」拆（中文姓名的拼音是姓在前）
+    if (key === 'pinyinLastName' || key === 'pinyinFirstName') {
+      var py = String(profile.namePinyin || '').trim().split(/\s+/).filter(Boolean);
+      if (py.length < 2) return '';
+      return key === 'pinyinLastName' ? py[0] : py.slice(1).join(' ');
     }
     return '';
   }
@@ -2183,6 +2347,11 @@
         if ((ot && ot === lower) || (ov && ov === lower)) { consider(o, 100 - penalty); continue; }
         on = normalize(o.text || '');
         if (on && norm && on === norm) { consider(o, 95 - penalty); continue; }
+        // 数值相等：5 ↔ 05 ↔ 5月 ↔ 2021年（年 / 月下拉的选项写法五花八门）
+        if (/^\d{1,4}$/.test(raw)) {
+          var om = String(o.text || '').trim().match(/^(\d{1,4})\s*(年|月|日|号)?$/);
+          if (om && parseInt(om[1], 10) === parseInt(raw, 10)) { consider(o, 93 - penalty); continue; }
+        }
         if (on && norm && stripDecorSuffix(on) && stripDecorSuffix(on) === stripDecorSuffix(norm)) {
           consider(o, 92 - penalty);
           continue;
@@ -2571,6 +2740,8 @@
     if (!parent) return '';
     var prev = parent.previousElementSibling;
     if (!prev) return '';
+    // 兄弟里有输入控件 → 那是另一个控件（「年」下拉旁边的「月」下拉会把已选的「1998」当成标签）
+    if (typeof prev.querySelector === 'function' && prev.querySelector('input, select, textarea')) return '';
     var tag = prev.tagName ? String(prev.tagName).toUpperCase() : '';
     var cn = getElClassName(prev);
     var looksLabel =
@@ -2956,6 +3127,8 @@
     findBestOption: findBestOption,
     parseYesNo: parseYesNo,
     LIST_OCCURRENCE_MAP: LIST_OCCURRENCE_MAP,
+    splitRegion: splitRegion,
+    listFor: listFor,
     profileValueForOccurrence: profileValueForOccurrence,
     parseRank: parseRank,
     rankBandTexts: rankBandTexts,

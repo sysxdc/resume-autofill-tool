@@ -1372,7 +1372,9 @@ test('v1.4.0: manifest 版本与资源接线', () => {
 
 test('v1.4.0: profile 支持多段经历', () => {
   const P = require(path.join(root, 'shared/profile.js'));
-  assert.deepEqual(P.LIST_FIELDS, ['eduList', 'workList', 'projectList']);
+  // v1.6.0：多段列表扩到 9 种（原 3 种必须仍在，且排在原来的相对顺序）
+  ['eduList', 'workList', 'projectList'].forEach((k) => assert.ok(P.LIST_FIELDS.includes(k), k));
+  ['internList', 'campusList', 'awardList', 'certList', 'langList', 'familyList'].forEach((k) => assert.ok(P.LIST_FIELDS.includes(k), k));
   assert.ok(P.LIST_ITEM_FIELDS.eduList.includes('school'));
   const prof = P.emptyProfile();
   prof.eduList = [{ school: 'A大学' }, { school: 'B大学' }];
@@ -1475,9 +1477,15 @@ test('v1.5.0: SAMPLE_PROFILE 含多段虚构经历', () => {
 test('v1.5.0: LIST_ITEM_LABELS / SECTION_TITLES 导出', () => {
   assert.ok(Profile.LIST_ITEM_LABELS.eduList.school);
   assert.ok(Profile.LIST_SECTION_TITLES.eduList);
-  assert.deepEqual(Profile.LIST_ITEM_FIELDS.eduList, [
-    'school', 'department', 'major', 'degree', 'start', 'end', 'city', 'gpa', 'description'
-  ]);
+  // v1.6.0：教育条目细分（学历 / 学位 / 学习形式 / 排名…），原有字段一个都不能少（老档案靠它们）
+  ['school', 'department', 'major', 'degree', 'start', 'end', 'city', 'gpa', 'description'].forEach((k) => {
+    assert.ok(Profile.LIST_ITEM_FIELDS.eduList.includes(k), k);
+  });
+  ['academicDegree', 'studyMode', 'rank'].forEach((k) => assert.ok(Profile.LIST_ITEM_FIELDS.eduList.includes(k), k));
+  Profile.LIST_FIELDS.forEach((lk) => {
+    Profile.LIST_ITEM_FIELDS[lk].forEach((f) => assert.ok(Profile.LIST_ITEM_LABELS[lk][f], lk + '.' + f + ' 要有中文标签'));
+    assert.ok(Profile.LIST_SECTION_TITLES[lk], lk + ' 要有分区标题');
+  });
 });
 
 test('v1.5.2: 区块上下文解决“城市/院系/起止”错键', () => {
@@ -2003,8 +2011,9 @@ test('v1.5.12: 可搜索下拉「先输入再选」+ 远程搜索等待', () => 
 test('v1.5.12: 选之前核对、选之后复核，宁可不填', () => {
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
   assert.ok(/function optionTextPlausible/.test(src), '要有选项合理性判断');
-  assert.ok(/if \(!optionTextPlausible\(wantText, value\)\)/.test(src), '点之前先核对');
-  assert.ok(/if \(optionTextPlausible\(shown, value\)\)/.test(src), '点之后复核');
+  // v1.6.0：按 checkValue 核对（「是」换算成「应届毕业生」这类两态选项时用换算后的词）
+  assert.ok(/if \(!optionTextPlausible\(wantText, checkValue\)\)/.test(src), '点之前先核对');
+  assert.ok(/if \(optionTextPlausible\(shown, checkValue\)\)/.test(src), '点之后复核');
   assert.ok(/ant-select/.test(src) && /selection-item/.test(src), 'antd 没选中项就算没选中');
   assert.ok(/function isDialCodeList/.test(src), '区号下拉要拦');
   assert.ok(!/simulateClick\(hit\.el\);[\s\S]{0,120}closeOpenDropdowns\(\);[\s\S]{0,80}customSelectText/.test(src), '选完不能按 Esc（会还原旧值）');
@@ -2080,9 +2089,13 @@ test('v1.5.14: 先 onChange、失败再点日历（两条路都留着）', () =>
 });
 
 test('v1.5.14: 范围控件在实习分区可回落到 workList', () => {
+  // v1.6.0：回落统一在 Match.listFor（范围控件 / 年月下拉对 / 逐字段取值共用），按行为断言
   const src = fs.readFileSync(path.join(root, 'content/autofill.js'), 'utf8');
-  assert.ok(/ctx\.rule\.key === 'intern' \|\| ctx\.rule\.key === 'work'/.test(src), '实习/工作分区回落');
-  assert.ok(/list = profile\.workList/.test(src), '用 workList 取这一段的起止');
+  assert.ok(/M\.listFor\(profile, map\.listKey\)/.test(src), '范围控件按 listFor 取段');
+  const work = [{ company: '甲', title: '工程师' }, { company: '乙', title: '前端实习生' }];
+  assert.deepEqual(Match.listFor({ workList: work }, 'internList').map((w) => w.company), ['乙'], '优先取写着实习的段');
+  assert.deepEqual(Match.listFor({ workList: [work[0]] }, 'internList').map((w) => w.company), ['甲'], '一段实习都没有就用整个 workList');
+  assert.deepEqual(Match.listFor({ internList: [{ company: '丙' }], workList: work }, 'internList').map((w) => w.company), ['丙'], '有 internList 就用它');
 });
 
 test('v1.5.15: 中华英才网 wecruit（antd v3）可控组件', () => {
@@ -2408,7 +2421,7 @@ test('v1.5.23: 一字之差的中文标签不再模糊错配（入职≠入党�
   assert.equal(Match.matchFieldKey('入职日期'), 'startDate');
   assert.equal(Match.matchFieldKey('离职日期'), 'workEnd');
   assert.equal(Match.matchFieldKey('邮寄地址'), 'address');
-  assert.equal(Match.matchFieldKey('户口所在城市'), 'hukou');
+  assert.equal(Match.matchFieldKey('户口所在城市'), 'hukouCity', 'v1.6.0 细分为户籍城市（没填时从户籍整串拆）');
   assert.equal(Match.matchFieldKey('证书获得日期'), 'certDate');
   assert.equal(Match.matchFieldKey('论文发表日期'), 'paperDate');
   assert.equal(Match.matchFieldKey('英语六级分数'), 'englishScore');
@@ -2464,6 +2477,57 @@ test('v1.5.23: 选项匹配——歧义拒填 / 修饰后缀 / 编码值 / 数�
   assert.equal(Match.matchSelectOption([{ value: '3', text: '2.0-3.0' }, { value: '4', text: '3.5-4.0' }], '3.8').text, '3.5-4.0');
   assert.equal(Match.matchSelectOption(o(['1-3年', '3-5年']), '3'), null, '落在区间边界 → 不填');
   assert.equal(Match.matchSelectOption(o(['1-3年', '3-5年', '5年以上']), '4').text, '3-5年');
+});
+
+test('v1.6.0: 省 / 市 / 区拆分', () => {
+  assert.deepEqual(Match.splitRegion('浙江省杭州市西湖区'), { province: '浙江省', city: '杭州市', district: '西湖区' });
+  assert.deepEqual(Match.splitRegion('上海市浦东新区'), { province: '上海市', city: '上海市', district: '浦东新区' });
+  assert.deepEqual(Match.splitRegion('广西壮族自治区南宁市'), { province: '广西壮族自治区', city: '南宁市', district: '' });
+  assert.equal(Match.splitRegion('广东深圳').city, '深圳');
+  assert.deepEqual(Match.splitRegion(''), { province: '', city: '', district: '' });
+});
+
+test('v1.6.0: 细分字段从整串派生，显式值优先', () => {
+  const p = { nativePlace: '湖南省长沙市', hukou: '深圳', namePinyin: 'Ou Yang Xue', currentAddress: '北京市海淀区中关村大街1号' };
+  assert.equal(Match.profileValue(p, 'nativeProvince'), '湖南省');
+  assert.equal(Match.profileValue(p, 'nativeCity'), '长沙市');
+  assert.equal(Match.profileValue(p, 'hukouCity'), '深圳', '只写了城市级 → 原样用');
+  assert.equal(Match.profileValue(p, 'hukouProvince'), '', '认不出省就留空，不猜');
+  assert.equal(Match.profileValue(p, 'currentProvince'), '北京市');
+  assert.equal(Match.profileValue(p, 'currentDistrict'), '海淀区');
+  assert.equal(Match.profileValue(p, 'pinyinLastName'), 'Ou');
+  assert.equal(Match.profileValue(p, 'pinyinFirstName'), 'Yang Xue');
+  assert.equal(Match.profileValue({ ...p, nativeCity: '株洲市', pinyinLastName: 'Ouyang' }, 'nativeCity'), '株洲市');
+  assert.equal(Match.profileValue({ ...p, pinyinLastName: 'Ouyang' }, 'pinyinLastName'), 'Ouyang');
+  assert.equal(Match.profileValue({ namePinyin: 'Zhang' }, 'pinyinFirstName'), '', '单个词拆不出名');
+});
+
+test('v1.6.0: 紧急联系人组合串拆成姓名 / 电话', () => {
+  const p = { emergencyContact: '李四（父亲） 13800001111' };
+  assert.equal(Match.profileValue(p, 'emergencyContactPhone'), '13800001111');
+  assert.equal(Match.profileValue(p, 'emergencyContactName'), '李四');
+  assert.equal(Match.profileValue({ ...p, emergencyContactName: '王五' }, 'emergencyContactName'), '王五');
+});
+
+test('v1.6.0: 新增多段列表逐段取值（第 2 段不回落到主条目）', () => {
+  const p = Profile.normalizeProfile({
+    awardName: '主条目奖',
+    awardList: [{ name: '国奖', rank: '一等奖' }, { name: '校奖', rank: '二等奖' }],
+    langList: [{ name: '英语', score: '620' }, { name: '日语', level: 'N2' }],
+    familyList: [{ name: '张父', relation: '父亲' }, { name: '张母', relation: '母亲' }]
+  });
+  assert.equal(Match.profileValueForOccurrence(p, 'awardName', 1), '校奖');
+  assert.equal(Match.profileValueForOccurrence(p, 'awardRank', 0), '一等奖');
+  assert.equal(Match.profileValueForOccurrence(p, 'familyRelation', 1), '母亲');
+  assert.equal(Match.profileValueForOccurrence(p, 'langName', 1), '日语');
+  assert.equal(Match.profileValueForOccurrence(p, 'awardName', 2), '', '第 3 段没有 → 留空');
+  assert.equal(Match.profileValueForOccurrence(p, 'awardName', 0), '主条目奖', '第 1 段：主条目显式值优先');
+  assert.equal(Match.profileValueForOccurrence(p, 'familyName', 0), '张父', '主条目空 → 用列表第一段');
+  for (const k of Profile.LIST_FIELDS) assert.ok(Array.isArray(p[k]), k + ' 归一化后是数组');
+  const edu = [{ school: '甲' }, { school: '乙' }];
+  assert.equal(Match.profileValueForOccurrence({ studyMode: '全日制', eduList: edu }, 'studyMode', 1), '全日制', '各段都没写学习形式 → 沿用扁平值');
+  assert.equal(Match.profileValueForOccurrence({ studyMode: '全日制', eduList: [{ school: '甲', studyMode: '非全日制' }, { school: '乙' }] }, 'studyMode', 1), '', '有段单独写了 → 不猜');
+  assert.equal(Match.profileValueForOccurrence({ studyMode: '全日制', eduList: edu }, 'studyMode', 2), '', '不存在的段不填');
 });
 
 console.log('');
