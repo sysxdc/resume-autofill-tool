@@ -361,6 +361,8 @@ Date.STRATEGY_ORDER            // native-input → native-selects → fiber-prop
   页面没有 iframe 时不再固定等 900ms 收子 frame 汇报（有 iframe 时全部汇报完即结束）；
   末尾的自定义下拉循环也受 45s 总预算约束。demo 实测：一键填写 1288 → 504ms、
   「扫描 + 未填清单」65 → 5ms，填写数量不变、零错填。
+- **打包**：`scripts/package.py` 之前漏了 `popup/`（工具栏弹窗打不开）和 `lib/`（PDF / DOCX 简历导入用的
+  pdf.js、mammoth），补上并加自检：manifest 引用的文件、各页面 `<script src>` 引用的本地文件都必须在包里。
 - **测试**：单测 +6 组（202 条）；基准集 +17 条「语义兼容」（245 条，旧版在这 17 条上错配 13 条）；
   新增 2 个端到端用例（`tests/fixtures/dom/e2e-*.html`）——把整套内容脚本装进真实 Chromium、
   用假的 `chrome.storage` 跑一键填写，断言页面真实值与上报结果。
