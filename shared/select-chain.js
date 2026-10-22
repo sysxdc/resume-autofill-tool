@@ -86,7 +86,7 @@
       var o = host.options && host.options[host.selectedIndex];
       return o ? String(o.textContent || '').trim() : '';
     }
-    var shown = host.querySelector('.ant-select-selection-selected-value, .ant-select-selection-item, .el-select__selected-item, .selected-text');
+    var shown = host.querySelector('.ant-select-selection-selected-value, .ant-select-selection-item, .el-select__selected-item:not(.el-select__input-wrapper):not(.is-transparent), .selected-text');
     if (shown) return String(shown.textContent || '').replace(/\s+/g, ' ').trim();
     var inp = host.querySelector('input');
     return inp ? String(inp.value || '').trim() : '';

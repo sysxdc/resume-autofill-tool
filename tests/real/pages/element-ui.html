@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../node_modules/element-ui/lib/theme-chalk/index.css"></head><body style="padding:20px">
+<div id="app">
+ <div class="sec"><h3>基本信息</h3><el-form label-width="100px">
+  <el-form-item label="姓名"><el-input v-model="s.name"></el-input></el-form-item>
+  <el-form-item label="学历"><el-select v-model="s.deg"><el-option v-for="t in ['本科','硕士','博士']" :key="t" :label="t" :value="t"></el-option></el-select></el-form-item>
+  <el-form-item label="出生日期"><el-date-picker v-model="s.birth" type="date" value-format="yyyy-MM-dd"></el-date-picker></el-form-item>
+ </el-form></div>
+ <div class="sec"><h3>教育经历</h3><el-form label-width="100px">
+  <el-form-item label="起止时间"><el-date-picker v-model="s.eduRange" type="monthrange" value-format="yyyy-MM" start-placeholder="开始月份" end-placeholder="结束月份"></el-date-picker></el-form-item>
+  <el-form-item label="入学时间"><el-date-picker v-model="s.enroll" type="month" value-format="yyyy-MM"></el-date-picker></el-form-item>
+ </el-form></div>
+ <div class="sec"><h3>工作经历</h3><el-form label-width="100px">
+  <el-form-item label="起止时间"><el-date-picker v-model="s.workRange" type="daterange" value-format="yyyy-MM-dd" start-placeholder="开始日期" end-placeholder="结束日期"></el-date-picker></el-form-item>
+  <el-form-item label="开始时间"><el-date-picker v-model="s.ws" type="date" value-format="yyyy-MM-dd"></el-date-picker></el-form-item>
+  <el-form-item label="结束时间"><el-date-picker v-model="s.we" type="date" value-format="yyyy-MM-dd"></el-date-picker></el-form-item>
+ </el-form></div>
+</div>
+<script src="../node_modules/vue2/dist/vue.min.js"></script><script src="../node_modules/element-ui/lib/index.js"></script>
+<script>var vm = new Vue({ el: '#app', data: { s: { name: '', deg: '', birth: '', eduRange: null, enroll: '', workRange: null, ws: '', we: '' } } }); window.__state = function () { return JSON.parse(JSON.stringify(vm.s)); };</script></body></html>
