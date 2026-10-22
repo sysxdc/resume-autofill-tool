@@ -16,11 +16,14 @@
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
-const HERE = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
+// 跨平台：Windows 下 URL.pathname 是 "/D:/..."，只剥前导斜杠会留下正斜杠路径，
+// 与 path.join 拼出来的反斜杠路径 startsWith 比较永远 false → 静态服务对每个文件都 404。
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
 const [filter = '', extArg = ''] = process.argv.slice(2);
 const EXT = path.resolve(extArg || ROOT);
@@ -95,7 +98,9 @@ const CASES = [
 const MIME = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html; charset=utf-8', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf' };
 const server = http.createServer((req, res) => {
   const p = path.join(HERE, decodeURIComponent(req.url.split('?')[0]));
-  if (!p.startsWith(HERE) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) { res.statusCode = 404; res.end(); return; }
+  const rel = path.relative(HERE, p);
+  const outside = rel.startsWith('..') || path.isAbsolute(rel);
+  if (outside || !fs.existsSync(p) || fs.statSync(p).isDirectory()) { res.statusCode = 404; res.end(); return; }
   res.setHeader('content-type', MIME[path.extname(p)] || 'application/octet-stream');
   fs.createReadStream(p).pipe(res);
 }).listen(0);
@@ -116,19 +121,51 @@ for (const c of CASES) {
   const errs = [];
   page.on('pageerror', (e) => errs.push(e.message.slice(0, 160)));
   try {
-    await sw.evaluate((p) => chrome.storage.local.set({ profile: p }), c.profile);
-    await page.goto(`http://127.0.0.1:${port}/pages/${c.page}.html`);
+    // 写档后必须等 storage 落盘再打开页面：否则 content script 首帧 loadProfile()
+    // 读到的还是上一个用例的空档 → antd3 这种第一个用例会直接 empty_profile 失败。
+    // 关键：不要用「值回填」的写法。chrome.storage.local.set 是合并写，
+    // 上一轮用例留下的 262 键空档案会和新档并在一起 → profileHasData 判定为空 → empty_profile。
+    // 先 clear 再 set，保证每个用例看到的是干净的一份档。
+    await sw.evaluate((p) => new Promise((res) => chrome.storage.local.clear(() => chrome.storage.local.set({ profile: p }, res))), c.profile);
+    const seeded = await sw.evaluate(() => new Promise((res) => chrome.storage.local.get(['profile'], (v) => {
+      const p = v.profile || {};
+      res(Object.keys(p).filter((k) => p[k] && String(p[k]).trim()).length);
+    })));
+    if (!seeded) throw new Error('档案没有写进 storage');
+    await page.goto(`http://127.0.0.1:${port}/pages/${c.page}.html`, { waitUntil: 'load' });
     await page.waitForFunction(() => typeof window.__state === 'function', null, { timeout: 10000 });
     await page.waitForTimeout(600);
     const t0 = Date.now();
-    const r = await sw.evaluate(async (u) => {
+    // 必须精确命中「当前这个页面」：按 url 子串找 tab 会命中别的标签（或找到还没注入内容的 tab），
+    // 于是 sendMessage 落到别的上下文 → 表现成 empty_profile / 字段全 undefined，非常难查。
+    const tabId = await sw.evaluate(async (fullUrl) => {
       const tabs = await chrome.tabs.query({});
-      const tab = tabs.find((t) => t.url && t.url.indexOf(u) !== -1);
-      return chrome.tabs.sendMessage(tab.id, { type: 'FILL_FORM', options: { allowAddSections: false } }, { frameId: 0 });
-    }, `/pages/${c.page}.html`);
+      const t = tabs.find((x) => x.url === fullUrl);
+      return t ? t.id : null;
+    }, page.url());
+    if (!tabId) throw new Error('找不到当前测试页对应的 tab');
+    const r = await sw.evaluate(async (id) => chrome.tabs.sendMessage(id, { type: 'FILL_FORM', options: { allowAddSections: false } }, { frameId: 0 }), tabId);
     const ms = Date.now() - t0;
     await page.waitForTimeout(300);
-    const st = await page.evaluate(() => window.__state());
+    // 页面状态必须从「已填充的那个 frame」里取：page.evaluate 只打主 frame，
+    // 而内容脚本 may be in another frame → 会读到全 undefined，看起来像没填上。
+    let st = null;
+    try {
+      const outer = await page.evaluate(() => window.__state());
+      const known = outer && Object.keys(c.expect).filter((k) => outer[k] !== '' && outer[k] != null).length;
+      st = known > 0 ? outer : null;
+    } catch (_) { st = null; }
+    if (!st) {
+      const got = await sw.evaluate(async (args) => {
+        const res = await chrome.scripting.executeScript({
+          target: { tabId: args.id },
+          world: 'MAIN',
+          func: () => (typeof window.__state === 'function' ? window.__state() : null)
+        });
+        return res.map((x) => x.result).find((x) => x && Object.keys(x).length) || null;
+      }, { id: tabId });
+      st = got || {};
+    }
     const bad = [];
     Object.keys(c.expect).forEach((k) => {
       const want = c.expect[k];
@@ -137,6 +174,18 @@ for (const c of CASES) {
     });
     if (!r || r.ok === false) bad.push('填写失败：' + JSON.stringify(r));
     if (r && r.timedOut) bad.push('超时');
+    if (r && r.reason === 'empty_profile') {
+      // 定位用：到底是档没写进去，还是内容脚本读不到
+      const diag = await sw.evaluate(async (id) => {
+        const inSw = await new Promise((res) => chrome.storage.local.get(['profile'], (v) => res(Object.keys(v.profile || {}).length)));
+        const inTab = await chrome.scripting.executeScript({ target: { tabId: id }, func: () => new Promise((res) => chrome.storage.local.get(['profile'], (v) => {
+          const p = v.profile || {};
+          res({ keys: Object.keys(p).length, nonEmpty: Object.keys(p).filter((k) => p[k] && String(p[k]).trim()).length });
+        })) });
+        return { inSw, inTab };
+      }, tabId);
+      bad.push('诊断：' + JSON.stringify(diag).slice(0, 200));
+    }
     if (ms > c.maxMs) bad.push(`耗时 ${ms}ms > ${c.maxMs}ms`);
     if (errs.length) bad.push('页面报错：' + errs.join('; '));
     if (bad.length) throw new Error(bad.join('\n     '));
