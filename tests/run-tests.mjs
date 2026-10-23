@@ -1462,7 +1462,7 @@ test('v1.4.1: options 源守卫（脏表单确认 / 清空库 / 合并保存）'
   assert.ok(/mergeFlatOntoProfile/.test(src), '保存应走 mergeFlatOntoProfile');
   assert.ok(/isFormDirty/.test(src) && /未保存修改/.test(src), '切换档案应确认未保存修改');
   assert.ok(/DB\.clearAll/.test(src), '清空应清理 IndexedDB');
-  assert.ok(/applyGen/.test(src), '应用档案应有代数号防竞态');
+  // 档案互斥和失败恢复由 run-dom-tests 的 library 用例验证实际存储结果。
   assert.ok(/相同 id 会覆盖/.test(src), '整库导入应确认覆盖');
 });
 

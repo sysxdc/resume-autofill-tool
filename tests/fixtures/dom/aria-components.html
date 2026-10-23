@@ -18,7 +18,7 @@ remote.addEventListener('input',()=>{
   remoteList.setAttribute('aria-busy','true');
   setTimeout(()=>{
     remoteList.textContent='';const item=document.createElement('div');item.role='option';item.textContent='测试大学';item.dataset.value='UNI-CODE';
-    item.onclick=()=>{window.componentState.school='UNI-CODE';remote.value='测试大学';remote.setAttribute('aria-expanded','false');remoteList.hidden=true;};
+    item.onclick=()=>{window.componentState.school='UNI-CODE';item.setAttribute('aria-selected','true');remote.value='测试大学';remote.setAttribute('aria-expanded','false');remoteList.hidden=true;};
     remoteList.appendChild(item);remoteList.setAttribute('aria-busy','false');
   },600);
 });

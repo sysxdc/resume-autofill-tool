@@ -745,8 +745,17 @@ const E2E_CASES = [
       ok(await page.evaluate(()=>document.querySelector('[name="school"]').readOnly),'主条目由列表同步，不再重复编辑');
       const count=await page.evaluate(async()=> (await ResumeAutofillDB.listResumes()).length);
       eq(count,1,'仅 storage 有资料时建立实际档案');
+      const backup = await page.evaluate(()=>JSON.stringify(fixtureStore.profileRepairBackup));
+      await page.click('#btn-repair-profile');
+      await page.waitForFunction(()=>document.getElementById('profile-quality').textContent.includes('无需自动整理'));
+      eq(await page.evaluate(()=>JSON.stringify(fixtureStore.profileRepairBackup)),backup,'无变更不覆盖恢复点');
       await page.click('a[data-pane="edu"]');
       await page.fill('#list-eduList [data-field="school"]','更新大学');
+      await page.click('a[data-pane="library"]');
+      await page.click('#btn-restore-profile');
+      await page.waitForFunction(()=>document.getElementById('profile-quality').textContent.includes('请先保存'));
+      eq(await page.inputValue('#list-eduList [data-field="school"]'),'更新大学','恢复不静默丢弃未保存编辑');
+      await page.click('a[data-pane="edu"]');
       await page.click('button[form="profile-form"]');
       await page.waitForFunction(()=>fixtureStore.profile.school==='更新大学');
       eq(await page.evaluate(async()=> (await ResumeAutofillDB.getActiveResume()).profile.eduList[0].school),'更新大学','档案与当前填写资料一起保存');
@@ -758,6 +767,116 @@ const E2E_CASES = [
       await page.click('#btn-restore-profile');
       await page.waitForFunction(()=>document.getElementById('profile-quality').textContent.includes('已恢复整理前资料'));
       eq(await page.evaluate(()=>fixtureStore.profile.degree),'本科','恢复原始资料');
+    }
+  },
+  {
+    name:'library：空列表字段与冲突镜像不导致静默丢失',
+    file:'field-safety.html',
+    async run(page) {
+      await page.addInitScript(()=>{
+        const store={profile:{school:'主字段大学',majorCourses:'已有课程',eduList:[{school:'经历大学',major:'自动化'}]}};
+        window.fixtureStore=store;
+        window.chrome={runtime:{},storage:{local:{get:(keys,cb)=>{const data=structuredClone(store);if(cb)cb(data);else return Promise.resolve(data);},set:(data,cb)=>{Object.assign(store,structuredClone(data));if(cb)cb();else return Promise.resolve();}}}};
+      });
+      await page.goto(new URL('../../../options/options.html',page.url()).href);
+      await page.waitForFunction(()=>document.querySelector('#list-eduList [data-field="school"]'));
+      eq(await page.inputValue('[name="school"]'),'主字段大学','初始化保留冲突主值供核对');
+      eq(await page.inputValue('[name="majorCourses"]'),'已有课程','空列表子字段不能擦除已有信息');
+      await page.click('a[data-pane="edu"]');
+      await page.fill('#list-eduList [data-field="major"]','计算机');
+      await page.click('button[form="profile-form"]');
+      await page.waitForFunction(()=>fixtureStore.profile.major==='计算机');
+      eq(await page.evaluate(()=>fixtureStore.profile.school),'主字段大学','修改其他子字段不消除未处理冲突');
+      eq(await page.evaluate(()=>fixtureStore.profile.majorCourses),'已有课程','保存保持独立信息');
+      await page.fill('#list-eduList [data-field="school"]','已确认大学');
+      eq(await page.inputValue('[name="school"]'),'已确认大学','明确编辑对应列表字段才更新主值');
+    }
+  },
+  {
+    name:'library：保存开始即互斥，切换写入失败恢复活动档案',
+    file:'field-safety.html',
+    async run(page) {
+      await page.addInitScript(()=>{
+        const store={profile:{school:'档案甲大学'}};
+        window.fixtureStore=store;
+        window.chrome={runtime:{},storage:{local:{get:(keys,cb)=>{const data=structuredClone(store);if(cb)cb(data);else return Promise.resolve(data);},set:(data,cb)=>{if(window.failProfileWrite&&data.profile){window.failProfileWrite=false;return Promise.reject(new Error('模拟存储写入失败'));}Object.assign(store,structuredClone(data));if(cb)cb();else return Promise.resolve();}}}};
+      });
+      page.on('dialog',dialog=>dialog.accept());
+      await page.goto(new URL('../../../options/options.html',page.url()).href);
+      await page.waitForFunction(()=>document.querySelector('[name="school"]').value==='档案甲大学');
+      await page.evaluate(async()=>{
+        const DB=ResumeAutofillDB;
+        await DB.saveResume({id:'a',name:'甲',profile:{school:'档案甲大学'}});
+        await DB.saveResume({id:'b',name:'乙',profile:{school:'档案乙大学'}});
+        await DB.setMeta('activeId','a');
+        document.getElementById('profile-form').requestSubmit();
+      });
+      await page.waitForSelector('[data-act="apply"][data-id="b"]');
+      await page.waitForFunction(()=>document.getElementById('save-status').textContent.includes('已保存'));
+      await page.evaluate(async()=>{
+        const DB=ResumeAutofillDB, original=DB.getActiveResume;
+        DB.getActiveResume=async()=>{await new Promise(resolve=>window.resumeSave=resolve);return original();};
+        document.getElementById('profile-form').requestSubmit();
+        document.querySelector('[data-act="apply"][data-id="b"]').click();
+        window.restoreDbReader=()=>{DB.getActiveResume=original;};
+      });
+      await page.waitForFunction(()=>typeof window.resumeSave==='function');
+      eq(await page.evaluate(()=>ResumeAutofillDB.getActiveId()),'a','首次异步读取前已阻止切换');
+      await page.evaluate(()=>{restoreDbReader();resumeSave();});
+      await page.waitForFunction(()=>document.getElementById('save-status').textContent.includes('已保存'));
+      eq(await page.evaluate(async()=>(await ResumeAutofillDB.getResume('b')).profile.school),'档案乙大学','另一档案未被覆盖');
+      // 等列表刷新结束后再发起独立操作。
+      await page.waitForTimeout(100);
+      await page.evaluate(()=>{window.failProfileWrite=true;});
+      const dialog=page.waitForEvent('dialog');
+      await page.click('[data-act="apply"][data-id="b"]');
+      ok((await dialog).message().includes('模拟存储写入失败'),'失败不报成功');
+      eq(await page.evaluate(()=>ResumeAutofillDB.getActiveId()),'a','存储拒绝切换时恢复原活动 ID');
+      eq(await page.evaluate(()=>fixtureStore.profile.school),'档案甲大学','当前填写资料仍是原档案');
+    }
+  },
+  {
+    name:'aria：失败搜索可重试且异步输入不覆盖用户编辑',
+    file:'aria-components.html',
+    async run(page) {
+      await loadExtension(page,{});
+      const result=await page.evaluate(async()=>{
+        const C=ResumeAutofillContent;
+        function make() {
+          const host=document.createElement('div');
+          const id='retry-list-'+document.querySelectorAll('[role=listbox]').length;
+          host.innerHTML='<input role="combobox" aria-expanded="false" aria-controls="'+id+'"><div role="listbox" id="'+id+'" hidden></div>';
+          document.body.appendChild(host);
+          const input=host.querySelector('input'), box=host.querySelector('[role=listbox]');
+          input.onclick=()=>{input.setAttribute('aria-expanded','true');box.hidden=false;};
+          input.addEventListener('keydown',e=>{if(e.key==='Escape'){input.setAttribute('aria-expanded','false');box.hidden=true;}});
+          input.addEventListener('input',()=>{
+            box.textContent='';
+            if(input.value==='用户输入') return;
+            const opt=document.createElement('div');opt.role='option';opt.textContent='目标学校';box.appendChild(opt);
+            opt.onclick=()=>{input.setAttribute('aria-expanded','false');box.hidden=true;if(host.dataset.accept){input.value=opt.textContent;opt.setAttribute('aria-selected','true');host.dataset.committed='true';}};
+          });
+          return {host,input};
+        }
+        const a=make();
+        const first=await C.fillAriaSelect(a.host,'目标学校','school');
+        const afterFailure=a.input.value;
+        a.host.dataset.accept='true';
+        const second=await C.fillAriaSelect(a.host,'目标学校','school');
+        const b=make();
+        const pending=C.fillAriaSelect(b.host,'目标学校','school');
+        setTimeout(()=>{b.input.value='用户输入';b.input.dispatchEvent(new Event('input',{bubbles:true}));},100);
+        const userAttempt=await pending;
+        const c=make();c.input.value='已有搜索';c.input.setAttribute('aria-expanded','true');
+        const preexisting=await C.fillAriaSelect(c.host,'目标学校','school');
+        return {first,afterFailure,second,committed:a.host.dataset.committed,userAttempt,userValue:b.input.value,preexisting,preexistingValue:c.input.value};
+      });
+      ok(!result.first,'仅关闭弹层和保留搜索词不算提交成功');
+      eq(result.afterFailure,'','失败撤回本次搜索词');
+      ok(result.second&&result.committed==='true','失败后允许再次搜索并提交');
+      ok(!result.userAttempt&&!result.preexisting,'保护异步编辑及原有搜索词');
+      eq(result.userValue,'用户输入','异步期间用户输入保留');
+      eq(result.preexistingValue,'已有搜索','不覆盖原有搜索');
     }
   },
   {

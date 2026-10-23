@@ -341,10 +341,11 @@
         row.title = text(p.internTitle); changed('title_refined','internList.title','internTitle');
       }
       var same = p.internList.find(function (other) {
-        return text(row.company) && text(row.company) === text(other.company) && text(row.start) === text(other.start) && text(row.end) === text(other.end);
+        return stableJson(row) === stableJson(other) || (text(row.company) && text(row.start) && text(row.end) &&
+          text(row.company) === text(other.company) && text(row.start) === text(other.start) && text(row.end) === text(other.end));
       });
       if (same) {
-        if (Object.keys(row).some(function (key) { return text(row[key]) && text(same[key]) && text(row[key]) !== text(same[key]); })) {
+        if (Object.keys(row).some(function (key) { return text(row[key]) && text(same[key]) && stableJson(row[key]) !== stableJson(same[key]); })) {
           if (changes.length > beforeChanges) { row.title = originalRow.title; changes.length = beforeChanges; }
           return true;
         }

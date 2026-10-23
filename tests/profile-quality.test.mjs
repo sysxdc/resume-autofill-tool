@@ -64,3 +64,16 @@ test('英语成绩不借用其他证书成绩，工作内容不借用实习或�
   assert.equal(M.profileValue({internList:[{description:'实习内容'}],achievements:'业绩'},'workDescription'),'');
   assert.equal(M.profileValue({jobType:'全职'},'workNature'),'');
 });
+
+test('实习合并保留嵌套附加信息和缺失时间的歧义记录', () => {
+  const base = {company:'测试公司',nature:'实习',start:'2024-01',end:'2024-02',title:'实习生'};
+  const nested = P.repairProfile({workList:[{...base,extra:{team:'甲'}}],internList:[{...base,extra:{team:'乙'}}]}).profile;
+  assert.equal(nested.workList.length,1);
+  assert.equal(nested.workList[0].extra.team,'甲');
+  assert.equal(nested.internList[0].extra.team,'乙');
+  const ambiguous = P.repairProfile({workList:[{company:'测试公司',nature:'实习',description:'开发'}],internList:[{company:'测试公司',title:'运营'}]}).profile;
+  assert.equal(ambiguous.internList.length,2,'公司相同但时间未知，不拼成一段虚构经历');
+  const same = P.repairProfile({workList:[{...base,extra:{a:1,b:2}}],internList:[{...base,extra:{b:2,a:1}}]}).profile;
+  assert.equal(same.workList.length,0);
+  assert.equal(same.internList.length,1,'对象键顺序不应制造冲突');
+});

@@ -48,15 +48,27 @@
   }
   async function fill(host, wanted, key) {
     var node = controller(host);
-    function finish(ok, reason) { results.set(host,{ok:ok,reason:reason,adapter:'aria-listbox'}); return ok; }
+    var typed = false, query = String(wanted), initialValue = node && node.value || '';
+    function finish(ok, reason) {
+      // 只撤回本次仍未提交的搜索文字，保留异步期间用户输入的其他内容。
+      if (!ok && typed && node.isConnected && node.value === query) {
+        node.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',code:'Escape',bubbles:true}));
+        if (node.value === query) {
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(node,initialValue);
+          node.dispatchEvent(new Event('input',{bubbles:true}));
+        }
+      }
+      results.set(host,{ok:ok,reason:reason,adapter:'aria-listbox'}); return ok;
+    }
     if (!node || node.disabled || node.closest('[aria-disabled="true"], [disabled], .is-disabled')) return finish(false,'component_disabled');
     var existing = selectedText(host,node,committed.has(host));
     if (existing) return finish(equivalent(existing,wanted,key),equivalent(existing,wanted,key) ? 'already_selected' : 'existing_value_conflict');
-    if (node.value && node.getAttribute('aria-expanded') === 'false') return finish(false,'existing_unverified_value');
+    if (node.value) return finish(false,'existing_unverified_value');
     var editable = node.tagName === 'INPUT' && !node.readOnly;
     C.simulateClick(node); node.focus();
-    var end = Date.now() + 4500, typed = false, queryAt = 0, lastSignature = '', stable = 0, pages = 0;
+    var end = Date.now() + 4500, queryAt = 0, lastSignature = '', stable = 0, pages = 0;
     while (Date.now() < end && node.isConnected && host.isConnected) {
+      if (editable && node.value !== (typed ? query : initialValue)) return finish(false,'existing_value_conflict');
       var box = popup(node);
       if (box && box.getAttribute('role') !== 'listbox') return finish(false,'popup_type_unsupported');
       if (box && box.getAttribute('aria-multiselectable') === 'true') return finish(false,'multiselect_unsupported');
@@ -65,14 +77,25 @@
         stable = signature === lastSignature ? stable + 1 : 0; lastSignature = signature;
         var hit = M.matchSelectOption(candidates,wanted);
         if (hit && equivalent(hit.text,wanted,key) && stable >= 1 && (!typed || Date.now() - queryAt >= 200)) {
-          C.simulateClick(hit.el);
-          var commitEnd = Date.now() + 900;
-          while (Date.now() < commitEnd) {
-            await C.sleep(80);
-            var shown = selectedText(host,node,true);
-            if (equivalent(shown,wanted,key) && !busy(node,popup(node))) {
-              committed.set(host,shown); return finish(true,'committed');
+          var emittedSelection = false, valueAtClick = node.value;
+          function selectionEvent() { emittedSelection = true; }
+          node.addEventListener('input',selectionEvent);
+          node.addEventListener('change',selectionEvent);
+          try {
+            C.simulateClick(hit.el);
+            var commitEnd = Date.now() + 900;
+            while (Date.now() < commitEnd && node.isConnected && host.isConnected) {
+              await C.sleep(80);
+              // 收起弹层不能证明 query 已提交。需要选择标记、组件事件或值确实变化。
+              var confirmed = !editable || emittedSelection || hit.el.getAttribute('aria-selected') === 'true' || node.value !== valueAtClick;
+              var shown = selectedText(host,node,confirmed);
+              if (equivalent(shown,wanted,key) && !busy(node,popup(node))) {
+                committed.set(host,shown); return finish(true,'committed');
+              }
             }
+          } finally {
+            node.removeEventListener('input',selectionEvent);
+            node.removeEventListener('change',selectionEvent);
           }
           return finish(false,'selection_not_committed');
         }

@@ -88,7 +88,7 @@
     refreshMirrors(listKey);
   }
 
-  function refreshMirrors(listKey) {
+  function refreshMirrors(listKey, editedField) {
     var rows = readListFromDom(listKey), map = P.MAIN_ENTRY_MAP[listKey] || {};
     Object.keys(map).forEach(function (field) {
       var input = form.elements.namedItem(map[field]);
@@ -97,6 +97,11 @@
         var value = rows[0][field] || '';
         // 满分尚未录入列表的旧 GPA，不能在展示镜像时丢掉已有满分。
         if (map[field] === 'gpa' && !String(value).includes('/') && String(input.value).startsWith(value + '/')) value = input.value;
+        // 未确认的独立主值仍可编辑；不能仅因展示/编辑另一字段就丢掉它。
+        if (!input.dataset.mirror && input.value && input.value !== value && editedField !== field) {
+          input.title = '与第1条经历不同或该经历尚未填写此项，请核对；修改对应经历字段后同步';
+          return;
+        }
         input.value = value;
         input.dataset.mirror = 'true';
         input.readOnly = true;
@@ -161,11 +166,14 @@
     });
     qualityEl.appendChild(list);
   }
-  var qualityBusy = false, saveInProgress = false;
+  var qualityBusy = false, saveInProgress = false, libraryBusy = false;
+  function profileOperationBusy() { return qualityBusy || saveInProgress || libraryBusy; }
   async function repairCurrentProfile(restore) {
-    if (qualityBusy || saveInProgress) return;
+    if (profileOperationBusy()) return;
     qualityBusy = true;
     try {
+      if (isFormDirty()) { qualityEl.textContent = '请先保存当前编辑，再整理或恢复资料。'; return; }
+      var formAtStart = snapshotForm();
       var stored = await chrome.storage.local.get(['profile','profileRepairBackup']);
       if (restore) {
         var backup = stored.profileRepairBackup;
@@ -173,11 +181,15 @@
         if (backup.activeRecord && DB) await DB.saveResume(backup.activeRecord);
         if (DB) await DB.setMeta('activeId', backup.activeId || null);
         await chrome.storage.local.set({profile:backup.profile});
-        writeForm(backup.profile); markFormClean(); await refreshResumeList();
+        if (snapshotForm() === formAtStart) { writeForm(backup.profile); markFormClean(); }
+        else showStatus(saveStatus,'资料已恢复；页面仍有未保存修改',4000);
+        await refreshResumeList();
         showQuality(P.auditProfile(backup.profile), '已恢复整理前资料。'); return;
       }
-      if (isFormDirty()) { qualityEl.textContent = '请先保存当前编辑，再整理资料。'; return; }
       var before = stored.profile || {}, result = P.repairProfile(before);
+      if (JSON.stringify(before) === JSON.stringify(result.profile)) {
+        showQuality(result.report,'无需自动整理，保留上次恢复备份。'); return;
+      }
       var activeRecord = DB ? await DB.getActiveResume() : null;
       var activeId = DB ? await DB.getActiveId() : null;
       // 备份成功之后才修改档案；原值只保存在扩展私有存储。
@@ -189,7 +201,9 @@
         await DB.setMeta('activeId',meta.id);
       }
       await chrome.storage.local.set({profile:result.profile});
-      writeForm(result.profile); markFormClean(); await refreshResumeList();
+      if (snapshotForm() === formAtStart) { writeForm(result.profile); markFormClean(); }
+      else showStatus(saveStatus,'资料已整理；页面仍有未保存修改',4000);
+      await refreshResumeList();
       showQuality(result.report, '已备份并整理 ' + result.changes.length + ' 项。');
     } catch (err) { if (qualityEl) qualityEl.textContent = '整理未完成：' + String(err.message || err); }
     finally { qualityBusy = false; }
@@ -215,7 +229,6 @@
 
   /** 未保存表单改动检测：切换档案前确认，避免静默丢改 */
   var formBaseline = '';
-  var applyGen = 0;
   function snapshotForm() {
     try { return JSON.stringify(readForm()); } catch (err) { return ''; }
   }
@@ -377,52 +390,32 @@
     refreshCounts();
   };
 
-  form.addEventListener('submit', function (e) {
+  form.addEventListener('submit', async function (e) {
     e.preventDefault();
-    // 表单只有扁平字段；必须从当前档案 / storage 拼回 eduList 等，否则一点保存就清空多段经历
-    var saveWithLists = async function (existing) {
-      if (saveInProgress || qualityBusy) return;
-      saveInProgress = true;
+    // 在首次 await 之前锁定本页操作及提交快照，避免切换档案后写错对象。
+    if (profileOperationBusy()) return;
+    saveInProgress = true;
+    var submitted = readForm(), formAtSave = snapshotForm();
+    try {
+      var stored = await chrome.storage.local.get('profile');
+      var rec = DB ? await DB.getActiveResume() : null;
+      var existing = rec && rec.profile || stored.profile || {};
       var profile = P.mergeFlatOntoProfile
-        ? P.mergeFlatOntoProfile(readForm(), existing || {})
-        : readForm();
-      var formAtSave = snapshotForm();
-      try {
-        var stored = await chrome.storage.local.get('profile');
-        var rec = DB ? await DB.getActiveResume() : null;
-        await chrome.storage.local.set({profileBeforeSave:{profile:stored.profile,activeRecord:rec,createdAt:Date.now()}});
-        if (DB) {
-          rec = rec || {name:profile.resumeTitle || '本地简历',source:{type:'manual'},rawText:''};
-          rec.profile = profile;
-          var meta = await DB.saveResume(rec);
-          await DB.setMeta('activeId',meta.id);
-        }
-        await chrome.storage.local.set({profile:profile});
-        if (snapshotForm() === formAtSave) { writeForm(profile); markFormClean(); showStatus(saveStatus,'已保存 ✓',2500); }
-        else showStatus(saveStatus,'已保存提交时的资料；页面仍有未保存修改',4000);
-        await refreshResumeList();
-      } catch (err) { showStatus(saveStatus,'保存未完成：' + String(err.message || err),6000); }
-      finally { saveInProgress = false; }
-    };
-    if (DB) {
-      DB.getActiveResume().then(function (rec) {
-        if (rec && rec.profile) {
-          saveWithLists(rec.profile);
-          return;
-        }
-        chrome.storage.local.get(['profile'], function (result) {
-          saveWithLists(result.profile || {});
-        });
-      }).catch(function () {
-        chrome.storage.local.get(['profile'], function (result) {
-          saveWithLists(result.profile || {});
-        });
-      });
-    } else {
-      chrome.storage.local.get(['profile'], function (result) {
-        saveWithLists(result.profile || {});
-      });
-    }
+        ? P.mergeFlatOntoProfile(submitted, existing)
+        : submitted;
+      await chrome.storage.local.set({profileBeforeSave:{profile:stored.profile,activeRecord:rec,createdAt:Date.now()}});
+      if (DB) {
+        rec = rec || {name:profile.resumeTitle || '本地简历',source:{type:'manual'},rawText:''};
+        rec.profile = profile;
+        var meta = await DB.saveResume(rec);
+        await DB.setMeta('activeId',meta.id);
+      }
+      await chrome.storage.local.set({profile:profile});
+      if (snapshotForm() === formAtSave) { writeForm(profile); markFormClean(); showStatus(saveStatus,'已保存 ✓',2500); }
+      else showStatus(saveStatus,'已保存提交时的资料；页面仍有未保存修改',4000);
+      await refreshResumeList();
+    } catch (err) { showStatus(saveStatus,'保存未完成：' + String(err.message || err),6000); }
+    finally { saveInProgress = false; }
   });
 
   aiForm.addEventListener('submit', function (e) {
@@ -433,21 +426,20 @@
     });
   });
 
-  document.getElementById('btn-clear').addEventListener('click', function () {
+  document.getElementById('btn-clear').addEventListener('click', async function () {
+    if (profileOperationBusy()) return;
     if (!confirm('确定清空当前表单，并删除本地简历库中的全部档案？此操作不可撤销。（不影响 AI 设置）')) return;
+    libraryBusy = true;
+    var formAtClear = snapshotForm();
     var empty = P.emptyProfile();
-    chrome.storage.local.set({ profile: empty }, function () {
-      writeForm(empty);
-      markFormClean();
+    try {
+      await chrome.storage.local.set({ profile: empty });
+      if (DB) await DB.clearAll();
+      if (snapshotForm() === formAtClear) { writeForm(empty); markFormClean(); }
       showStatus(saveStatus, '已清空', 2500);
-    });
-    if (DB) {
-      DB.clearAll().then(function () {
-        return refreshResumeList();
-      }).catch(function (err) {
-        showStatus(saveStatus, '表单已清空，但简历库清理失败：' + String(err && err.message || err), 6000);
-      });
-    }
+      await refreshResumeList();
+    } catch (err) { showStatus(saveStatus, '清理未完成：' + String(err && err.message || err), 6000); }
+    finally { libraryBusy = false; }
   });
 
   document.getElementById('btn-sample').addEventListener('click', function () {
@@ -637,7 +629,7 @@
   }
 
   /** 把档案写入 chrome.storage（内容脚本读 profile）+ 表单 */
-  function applyResume(rec) {
+  async function applyResume(rec, formAtApply) {
     var src = rec.profile || {};
     // normalizeProfile（1.4.1+）已保留列表；旧版兼容再抄一遍
     var profile = P.normalizeProfile(src);
@@ -648,13 +640,12 @@
         }
       });
     }
-    return new Promise(function (resolve) {
-      chrome.storage.local.set({ profile: profile }, function () {
-        writeForm(profile);
-        markFormClean();
-        resolve();
-      });
-    });
+    var previousId = await DB.getActiveId();
+    await DB.setMeta('activeId',rec.id);
+    try { await chrome.storage.local.set({profile:profile}); }
+    catch (err) { await DB.setMeta('activeId',previousId); throw err; }
+    if (snapshotForm() === formAtApply) { writeForm(profile); markFormClean(); }
+    else showStatus(saveStatus,'已切换填写资料；页面仍有未保存修改',4000);
   }
 
   function renderPreview(parsed, fileName) {
@@ -712,7 +703,9 @@
   var saveResumeBtn = document.getElementById('btn-save-resume');
   if (saveResumeBtn) {
     saveResumeBtn.addEventListener('click', async function () {
-      if (!pendingResume) return;
+      if (!pendingResume || profileOperationBusy()) return;
+      libraryBusy = true;
+      var formAtApply = snapshotForm();
       try {
         var meta = await DB.saveResume({
           name: nameEl.value.trim() || '未命名简历',
@@ -725,15 +718,14 @@
           profile: pendingResume.profile,
           warnings: pendingResume.warnings
         });
-        await DB.setMeta('activeId', meta.id);
-        await applyResume(await DB.getResume(meta.id));
+        await applyResume(await DB.getResume(meta.id),formAtApply);
         pendingResume = null;
         previewWrap.hidden = true;
         showStatus(resumeStatus, '已保存并应用 ✓', 3000);
         await refreshResumeList();
       } catch (err) {
         showStatus(resumeStatus, '保存失败：' + String(err && err.message || err), 6000);
-      }
+      } finally { libraryBusy = false; }
     });
   }
 
@@ -751,18 +743,16 @@
       if (!btn) return;
       var act = btn.getAttribute('data-act');
       var id = btn.getAttribute('data-id');
+      if (profileOperationBusy()) return;
+      libraryBusy = true;
+      var formAtApply = snapshotForm();
       try {
         if (act === 'apply') {
           if (isFormDirty() && !confirm('当前表单有未保存修改，切换档案将丢弃这些修改。继续？')) return;
-          var myGen = ++applyGen;
           var rec = await DB.getResume(id);
           if (!rec) return;
-          if (myGen !== applyGen) return; // 快速连点时只应用最后一次
-          await DB.setMeta('activeId', id);
-          if (myGen !== applyGen) return;
-          await applyResume(rec);
-          if (myGen !== applyGen) return;
-          showStatus(saveStatus, '已应用「' + rec.name + '」到当前表单', 3000);
+          await applyResume(rec,formAtApply);
+          if (!isFormDirty()) showStatus(saveStatus, '已应用「' + rec.name + '」到当前表单', 3000);
           await refreshResumeList();
         } else if (act === 'rename') {
           var rec2 = await DB.getResume(id);
@@ -781,7 +771,7 @@
         }
       } catch (err) {
         alert('操作失败：' + String(err && err.message || err));
-      }
+      } finally { libraryBusy = false; }
     });
   }
 
@@ -813,6 +803,8 @@
       if (!f) return;
       var reader = new FileReader();
       reader.onload = async function () {
+        if (profileOperationBusy()) return;
+        libraryBusy = true;
         try {
           if (!confirm('导入将写入本地简历库（相同 id 会覆盖）。继续？')) return;
           var added = await DB.importAll(String(reader.result || '{}'));
@@ -820,7 +812,7 @@
           alert('已导入 ' + added.length + ' 份档案');
         } catch (err) {
           alert('导入失败：' + String(err && err.message || err));
-        }
+        } finally { libraryBusy = false; }
       };
       reader.readAsText(f, 'utf-8');
     });
@@ -843,7 +835,10 @@
   document.addEventListener('input', refreshCounts);
   document.addEventListener('input', function (event) {
     var editor = event.target.closest && event.target.closest('.list-editor[data-list]');
-    if (editor) refreshMirrors(editor.getAttribute('data-list'));
+    if (editor) {
+      var row = event.target.closest('.list-row');
+      refreshMirrors(editor.getAttribute('data-list'), row && row.getAttribute('data-index') === '0' ? event.target.getAttribute('data-field') : null);
+    }
   });
   document.addEventListener('change', refreshCounts);
 
