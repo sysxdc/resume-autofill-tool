@@ -690,6 +690,77 @@ const CHAIN_CASES = [
 
 const E2E_CASES = [
   {
+    name:'rich：富文本按纯文本提交、保留已有内容并识别组件拒绝',
+    file:'rich-text.html',
+    async run(page) {
+      const intro='第一段经历。\n第二段说明。';
+      const project='<img src=x onerror=alert(1)> 只作为文字';
+      await loadExtension(page,{summary:intro,projectList:[{name:'测试项目',description:project}],workList:[{description:'拟填内容'}],additionalInfo:'补充内容'});
+      const result=await page.evaluate(()=>__resumeAutofill.fill({allowAddSections:false,allowCustomSelect:false}));
+      eq(await page.evaluate(()=>document.getElementById('summary-editor').innerText),intro,'保留分段');
+      eq(await page.evaluate(()=>window.editorState['summary-editor']),intro,'组件状态收到输入');
+      eq(await page.evaluate(()=>document.getElementById('project-editor').innerText),project,'HTML 以文字插入');
+      eq(await page.evaluate(()=>document.querySelectorAll('#project-editor img').length),0,'不执行或创建 HTML');
+      eq(await page.evaluate(()=>document.getElementById('work-editor').innerText),'用户已有的内容','不覆盖富文本原文');
+      ok(result.filledKeys.includes('summary')&&result.filledKeys.includes('projectDesc'),'核验富文本成功');
+      ok(result.skipped.some(x=>x.reason==='rich_text_not_committed'),'组件拒绝写入有原因');
+    }
+  },
+  {
+    name: 'aria：远程搜索、归属隔离、虚拟列表、禁用项和未提交搜索词',
+    file: 'aria-components.html',
+    async run(page) {
+      await loadExtension(page, {school:'测试大学',highestDegree:'硕士'});
+      const result = await page.evaluate(()=>window.__resumeAutofill.fill({allowAddSections:false}));
+      const state = await page.evaluate(()=>window.componentState);
+      eq(state.school,'UNI-CODE','选择真实远程选项编码');
+      eq(state.degree,'CODE-42','翻查未渲染的虚拟选项');
+      eq(await page.evaluate(()=>window.foreignClicks),0,'其他弹层的同名选项不会被点击');
+      ok(result.filledKeys.includes('school')&&result.filledKeys.includes('highestDegree'),'新组件计入已核验');
+      const attempt = await page.evaluate(async()=>{
+        const C=ResumeAutofillContent;
+        return {disabled:await C.fillCustomSelect(document.getElementById('disabled'),'女','gender'),query:await C.fillCustomSelect(document.getElementById('query-host'),'自动化','major'),queryFilled:C.customSelectLooksFilled(document.getElementById('query-host'))};
+      });
+      ok(!attempt.disabled&&!attempt.query&&!attempt.queryFilled,'禁用项和仅搜索均不能算填上');
+      eq(await page.evaluate(()=>window.disabledClicks),0,'不点击禁用项');
+      ok((await page.evaluate(()=>__resumeAutofill.unfilled())).some(x=>x.label==='专业'),'未提交的搜索仍列为空缺');
+    }
+  },
+  {
+    name:'library：资料检查、安全整理、镜像编辑与恢复备份',
+    file:'field-safety.html',
+    async run(page) {
+      await page.addInitScript(()=>{
+        const store={profile:{degree:'本科',eduDegree:'本科',gpa:'3.0/4.5',school:'测试大学',eduList:[{school:'测试大学',degree:'本科',academicDegree:'工学学士',gpa:'3.0'}]}};
+        window.fixtureStore=store;
+        window.chrome={runtime:{},storage:{local:{get:(keys,cb)=>{const data=structuredClone(store);if(cb)cb(data);else return Promise.resolve(data);},set:(data,cb)=>{Object.assign(store,structuredClone(data));if(cb)cb();else return Promise.resolve();}}}};
+      });
+      await page.goto(new URL('../../../options/options.html',page.url()).href);
+      await page.waitForFunction(()=>document.querySelector('[name="school"]').value==='测试大学');
+      await page.click('#btn-repair-profile');
+      await page.waitForFunction(()=>document.getElementById('profile-quality').textContent.includes('已备份并整理'));
+      eq(await page.evaluate(()=>fixtureStore.profile.degree),'工学学士','学位修正');
+      eq(await page.evaluate(()=>fixtureStore.profile.eduList[0].gpa),'3.0/4.5','满分补入列表');
+      eq(await page.evaluate(()=>fixtureStore.profileRepairBackup.profile.degree),'本科','原值备份可恢复');
+      ok(await page.evaluate(()=>document.querySelector('[name="school"]').readOnly),'主条目由列表同步，不再重复编辑');
+      const count=await page.evaluate(async()=> (await ResumeAutofillDB.listResumes()).length);
+      eq(count,1,'仅 storage 有资料时建立实际档案');
+      await page.click('a[data-pane="edu"]');
+      await page.fill('#list-eduList [data-field="school"]','更新大学');
+      await page.click('button[form="profile-form"]');
+      await page.waitForFunction(()=>fixtureStore.profile.school==='更新大学');
+      eq(await page.evaluate(async()=> (await ResumeAutofillDB.getActiveResume()).profile.eduList[0].school),'更新大学','档案与当前填写资料一起保存');
+      await page.click('#list-eduList [data-list-act="remove"]');
+      await page.click('button[form="profile-form"]');
+      await page.waitForFunction(()=>fixtureStore.profile.eduList.length===0);
+      eq(await page.evaluate(()=>fixtureStore.profile.school),'','删除最后经历不会从旧镜像复活');
+      await page.click('a[data-pane="library"]');
+      await page.click('#btn-restore-profile');
+      await page.waitForFunction(()=>document.getElementById('profile-quality').textContent.includes('已恢复整理前资料'));
+      eq(await page.evaluate(()=>fixtureStore.profile.degree),'本科','恢复原始资料');
+    }
+  },
+  {
     name: 'privacy：iframe 汇报不向页面暴露简历原值与审计正文',
     file: 'field-safety.html',
     async run(page) {

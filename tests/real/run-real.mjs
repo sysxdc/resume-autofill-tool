@@ -106,6 +106,8 @@ const MOKA_EXPECT = {
 };
 
 const CASES = [
+  {page:'aria-generic',profile:{school:'测试大学',highestDegree:'硕士'},expect:{school:'UNI-CODE',degree:'CODE-42'},maxMs:10000},
+  {page:'rich-generic',profile:{summary:'第一段。\n第二段。',projectList:[{name:'测试项目',description:'纯文本项目内容'}],workList:[{description:'拟填内容'}]},expect:{summary:'第一段。\n第二段。',project:'纯文本项目内容',work:'用户已有的内容'},maxMs:8000},
   { page: 'moka', profile: MOKA_PROFILE, expect: MOKA_EXPECT, maxMs: 30000 },
   { page: 'beisen', profile: BEISEN_PROFILE, expect: BEISEN_EXPECT, maxMs: 30000 },
   { page: 'antd3', profile: SMALL, expect: ANTD, maxMs: 8000 },
@@ -131,11 +133,16 @@ const CASES = [
 ].filter((c) => !filter || filter.split(',').includes(c.page));
 
 const MIME = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html; charset=utf-8', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf' };
+const fixtureAliases = new Map([
+  ['/pages/aria-generic.html',path.resolve(HERE,'../fixtures/dom/aria-components.html')],
+  ['/pages/rich-generic.html',path.resolve(HERE,'../fixtures/dom/rich-text.html')],
+]);
 const server = http.createServer((req, res) => {
-  const p = path.join(HERE, decodeURIComponent(req.url.split('?')[0]));
+  const pathname = decodeURIComponent(req.url.split('?')[0]);
+  const p = fixtureAliases.get(pathname) || path.join(HERE,pathname);
   const rel = path.relative(HERE, p);
   const outside = rel.startsWith('..') || path.isAbsolute(rel);
-  if (outside || !fs.existsSync(p) || fs.statSync(p).isDirectory()) { res.statusCode = 404; res.end(); return; }
+  if ((outside && !fixtureAliases.has(pathname)) || !fs.existsSync(p) || fs.statSync(p).isDirectory()) { res.statusCode = 404; res.end(); return; }
   res.setHeader('content-type', MIME[path.extname(p)] || 'application/octet-stream');
   fs.createReadStream(p).pipe(res);
 }).listen(0);

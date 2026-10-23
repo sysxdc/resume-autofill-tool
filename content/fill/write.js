@@ -314,6 +314,7 @@
   /** 回读一个控件当前显示的值（覆盖 input / textarea / select / antd 宿主 / 单选组） */
   function readBackValue(el) {
     if (!el || el.nodeType !== 1) return '';
+    if (el.isContentEditable) return String(el.innerText || '').trim();
     var tag = String(el.tagName || '').toLowerCase();
     try {
       if (tag === 'select') {
@@ -329,6 +330,7 @@
         return String(el.value || '').trim();
       }
       // 自定义下拉宿主
+      if (C.ariaCombobox && C.ariaCombobox(el)) return C.ariaSelectionText(el);
       var shown = el.querySelector('.phoenix-select__tipEle, .ant-select-selection-selected-value, .ant-select-selection-item, .el-select__selected-item:not(.el-select__input-wrapper):not(.is-transparent), .selected-text');
       if (shown) return String(shown.textContent || '').replace(/\s+/g, ' ').trim();
       var inner = el.querySelector('input.ant-input, input[type="text"]');
@@ -368,6 +370,33 @@
     return new Promise(function (r) { setTimeout(r, ms); });
   }
 
+  async function writeRichText(el, value, key) {
+    if (!el || !el.isContentEditable || !el.isConnected || el.getAttribute('aria-disabled') === 'true' || el.getAttribute('aria-readonly') === 'true') return false;
+    var before = readBackValue(el);
+    if (before) return writtenValueMatches(before,value,key);
+    el.focus();
+    if (el.ownerDocument.activeElement !== el) return false;
+    var selection = el.ownerDocument.getSelection(), range = el.ownerDocument.createRange();
+    if (!selection) return false;
+    range.selectNodeContents(el); selection.removeAllRanges(); selection.addRange(range);
+    var inserted = false;
+    try {
+      inserted = true;
+      var lines = String(value).split(/\r?\n/);
+      for (var i = 0; i < lines.length && inserted; i++) {
+        if (i) inserted = el.ownerDocument.execCommand('insertLineBreak',false);
+        if (inserted && lines[i]) inserted = el.ownerDocument.execCommand('insertText',false,lines[i]);
+      }
+    } catch (_) { inserted = false; }
+    if (!inserted) {
+      el.textContent = String(value);
+      el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:String(value)}));
+    }
+    el.dispatchEvent(new Event('change',{bubbles:true})); el.blur();
+    await sleep(80);
+    return el.isConnected && writtenValueMatches(readBackValue(el),value,key);
+  }
+
   // 导出
   C.bridgeCall = bridgeCall;
   C.bridgeDateCommit = bridgeDateCommit;
@@ -378,6 +407,7 @@
   C.rawSetValue = rawSetValue;
   C.fitToMaxLength = fitToMaxLength;
   C.writeAndVerify = writeAndVerify;
+  C.writeRichText = writeRichText;
   C.dateValueForInput = dateValueForInput;
   C.highlight = highlight;
   C.fillRecords = fillRecords;

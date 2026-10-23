@@ -1,0 +1,12 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>受控富文本</title>
+<style>[contenteditable]{border:1px solid;min-height:60px;margin:15px;white-space:pre-wrap}</style>
+<label id="summary-label">个人简介</label><div id="summary-editor" role="textbox" aria-labelledby="summary-label" contenteditable="true"><p><br></p></div>
+<fieldset><legend>项目经历</legend><label id="project-label">项目描述</label><div id="project-editor" class="ProseMirror" role="textbox" aria-labelledby="project-label" contenteditable="true"></div></fieldset>
+<fieldset><legend>工作经历</legend><label id="work-label">工作内容</label><div id="work-editor" role="textbox" aria-labelledby="work-label" contenteditable="true">用户已有的内容</div></fieldset>
+<label id="refused-label">其他补充</label><div id="refused-editor" role="textbox" aria-labelledby="refused-label" contenteditable="true"></div>
+<script>
+window.editorState={};
+window.__state=()=>({summary:window.editorState['summary-editor'],project:window.editorState['project-editor'],work:document.getElementById('work-editor').innerText});
+document.querySelectorAll('[contenteditable]').forEach(node=>node.addEventListener('input',()=>{window.editorState[node.id]=node.innerText;}));
+document.getElementById('refused-editor').addEventListener('input',event=>{Promise.resolve().then(()=>{event.target.textContent='';window.editorState[event.target.id]='';});});
+</script></html>

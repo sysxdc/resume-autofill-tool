@@ -607,7 +607,7 @@
     ],
     additionalInfo: [
       'additionalinfo', 'additional_info', 'otherinfo', 'remarks', 'notes',
-      '其他信息', '补充信息', '备注', '其他说明'
+      '其他信息', '补充信息', '补充说明', '其他补充', '备注', '其他说明'
     ]
   };
 
@@ -1569,14 +1569,14 @@
 
   /**
    * 同标签多行时：第 n 次出现取 list[n]（n 从 0）。值为 [列表, 字段, 回退字段?]。
-   * v1.6.0：覆盖全部 9 种列表；学位（degree）取 academicDegree，没填回退到学历。
+   * 学位仅取 academicDegree；第一段与后续段均以列表为主来源。
    */
   var LIST_OCCURRENCE_MAP = {
     school: ['eduList', 'school'],
     major: ['eduList', 'major'],
     majorCategory: ['eduList', 'majorCategory'],
     eduDegree: ['eduList', 'degree'],
-    degree: ['eduList', 'academicDegree', 'degree'],
+    degree: ['eduList', 'academicDegree'],
     studyMode: ['eduList', 'studyMode'],
     eduStart: ['eduList', 'start'],
     eduEnd: ['eduList', 'end'],
@@ -1642,6 +1642,7 @@
     certScore: ['certList', 'score'],
     langName: ['langList', 'name'],
     langLevel: ['langList', 'level'],
+    langCertName: ['langList', 'certName'],
     langScore: ['langList', 'score'],
     langDate: ['langList', 'date'],
     langListenSpeak: ['langList', 'listenSpeak'],
@@ -1872,11 +1873,21 @@
   }
 
   /**
-   * v1.5.24：扁平值取不到就回落到列表第一条。
-   * 之前 workEnd / endDate / eduDegree 等有专门分支的键会提前 return ''，
-   * 只填了多段经历（workList）的档案，第一段的结束时间、学历永远取不到。
+   * 列表第一条优先，避免旧主条目盖过用户更新的经历；保留兼容扁平档案。
    */
   function profileValue(profile, key) {
+    var map = LIST_OCCURRENCE_MAP[key];
+    var rows = map && profile ? listFor(profile, map[0]) : [];
+    if (rows.length) {
+      var primary = itemValue(rows[0], map);
+      if (primary) {
+        if (key === 'gpa') {
+          var rowGpa = parseGpa(primary), flatGpa = parseGpa(profile.gpa);
+          if (rowGpa && flatGpa && rowGpa.value === flatGpa.value && !rowGpa.scale && flatGpa.scale) return flatGpa.raw;
+        }
+        return primary;
+      }
+    }
     var v = profileValueFlat(profile, key);
     if (v || !profile) return v;
     var lm = LIST_OCCURRENCE_MAP[key];
@@ -1940,15 +1951,19 @@
     if (key === 'englishScore') {
       var esc = profile.englishScore && String(profile.englishScore).trim();
       if (esc) return esc;
-      return (profile.certScore && String(profile.certScore).trim()) || '';
+      var englishRow = (profile.langList || []).find(function (row) { return /^(英语|english)$/i.test(String(row.name || '')); });
+      if (englishRow && englishRow.score) return String(englishRow.score).trim();
+      return /CET|英语|IELTS|TOEFL|雅思|托福|TEM[48]/i.test(String(profile.certName || '')) ? String(profile.certScore || '').trim() : '';
     }
     if (key === 'englishDate') {
       var edt = profile.englishDate && String(profile.englishDate).trim();
       if (edt) return edt;
-      return (profile.certDate && String(profile.certDate).trim()) || '';
+      var englishDateRow = (profile.langList || []).find(function (row) { return /^(英语|english)$/i.test(String(row.name || '')); });
+      if (englishDateRow && englishDateRow.date) return String(englishDateRow.date).trim();
+      return /CET|英语|IELTS|TOEFL|雅思|托福|TEM[48]/i.test(String(profile.certName || '')) ? String(profile.certDate || '').trim() : '';
     }
     if (key === 'langLevel' && /^(英语|english)$/i.test(String(profile.langName || ''))) {
-      return String(profile.langLevel || profile.langCertName || profile.englishLevel || '').trim();
+      return String(profile.langLevel || '').trim();
     }
     // 国籍 ↔ 国家（仅单向：nationality 可回退 country）
     if (key === 'nationality') {
@@ -1978,7 +1993,7 @@
       if (jt) return jt;
       return (profile.employmentType && String(profile.employmentType).trim()) || '';
     }
-    // 工作性质：显式值 > 该段写的是实习 > 求职意向的工作类型
+    // 工作性质只来自经历事实，不借用求职意向。
     if (key === 'workNature') {
       var wn = profile.workNature && String(profile.workNature).trim();
       if (wn) return wn;
@@ -1989,7 +2004,7 @@
         if (/实习/.test(String(first.title || '')) || /实习/.test(String(first.company || ''))) return '实习';
       }
       if (/实习/.test(String(profile.title || ''))) return '实习';
-      return (profile.jobType && String(profile.jobType).trim()) || '';
+      return '';
     }
     // 工作描述 ↔ 业绩
     if (key === 'workDescription') {
@@ -1997,9 +2012,7 @@
       if (wd) return wd;
       var wl0 = Array.isArray(profile.workList) ? profile.workList[0] : null;
       if (wl0 && wl0.description && String(wl0.description).trim()) return String(wl0.description).trim();
-      var il0 = Array.isArray(profile.internList) ? profile.internList[0] : null;
-      if (il0 && il0.description && String(il0.description).trim()) return String(il0.description).trim();
-      return (profile.achievements && String(profile.achievements).trim()) || '';
+      return '';
     }
     // 紧急联系人：组合回退
     if (key === 'emergencyContact') {
@@ -2046,15 +2059,16 @@
       if (hd) return hd;
       var edg = profile.eduDegree && String(profile.eduDegree).trim();
       if (edg) return edg;
-      return (profile.degree && String(profile.degree).trim()) || '';
+      return '';
     }
     if (key === 'eduDegree') {
       var ed2 = profile.eduDegree && String(profile.eduDegree).trim();
       if (ed2) return ed2;
       var hd2 = profile.highestDegree && String(profile.highestDegree).trim();
       if (hd2) return hd2;
-      return (profile.degree && String(profile.degree).trim()) || '';
+      return '';
     }
+    if (key === 'degree' && /^(本科|专科|大专|高中|硕士研究生|博士研究生)$/.test(String(profile.degree || '').trim())) return '';
     var v = profile[key];
     var flat = v != null ? String(v).trim() : '';
     if (flat) return flat;

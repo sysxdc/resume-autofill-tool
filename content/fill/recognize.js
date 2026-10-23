@@ -185,6 +185,8 @@
    */
   function fieldLooksFilled(el) {
     if (!el) return false;
+    var host = C.findCustomSelectHost && C.findCustomSelectHost(el);
+    if (host && C.ariaCombobox && C.ariaCombobox(host)) return C.customSelectLooksFilled(host);
     var tag = el.tagName.toLowerCase();
     var type = (el.type || '').toLowerCase();
     if (type === 'checkbox' || type === 'radio') return false;

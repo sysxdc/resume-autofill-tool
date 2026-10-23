@@ -1,0 +1,35 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>ARIA 远程与虚拟下拉</title>
+<style>body{font:15px sans-serif;padding:20px}.form-group{margin:16px}input,button{height:30px}[role=listbox]{background:white;border:1px solid;width:220px;min-height:30px}[role=option]{height:24px;cursor:pointer}#virtual-list{height:96px;overflow-y:auto;position:relative}#virtual-content{height:1920px;position:relative}[hidden]{display:none!important}</style>
+<div class="form-group" id="remote-host"><label for="remote">学校</label><input id="remote" role="combobox" aria-controls="missing remote-list" aria-expanded="false"></div>
+<div class="form-group"><label id="degree-label">最高学历</label><button id="virtual" role="combobox" aria-labelledby="degree-label" aria-controls="virtual-list" aria-expanded="false">请选择</button></div>
+<div class="form-group"><label id="gender-label">性别</label><button id="disabled" role="combobox" aria-labelledby="gender-label" aria-controls="disabled-list" aria-expanded="false">请选择</button></div>
+<div class="form-group" id="query-host"><label for="query">专业</label><input id="query" role="combobox" aria-controls="query-list" aria-expanded="true" value="自动化"></div>
+<div id="foreign-list" role="listbox"><div role="option" onclick="window.foreignClicks++">测试大学</div></div>
+<div id="remote-list" role="listbox" hidden><div role="option">旧搜索结果</div></div>
+<div id="virtual-list" role="listbox" hidden><div id="virtual-content"></div></div>
+<div id="disabled-list" role="listbox" hidden><div role="option" aria-disabled="true" onclick="window.disabledClicks++">女</div><div role="option">男</div></div>
+<div id="query-list" role="listbox"><div role="option">自动化</div></div>
+<script>
+window.componentState={};window.foreignClicks=0;window.disabledClicks=0;
+window.__state=()=>window.componentState;
+const remote=document.getElementById('remote'), remoteList=document.getElementById('remote-list');
+remote.addEventListener('click',()=>{remote.setAttribute('aria-expanded','true');remoteList.hidden=false;});
+remote.addEventListener('input',()=>{
+  remoteList.setAttribute('aria-busy','true');
+  setTimeout(()=>{
+    remoteList.textContent='';const item=document.createElement('div');item.role='option';item.textContent='测试大学';item.dataset.value='UNI-CODE';
+    item.onclick=()=>{window.componentState.school='UNI-CODE';remote.value='测试大学';remote.setAttribute('aria-expanded','false');remoteList.hidden=true;};
+    remoteList.appendChild(item);remoteList.setAttribute('aria-busy','false');
+  },600);
+});
+const virtual=document.getElementById('virtual'), virtualList=document.getElementById('virtual-list'), content=document.getElementById('virtual-content');
+function renderVirtual(){
+  content.textContent='';const start=Math.floor(virtualList.scrollTop/24);
+  for(let i=start;i<Math.min(start+5,80);i++){
+    const item=document.createElement('div');item.role='option';item.style.cssText='position:absolute;top:'+(i*24)+'px';item.textContent=i===42?'硕士':'候选'+i;item.dataset.value='CODE-'+i;
+    item.onclick=()=>{window.componentState.degree=item.dataset.value;virtual.textContent=item.textContent;virtual.setAttribute('aria-expanded','false');virtualList.hidden=true;};content.appendChild(item);
+  }
+}
+virtual.onclick=()=>{virtualList.hidden=false;virtual.setAttribute('aria-expanded','true');renderVirtual();};virtualList.addEventListener('scroll',renderVirtual);
+document.getElementById('disabled').onclick=()=>{document.getElementById('disabled-list').hidden=false;document.getElementById('disabled').setAttribute('aria-expanded','true');};
+</script></html>

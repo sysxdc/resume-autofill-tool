@@ -193,7 +193,10 @@
         no_profile_value:'资料中缺少此项', record_ambiguous:'经历无法唯一对应', record_conflict:'已有经历与资料不匹配',
         duplicate_record:'已有重复经历', no_record_available:'没有对应的资料条目', unrecognized_field:'字段含义待确认',
         set_value_failed:'控件未接受填写', date_value_unsupported:'日期格式暂不支持', value_exceeds_maxlength:'内容超过长度限制',
-        existing_value_conflict:'保留已有内容，请核对', verification_pending:'精度需要核对'
+        existing_value_conflict:'保留已有内容，请核对', verification_pending:'精度需要核对',
+        options_timeout:'选项加载超时',no_matching_option:'没有对应的可选项',selection_not_committed:'尚未提交选项',
+        existing_unverified_value:'已有内容尚不能确认，请核对',component_replaced:'页面更新了控件，请重试',component_disabled:'控件暂不可用',
+        popup_type_unsupported:'暂不支持此类选择面板',multiselect_unsupported:'此多选组件需要手动填写',rich_text_not_committed:'富文本未接受填写'
       };
       label.textContent = (it.label || '') + (reasons[it.reason] ? '：' + reasons[it.reason] : '');
       li.appendChild(label);

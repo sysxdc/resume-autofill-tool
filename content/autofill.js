@@ -390,6 +390,9 @@
         : (M.profileValueForOccurrence
           ? M.profileValueForOccurrence(profile, key, count)
           : M.profileValue(profile, key));
+      if (key === 'langLevel' && /等级|级别|考试|证书/.test(getLabelText(el)) && !/掌握|熟练/.test(getLabelText(el))) {
+        value = M.profileValueForOccurrence(profile,'langCertName',count) || value;
+      }
       if (!value) {
         // 主 key 取不到值：试一下别名（所在地 / 工作经验 / 职责 / 语言类型 ...）
         var aliasKey = aliasKeyForLabel(getLabelText(el), key);
@@ -466,6 +469,10 @@
           // Phoenix 宿主的真值只在 React 状态里，绝不能直接写 input.value
           if (isPhoenixHost(customHost)) {
             if (skipped.length < 30) skipped.push({ key: key, reason: 'phoenix_fill_failed' });
+            continue;
+          }
+          if (C.ariaCombobox(customHost)) {
+            skipped.push({key:key,reason:(C.ariaSelectResult(customHost) || {}).reason || 'selection_not_committed'});
             continue;
           }
         } catch (_) { /* fall through */ }
@@ -653,6 +660,33 @@
       }
     }
 
+    }
+
+    // 富文本正文有独立写入协议，不能用 input.value 或 innerHTML 冒充组件提交。
+    var richSeen = {};
+    var richNodes = document.querySelectorAll('[contenteditable="true"][role="textbox"], .ProseMirror[contenteditable="true"], .ql-editor[contenteditable="true"]');
+    for (var richIndex = 0; richIndex < richNodes.length; richIndex++) {
+      if (Date.now() - startedAt > 45000) { timedOut = true; break; }
+      var rich = richNodes[richIndex];
+      if (!isVisibleEl(rich) || rich.parentElement.closest('[contenteditable="true"]')) continue;
+      var richStruct = C.boundStructuredField(rich,recordBindings);
+      if (richStruct && richStruct.reason) continue;
+      var richKey = richStruct ? richStruct.key : matchKeyForElement(rich);
+      if (!/^(summary|workDescription|internDescription|projectDesc|projectResponsibilities|projectOutcome|eduDescription|additionalInfo)$/.test(richKey || '')) continue;
+      var richOccurrence = richSeen[richKey] || 0; richSeen[richKey] = richOccurrence + 1;
+      var richValue = richStruct ? structuredValue(profile,richStruct) : M.profileValueForOccurrence(profile,richKey,richOccurrence);
+      if (!richValue) continue;
+      if (readBackValue(rich)) {
+        if (!writtenValueMatches(readBackValue(rich),richValue,richKey)) preserved.push({key:richKey,label:getLabelText(rich),reason:'existing_value_conflict'});
+        continue;
+      }
+      if (await C.writeRichText(rich,richValue,richKey)) {
+        filled += 1; if (filledKeys.indexOf(richKey) < 0) filledKeys.push(richKey);
+        recordFill(rich,richKey,richValue); highlight(rich);
+      } else {
+        skipped.push({key:richKey,reason:'rich_text_not_committed'});
+        if (readBackValue(rich)) { recordFill(rich,richKey,richValue); fillRecords[fillRecords.length - 1].noCount = true; }
+      }
     }
 
     // 无名单选组（性别/婚姻/政治面貌/民族）：语义明确才勾
@@ -1009,6 +1043,12 @@
       });
     });
     // 自定义下拉的搜索 input 已被主循环排除，未填清单仍必须报告整个控件。
+    Array.prototype.forEach.call(document.querySelectorAll('[contenteditable="true"][role="textbox"], .ProseMirror[contenteditable="true"], .ql-editor[contenteditable="true"]'),function (node) {
+      if (!isVisibleEl(node) || readBackValue(node) || node.parentElement.closest('[contenteditable="true"]')) return;
+      var label = cleanFieldLabel(getLabelText(node)); if (!label) return;
+      var id = 'f' + out.length; UNFILLED_ELS[id] = node;
+      out.push({id:id,label:label,key:matchKeyForElement(node) || '',section:sectionTitleFor(node),required:fieldRequired(node),row:0});
+    });
     iterCustomSelectHosts().forEach(function (host) {
       if (!isVisibleEl(host) || customSelectLooksFilled(host)) return;
       var label = cleanFieldLabel(getLabelText(host));

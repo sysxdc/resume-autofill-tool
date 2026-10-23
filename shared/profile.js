@@ -67,7 +67,7 @@
     'internDescription', 'internLeaveReason',
     // —— 工作经历（主条目） ——
     'company', 'companySize', 'workOverseas', 'title', 'startDate', 'workEnd', 'endDate',
-    'workCity', 'industry', 'workNature', 'jobType', 'employmentType',
+    'workCity', 'workDepartment', 'industry', 'workNature', 'jobType', 'employmentType',
     'monthlySalary', 'annualSalary',
     'refereeName', 'refereeContact', 'refereeTitle',
     'achievements', 'workDescription', 'leaveReason',
@@ -115,7 +115,7 @@
     // degree = 学历（本科 / 硕士），academicDegree = 学位（工学学士），两者在网申里是两个不同的下拉
     eduList: ['school', 'department', 'major', 'majorCategory', 'degree', 'academicDegree', 'studyMode', 'start', 'end',
       'city', 'gpa', 'rank', 'courses', 'advisor', 'research', 'thesis', 'description'],
-    internList: ['company', 'department', 'title', 'industry', 'start', 'end', 'city', 'description', 'leaveReason',
+    internList: ['company', 'department', 'title', 'nature', 'industry', 'start', 'end', 'city', 'salary', 'achievements', 'description', 'leaveReason',
       'refereeName', 'refereeContact'],
     workList: ['company', 'department', 'title', 'nature', 'industry', 'start', 'end', 'city', 'salary', 'description',
       'achievements', 'leaveReason', 'refereeName', 'refereeContact'],
@@ -123,7 +123,7 @@
     campusList: ['org', 'role', 'level', 'start', 'end', 'description'],
     awardList: ['name', 'level', 'rank', 'issuer', 'date', 'description'],
     certList: ['name', 'issuer', 'no', 'date', 'score'],
-    langList: ['name', 'level', 'score', 'date', 'listenSpeak', 'readWrite'],
+    langList: ['name', 'level', 'certName', 'score', 'date', 'listenSpeak', 'readWrite'],
     familyList: ['name', 'relation', 'employer', 'title', 'phone', 'politicalStatus']
   };
 
@@ -136,7 +136,7 @@
       research: '研究方向', thesis: '毕业论文', description: '描述'
     },
     internList: {
-      company: '公司', department: '部门', title: '职位', industry: '行业', start: '开始', end: '结束', city: '城市',
+      company: '公司', department: '部门', title: '职位', nature: '经历性质', salary: '薪资（原记录）', achievements: '成果', industry: '行业', start: '开始', end: '结束', city: '城市',
       description: '实习内容', leaveReason: '离职原因', refereeName: '证明人', refereeContact: '证明人电话'
     },
     workList: {
@@ -151,7 +151,7 @@
     campusList: { org: '组织 / 社团', role: '职务', level: '级别（校级/院级）', start: '开始', end: '结束', description: '内容' },
     awardList: { name: '奖项名称', level: '级别（国家级/省级）', rank: '名次 / 等级', issuer: '颁发机构', date: '获奖时间', description: '描述' },
     certList: { name: '证书名称', issuer: '颁发机构', no: '证书编号', date: '获得时间', score: '成绩' },
-    langList: { name: '语种', level: '等级 / 证书（CET-6、N1）', score: '成绩', date: '获得时间', listenSpeak: '听说', readWrite: '读写' },
+    langList: { name: '语种', level: '熟练程度 / 原有等级', certName: '考试 / 证书名称（CET-4、N1）', score: '成绩', date: '获得时间', listenSpeak: '听说', readWrite: '读写' },
     familyList: { name: '姓名', relation: '关系', employer: '工作单位', title: '职务', phone: '电话', politicalStatus: '政治面貌' }
   };
 
@@ -172,7 +172,7 @@
     eduList: {
       school: 'school', department: 'department', major: 'major', majorCategory: 'majorCategory', degree: 'eduDegree',
       academicDegree: 'degree', studyMode: 'studyMode', start: 'eduStart', end: 'eduEnd', city: 'schoolCity', gpa: 'gpa',
-      rank: 'majorRank', courses: 'majorCourses', advisor: 'advisorName', research: 'researchDirection', thesis: 'thesisTitle'
+      rank: 'majorRank', courses: 'majorCourses', advisor: 'advisorName', research: 'researchDirection', thesis: 'thesisTitle', description: 'eduDescription'
     },
     internList: {
       company: 'internCompany', department: 'internDepartment', title: 'internTitle', industry: 'internIndustry',
@@ -186,12 +186,12 @@
     },
     projectList: {
       name: 'projectName', role: 'projectRole', start: 'projectStart', end: 'projectEnd', link: 'projectLink',
-      tech: 'techSkills', description: 'projectDesc', responsibilities: 'projectResponsibilities', outcome: 'projectOutcome'
+      description: 'projectDesc', responsibilities: 'projectResponsibilities', outcome: 'projectOutcome'
     },
     campusList: { org: 'campusOrg', role: 'campusRole', level: 'campusLevel', start: 'campusStart', end: 'campusEnd', description: 'campusWorkContent' },
     awardList: { name: 'awardName', level: 'awardLevel', rank: 'awardRank', issuer: 'awardIssuer', date: 'awardDate', description: 'awardDescription' },
     certList: { name: 'certName', issuer: 'certIssuer', no: 'certNo', date: 'certDate', score: 'certScore' },
-    langList: { name: 'langName', level: 'langLevel', score: 'langScore', date: 'langDate', listenSpeak: 'langListenSpeak', readWrite: 'langReadWrite' },
+    langList: { name: 'langName', level: 'langLevel', certName: 'langCertName', score: 'langScore', date: 'langDate', listenSpeak: 'langListenSpeak', readWrite: 'langReadWrite' },
     familyList: {
       name: 'familyName', relation: 'familyRelation', employer: 'familyEmployer', title: 'familyTitle',
       phone: 'familyPhone', politicalStatus: 'familyPoliticalStatus'
@@ -256,6 +256,109 @@
       p[LIST_FIELDS[j]] = [];
     }
     return p;
+  }
+
+  function text(value) { return value == null ? '' : String(value).trim(); }
+  function stableJson(value) {
+    if (Array.isArray(value)) return '[' + value.map(stableJson).join(',') + ']';
+    if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(function (k) { return JSON.stringify(k) + ':' + stableJson(value[k]); }).join(',') + '}';
+    return JSON.stringify(value);
+  }
+  function gpaParts(value) {
+    var m = text(value).match(/^(\d+(?:\.\d+)?)(?:\s*[/／]\s*(\d+(?:\.\d+)?))?$/);
+    return m && (!m[2] || (Number(m[2]) > 0 && Number(m[1]) <= Number(m[2]))) ? m : null;
+  }
+
+  /** 只返回字段路径和原因，不把资料值复制到诊断中。 */
+  function auditProfile(profile) {
+    var p = profile || {}, issues = [], mirrors = 0;
+    LIST_FIELDS.forEach(function (lk) {
+      var rows = Array.isArray(p[lk]) ? p[lk] : [], seen = {};
+      rows.forEach(function (row, index) {
+        var signature = stableJson(row);
+        if (seen[signature] != null) issues.push({code:'duplicate_record', path:lk + '[' + index + ']', related:lk + '[' + seen[signature] + ']'});
+        else seen[signature] = index;
+      });
+      if (!rows.length) return;
+      Object.keys(MAIN_ENTRY_MAP[lk]).forEach(function (field) {
+        var flat = MAIN_ENTRY_MAP[lk][field], a = text(p[flat]), b = text(rows[0][field]);
+        if (!a || !b) return;
+        if (a === b) mirrors += 1;
+        else issues.push({code:'mirror_conflict', path:flat, related:lk + '[0].' + field});
+      });
+    });
+    (Array.isArray(p.workList) ? p.workList : []).forEach(function (row, index) {
+      if (/^(实习|intern|internship)$/i.test(text(row.nature))) issues.push({code:'intern_in_work',path:'workList[' + index + ']'});
+    });
+    [['studyMode','eduMode'],['workEnd','endDate']].forEach(function (pair) {
+      if (text(p[pair[0]]) && text(p[pair[1]]) && text(p[pair[0]]) !== text(p[pair[1]])) issues.push({code:'alias_conflict',path:pair[0],related:pair[1]});
+    });
+    if (/^(本科|专科|大专|高中|硕士研究生|博士研究生)$/.test(text(p.degree))) issues.push({code:'degree_is_education',path:'degree',related:'eduDegree'});
+    if (text(p.langName) && !(p.langList || []).length) issues.push({code:'language_flat_only',path:'langName',related:'langList'});
+    return {issues:issues, mirrorCount:mirrors};
+  }
+
+  /** 可安全整理的项目；不修改输入，保留未识别字段和所有不同内容。 */
+  function repairProfile(profile) {
+    var p = JSON.parse(JSON.stringify(profile || {})), changes = [];
+    function changed(code, path, related) { changes.push({code:code,path:path,related:related || ''}); }
+    LIST_FIELDS.forEach(function (lk) {
+      var rows = Array.isArray(p[lk]) ? p[lk] : [], seen = {};
+      p[lk] = rows.filter(function (row, index) {
+        var signature = stableJson(row);
+        if (seen[signature]) { changed('duplicate_record',lk + '[' + index + ']'); return false; }
+        seen[signature] = true; return true;
+      });
+    });
+    var education = p.eduList[0];
+    if (education) {
+      var flatGpa = gpaParts(p.gpa), rowGpa = gpaParts(education.gpa);
+      if (flatGpa && rowGpa && Number(flatGpa[1]) === Number(rowGpa[1])) {
+        if (flatGpa[2] && !rowGpa[2]) { education.gpa = text(p.gpa); changed('gpa_scale_completed','eduList[0].gpa','gpa'); }
+        else if (rowGpa[2] && !flatGpa[2]) { p.gpa = text(education.gpa); changed('gpa_scale_completed','gpa','eduList[0].gpa'); }
+      }
+      if (/^(本科|专科|大专|高中|硕士研究生|博士研究生)$/.test(text(p.degree)) && /学士|硕士|博士|bachelor|master|doctor/i.test(text(education.academicDegree))) {
+        p.degree = text(education.academicDegree); changed('degree_corrected','degree','eduList[0].academicDegree');
+      }
+    }
+    if (text(p.studyMode) && text(p.eduMode) === '普通' + text(p.studyMode)) {
+      p.eduMode = text(p.studyMode); changed('alias_normalized','eduMode','studyMode');
+    }
+    if (!p.langList.length && text(p.langName)) {
+      var language = {};
+      Object.keys(MAIN_ENTRY_MAP.langList).forEach(function (field) { language[field] = text(p[MAIN_ENTRY_MAP.langList[field]]); });
+      if (!language.certName && /^(英语|english)$/i.test(language.name)) language.certName = text(p.englishLevel);
+      p.langList.push(language); changed('language_structured','langList','langName');
+    }
+    p.workList = p.workList.filter(function (row) {
+      if (!/^(实习|intern|internship)$/i.test(text(row.nature))) return true;
+      var beforeChanges = changes.length;
+      var originalRow = JSON.parse(JSON.stringify(row));
+      if (/^(实习生|intern)$/i.test(text(row.title)) && /实习|intern/i.test(text(p.internTitle)) &&
+          text(p.internCompany) === text(row.company) && text(row.company) &&
+          (!text(p.internStart) || text(p.internStart) === text(row.start)) &&
+          (!text(p.internEnd) || text(p.internEnd) === text(row.end))) {
+        row.title = text(p.internTitle); changed('title_refined','internList.title','internTitle');
+      }
+      var same = p.internList.find(function (other) {
+        return text(row.company) && text(row.company) === text(other.company) && text(row.start) === text(other.start) && text(row.end) === text(other.end);
+      });
+      if (same) {
+        if (Object.keys(row).some(function (key) { return text(row[key]) && text(same[key]) && text(row[key]) !== text(same[key]); })) {
+          if (changes.length > beforeChanges) { row.title = originalRow.title; changes.length = beforeChanges; }
+          return true;
+        }
+        Object.keys(row).forEach(function (key) { if (key !== '__proto__' && key !== 'constructor' && !same[key]) same[key] = row[key]; });
+      } else p.internList.push(row);
+      var map = MAIN_ENTRY_MAP.workList;
+      Object.keys(map).forEach(function (field) {
+        if (text(p[map[field]]) && (text(p[map[field]]) === text(row[field]) || text(p[map[field]]) === text(originalRow[field]))) p[map[field]] = '';
+      });
+      if (text(p.endDate) === text(row.end)) p.endDate = '';
+      changed('intern_reclassified','internList','workList'); return false;
+    });
+    deriveMainEntries(p, false);
+    return {profile:p,changes:changes,report:auditProfile(p)};
   }
 
   var DEFAULT_PROFILE = emptyProfile();
@@ -606,6 +709,7 @@
       var v = p[PROFILE_FIELDS[i]];
       if (v && String(v).trim()) return true;
     }
+    if (LIST_FIELDS.some(function (key) { return Array.isArray(p[key]) && p[key].some(function (row) { return Object.keys(row || {}).some(function (field) { return !!text(row[field]); }); }); })) return true;
     return false;
   }
 
@@ -636,6 +740,8 @@
     emptyProfile: emptyProfile,
     normalizeProfile: normalizeProfile,
     mergeFlatOntoProfile: mergeFlatOntoProfile,
+    auditProfile: auditProfile,
+    repairProfile: repairProfile,
     profileHasData: profileHasData,
     profileNonEmpty: profileNonEmpty
   };

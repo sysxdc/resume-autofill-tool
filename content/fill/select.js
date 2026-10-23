@@ -315,6 +315,7 @@
 
   function customSelectLooksFilled(host) {
     if (!host) return false;
+    if (C.ariaCombobox(host)) return !!C.ariaSelectionText(host);
     // antd v3：只认 .ant-select-selection-selected-value，隐藏 input 里的编码值不算
     if (typeof isAntdV3SelectHost === 'function' && isAntdV3SelectHost(host)) {
       return !!antdV3SelectedText(host);
@@ -454,6 +455,7 @@
   /** 下拉当前显示的文字（antd / Element / 自绘都能读到） */
   function customSelectText(host) {
     if (!host) return '';
+    if (C.ariaCombobox(host)) return C.ariaSelectionText(host);
     // Element Plus：第一个 .el-select__selected-item 是输入框外壳（永远空），选中文字在不透明的 placeholder 里
     var sel = host.querySelector('.ant-select-selection-item, .el-select__selected-item:not(.el-select__input-wrapper):not(.is-transparent)');
     if (sel) return String(sel.textContent || '').replace(/\s+/g, ' ').trim();
@@ -853,6 +855,7 @@
       try {
         var ln = rowLang(i, 'langName', langName);
         var lv = rowLang(i, 'langLevel', langLevel);
+        if (/等级|级别|考试|证书/.test(levels[i].label) && !/掌握|熟练/.test(levels[i].label)) lv = M.profileValueForOccurrence(profile,'langCertName',i) || lv;
         if (!ln || !lv) continue;
         var steps = [{ host: langs[i].host, value: ln, label: langs[i].label }];
         if (levels[i].parentHost) steps.push({ host: levels[i].parentHost, value: ln, label: '语种' });
@@ -891,6 +894,7 @@
   }
 
   function fillCustomSelect(host, value, key) {
+    if (C.ariaCombobox(host)) return C.fillAriaSelect(host,value,key);
     if (isPhoenixHost(host)) return fillPhoenixHost(host, value, key);
     if (isAntdV3SelectHost(host)) return fillAntdV3Select(host, value);
     return new Promise(function (resolve) {

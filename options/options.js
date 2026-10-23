@@ -57,6 +57,7 @@
     var arr = Array.isArray(items) ? items : [];
     if (!arr.length) {
       root.innerHTML = '<p class="muted" style="font-size:12px;color:#94a3b8">暂无记录，点击下方按钮添加。</p>';
+      refreshMirrors(listKey);
       return;
     }
     root.innerHTML = arr.map(function (item, idx) {
@@ -84,6 +85,28 @@
           '<div class="grid">' + fields + '</div>' +
         '</div>';
     }).join('');
+    refreshMirrors(listKey);
+  }
+
+  function refreshMirrors(listKey) {
+    var rows = readListFromDom(listKey), map = P.MAIN_ENTRY_MAP[listKey] || {};
+    Object.keys(map).forEach(function (field) {
+      var input = form.elements.namedItem(map[field]);
+      if (!input) return;
+      if (rows.length) {
+        var value = rows[0][field] || '';
+        // 满分尚未录入列表的旧 GPA，不能在展示镜像时丢掉已有满分。
+        if (map[field] === 'gpa' && !String(value).includes('/') && String(input.value).startsWith(value + '/')) value = input.value;
+        input.value = value;
+        input.dataset.mirror = 'true';
+        input.readOnly = true;
+        if (input.tagName === 'SELECT') input.disabled = true;
+        input.title = '由第1条经历同步，请在多段经历中修改';
+      } else if (input.dataset.mirror) {
+        input.value = ''; input.readOnly = false; input.disabled = false;
+        delete input.dataset.mirror; input.title = '';
+      }
+    });
   }
 
   function writeLists(profile) {
@@ -108,10 +131,78 @@
     var p = P.normalizeProfile(profile);
     FIELDS.forEach(function (key) {
       var el = form.elements.namedItem(key);
-      if (el) el.value = p[key] || '';
+      if (el) {
+        delete el.dataset.mirror; el.readOnly = false; el.disabled = false; el.title = '';
+        el.value = p[key] || '';
+      }
     });
     writeLists(p);
   }
+
+  var qualityEl = document.getElementById('profile-quality');
+  function qualityPath(path) {
+    var match = String(path || '').match(/^(\w+)\[(\d+)\](?:\.(\w+))?$/);
+    if (match) return (P.LIST_SECTION_TITLES[match[1]] || '经历') + ' 第' + (Number(match[2]) + 1) + '条' + (match[3] ? ' · ' + ((LIST_LABELS[match[1]] || {})[match[3]] || '字段') : '');
+    var field = form.elements.namedItem(path);
+    return field && field.closest('label') ? field.closest('label').textContent.trim() : (P.LIST_SECTION_TITLES[path] || '资料字段');
+  }
+  function showQuality(report, prefix) {
+    if (!qualityEl) return;
+    var labels = {mirror_conflict:'与对应经历内容不同', alias_conflict:'同义字段内容不同',duplicate_record:'与另一条记录完全重复',degree_is_education:'学历被写入学位',intern_in_work:'实习放在工作列表中',language_flat_only:'外语资料尚未整理为多段记录'};
+    qualityEl.textContent = '';
+    var summary = document.createElement('p');
+    summary.textContent = (prefix || '') + '发现 ' + report.issues.length + ' 项待处理；' + report.mirrorCount + ' 项为与经历一致的兼容字段，不是重复经历。';
+    qualityEl.appendChild(summary);
+    var list = document.createElement('ul');
+    report.issues.forEach(function (issue) {
+      var li = document.createElement('li');
+      li.textContent = qualityPath(issue.path) + '：' + (labels[issue.code] || '需要核对') + (issue.related ? '（' + qualityPath(issue.related) + '）' : '');
+      list.appendChild(li);
+    });
+    qualityEl.appendChild(list);
+  }
+  var qualityBusy = false, saveInProgress = false;
+  async function repairCurrentProfile(restore) {
+    if (qualityBusy || saveInProgress) return;
+    qualityBusy = true;
+    try {
+      var stored = await chrome.storage.local.get(['profile','profileRepairBackup']);
+      if (restore) {
+        var backup = stored.profileRepairBackup;
+        if (!backup) { qualityEl.textContent = '尚无整理备份。'; return; }
+        if (backup.activeRecord && DB) await DB.saveResume(backup.activeRecord);
+        if (DB) await DB.setMeta('activeId', backup.activeId || null);
+        await chrome.storage.local.set({profile:backup.profile});
+        writeForm(backup.profile); markFormClean(); await refreshResumeList();
+        showQuality(P.auditProfile(backup.profile), '已恢复整理前资料。'); return;
+      }
+      if (isFormDirty()) { qualityEl.textContent = '请先保存当前编辑，再整理资料。'; return; }
+      var before = stored.profile || {}, result = P.repairProfile(before);
+      var activeRecord = DB ? await DB.getActiveResume() : null;
+      var activeId = DB ? await DB.getActiveId() : null;
+      // 备份成功之后才修改档案；原值只保存在扩展私有存储。
+      await chrome.storage.local.set({profileRepairBackup:{profile:before,activeRecord:activeRecord,activeId:activeId,createdAt:Date.now()}});
+      if (DB) {
+        var record = activeRecord || {name:before.resumeTitle || '本地简历',source:{type:'local'},rawText:''};
+        record.profile = result.profile;
+        var meta = await DB.saveResume(record);
+        await DB.setMeta('activeId',meta.id);
+      }
+      await chrome.storage.local.set({profile:result.profile});
+      writeForm(result.profile); markFormClean(); await refreshResumeList();
+      showQuality(result.report, '已备份并整理 ' + result.changes.length + ' 项。');
+    } catch (err) { if (qualityEl) qualityEl.textContent = '整理未完成：' + String(err.message || err); }
+    finally { qualityBusy = false; }
+  }
+  var auditButton = document.getElementById('btn-audit-profile');
+  if (auditButton) auditButton.addEventListener('click', async function () {
+    var stored = await chrome.storage.local.get('profile');
+    showQuality(P.auditProfile(isFormDirty() ? readForm() : stored.profile || {}));
+  });
+  var repairButton = document.getElementById('btn-repair-profile');
+  if (repairButton) repairButton.addEventListener('click', function () { repairCurrentProfile(false); });
+  var restoreButton = document.getElementById('btn-restore-profile');
+  if (restoreButton) restoreButton.addEventListener('click', function () { repairCurrentProfile(true); });
 
   function showStatus(el, text, ms) {
     el.textContent = text || '';
@@ -174,7 +265,7 @@
   function countFilled(pane) {
     var n = 0;
     pane.querySelectorAll('input, select, textarea').forEach(function (el) {
-      if (el.type === 'file' || el.type === 'hidden' || el.disabled) return;
+      if (el.type === 'file' || el.type === 'hidden' || el.disabled || el.dataset.mirror) return;
       if (el.type === 'checkbox' || el.type === 'radio') {
         if (el.checked) n += 1;
         return;
@@ -289,21 +380,29 @@
   form.addEventListener('submit', function (e) {
     e.preventDefault();
     // 表单只有扁平字段；必须从当前档案 / storage 拼回 eduList 等，否则一点保存就清空多段经历
-    var saveWithLists = function (existing) {
+    var saveWithLists = async function (existing) {
+      if (saveInProgress || qualityBusy) return;
+      saveInProgress = true;
       var profile = P.mergeFlatOntoProfile
         ? P.mergeFlatOntoProfile(readForm(), existing || {})
         : readForm();
-      chrome.storage.local.set({ profile: profile }, function () {
-        showStatus(saveStatus, '已保存 ✓', 2500);
-        markFormClean();
-      });
-      if (DB) {
-        DB.getActiveResume().then(function (rec) {
-          if (!rec) return;
+      var formAtSave = snapshotForm();
+      try {
+        var stored = await chrome.storage.local.get('profile');
+        var rec = DB ? await DB.getActiveResume() : null;
+        await chrome.storage.local.set({profileBeforeSave:{profile:stored.profile,activeRecord:rec,createdAt:Date.now()}});
+        if (DB) {
+          rec = rec || {name:profile.resumeTitle || '本地简历',source:{type:'manual'},rawText:''};
           rec.profile = profile;
-          return DB.saveResume(rec).then(refreshResumeList);
-        }).catch(function () { /* 无档案时忽略 */ });
-      }
+          var meta = await DB.saveResume(rec);
+          await DB.setMeta('activeId',meta.id);
+        }
+        await chrome.storage.local.set({profile:profile});
+        if (snapshotForm() === formAtSave) { writeForm(profile); markFormClean(); showStatus(saveStatus,'已保存 ✓',2500); }
+        else showStatus(saveStatus,'已保存提交时的资料；页面仍有未保存修改',4000);
+        await refreshResumeList();
+      } catch (err) { showStatus(saveStatus,'保存未完成：' + String(err.message || err),6000); }
+      finally { saveInProgress = false; }
     };
     if (DB) {
       DB.getActiveResume().then(function (rec) {
@@ -742,6 +841,10 @@
     showPane(initial || currentPaneId, { scroll: false });
   });
   document.addEventListener('input', refreshCounts);
+  document.addEventListener('input', function (event) {
+    var editor = event.target.closest && event.target.closest('.list-editor[data-list]');
+    if (editor) refreshMirrors(editor.getAttribute('data-list'));
+  });
   document.addEventListener('change', refreshCounts);
 
 })();

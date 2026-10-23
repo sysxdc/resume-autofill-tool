@@ -1682,7 +1682,7 @@ test('v1.5.0: profileValueForOccurrence 多段按序取值', () => {
       { name: '项目二', role: '成员' }
     ]
   });
-  assert.equal(Match.profileValueForOccurrence(p, 'school', 0), '扁平校');
+  assert.equal(Match.profileValueForOccurrence(p, 'school', 0), '一段校');
   assert.equal(Match.profileValueForOccurrence(p, 'school', 1), '二段校');
   assert.equal(Match.profileValueForOccurrence(p, 'company', 1), '公司B');
   assert.equal(Match.profileValueForOccurrence(p, 'projectName', 1), '项目二');
@@ -1751,7 +1751,7 @@ test('v1.5.6: 成绩排名/绩点排名/工作性质的键位', () => {
 test('v1.5.6: 工作描述为空回落到 workList[0]', () => {
   const p = { workDescription: '', workList: [{ company: 'X', description: '来自列表的描述' }] };
   assert.equal(Match.profileValue(p, 'workDescription'), '来自列表的描述');
-  assert.equal(Match.profileValue({ workDescription: '显式值', workList: [{ description: '列表值' }] }, 'workDescription'), '显式值');
+  assert.equal(Match.profileValue({ workDescription: '显式值', workList: [{ description: '列表值' }] }, 'workDescription'), '列表值');
 });
 
 test('v1.5.6: 「至今」走开关，不写进日期框', () => {
@@ -1764,7 +1764,7 @@ test('v1.5.6: 「至今」走开关，不写进日期框', () => {
 
 test('v1.5.6: 工作性质按该段职位推断', () => {
   assert.equal(Match.profileValue({ workList: [{ title: '实习生' }] }, 'workNature'), '实习');
-  assert.equal(Match.profileValue({ workList: [{ title: '工程师' }], jobType: '全职' }, 'workNature'), '全职');
+  assert.equal(Match.profileValue({ workList: [{ title: '工程师' }], jobType: '全职' }, 'workNature'), '');
   assert.equal(Match.profileValue({ workList: [{ title: '工程师', nature: '兼职' }] }, 'workNature'), '兼职');
 });
 
@@ -1934,9 +1934,9 @@ test('v1.5.9: 外语成绩 / 取得时间 独立成键并可回退证书', () =>
   assert.equal(Match.matchFieldKey('外语成绩'), 'englishScore');
   assert.equal(Match.matchFieldKey('外语考试时间'), 'englishDate');
   assert.equal(Match.profileValue({ englishScore: '520' }, 'englishScore'), '520');
-  assert.equal(Match.profileValue({ certScore: '510' }, 'englishScore'), '510');
+  assert.equal(Match.profileValue({ certName:'CET-4',certScore: '510' }, 'englishScore'), '510');
   assert.equal(Match.profileValue({ englishDate: '2023-06' }, 'englishDate'), '2023-06');
-  assert.equal(Match.profileValue({ certDate: '2019-06' }, 'englishDate'), '2019-06');
+  assert.equal(Match.profileValue({ certName:'CET-4',certDate: '2019-06' }, 'englishDate'), '2019-06');
   const prof = fs.readFileSync(path.join(root, 'shared/profile.js'), 'utf8');
   assert.ok(/englishScore/.test(prof) && /englishDate/.test(prof), 'profile 字段表要包含新键');
   const html = fs.readFileSync(path.join(root, 'options/options.html'), 'utf8');
@@ -2534,7 +2534,7 @@ test('v1.6.0: 新增多段列表逐段取值（第 2 段不回落到主条目）
   assert.equal(Match.profileValueForOccurrence(p, 'familyRelation', 1), '母亲');
   assert.equal(Match.profileValueForOccurrence(p, 'langName', 1), '日语');
   assert.equal(Match.profileValueForOccurrence(p, 'awardName', 2), '', '第 3 段没有 → 留空');
-  assert.equal(Match.profileValueForOccurrence(p, 'awardName', 0), '主条目奖', '第 1 段：主条目显式值优先');
+  assert.equal(Match.profileValueForOccurrence(p, 'awardName', 0), '国奖', '第 1 段也以列表为来源');
   assert.equal(Match.profileValueForOccurrence(p, 'familyName', 0), '张父', '主条目空 → 用列表第一段');
   for (const k of Profile.LIST_FIELDS) assert.ok(Array.isArray(p[k]), k + ' 归一化后是数组');
   const edu = [{ school: '甲' }, { school: '乙' }];
@@ -2623,7 +2623,7 @@ console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
 
 {
-  const child = spawnSync(process.execPath, ['--test', path.join(__dirname, 'field-safety.test.mjs')], {encoding:'utf8', cwd:root});
+  const child = spawnSync(process.execPath, ['--test', path.join(__dirname, 'field-safety.test.mjs'),path.join(__dirname,'profile-quality.test.mjs')], {encoding:'utf8', cwd:root});
   if (child.stdout) process.stdout.write(child.stdout);
   if (child.stderr) process.stderr.write(child.stderr);
   if (child.status !== 0) process.exit(child.status || 1);
