@@ -225,16 +225,20 @@
           timedOut: !!r.timedOut,
           keys: (r.filledKeys || []).slice(0, 80),
           // 降级项：值填上了但精度掉了（2023-09 被写成 2023-09-01 / 日被控件吃掉），必须看得见
-          degraded: (r.degradedDates || []).slice(0, 20),
+          degraded: (r.degradedDates || []).slice(0, 20).map(function (x) { return { key: x.key, level: x.level }; }),
           auditRecords: r.auditRecords || 0,
           // 写了 / 点了但最后页面上没有值的字段（已从「已填」里扣掉）
           notWritten: (r.notWritten || []).slice(0, 20),
           audit: r.audit ? {
             checked: r.audit.checked, ok: r.audit.ok, approx: r.audit.approx,
             empty: r.audit.empty, wrong: r.audit.mismatch,
-            problems: (r.audit.problems || []).slice(0, 15)
+            problems: (r.audit.problems || []).slice(0, 15).map(function (x) {
+              return { key: x.key, status: x.status, level: x.level };
+            })
           } : null,
-          skipped: (r.skipped || []).slice(0, 30)
+          skipped: (r.skipped || []).slice(0, 30).map(function (x) {
+            return { key: x.key, reason: String(x.reason || '').split(':')[0] };
+          })
         });
       } catch (_) { /* ignore */ }
       var blanks = (r.unfilled && r.unfilled.length !== undefined) ? r.unfilled : api.unfilled();
@@ -370,6 +374,8 @@
   });
 
   root.addEventListener('click', function (e) {
+    // 开放 shadow DOM 可被网页脚本访问；合成点击不能触发本地资料读取或扩展页面操作。
+    if (!e.isTrusted) return;
     var btn = e.target.closest('[data-act]');
     if (!btn) return;
     e.preventDefault();

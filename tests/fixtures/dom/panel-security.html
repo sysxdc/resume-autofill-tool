@@ -1,0 +1,6 @@
+<!doctype html><html><meta charset="utf-8"><title>Panel security regression</title><body><h1>Panel security</h1>
+<script>
+window.fillCalls=0;
+window.__resumeAutofill={fill:async()=>{window.fillCalls++;return {ok:true,filled:1,filledKeys:['name'],unfilled:[],degradedDates:[{key:'eduStart',level:'day-approx',actual:'PRIVATE_AUDIT_SENTINEL',want:'PRIVATE_AUDIT_SENTINEL'}],skipped:[{key:'name',reason:'audit_mismatch: PRIVATE_AUDIT_SENTINEL'}],audit:{checked:1,ok:0,approx:0,empty:0,mismatch:1,problems:[{key:'name',expected:'PRIVATE_AUDIT_SENTINEL',actual:'PRIVATE_AUDIT_SENTINEL',status:'mismatch'}]}}},unfilled:()=>[],revealField:()=>true};
+globalThis.chrome={storage:{local:{get:(k,cb)=>cb({}),set:()=>{}}},runtime:{sendMessage:()=>{}}};
+</script><script src="../../../content/panel.js" onload="window.fixtureReady=true"></script></body></html>

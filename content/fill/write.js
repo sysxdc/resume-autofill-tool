@@ -323,7 +323,7 @@
         return String(el.value || '').trim();
       }
       // 自定义下拉宿主
-      var shown = el.querySelector('.ant-select-selection-selected-value, .ant-select-selection-item, .el-select__selected-item:not(.el-select__input-wrapper):not(.is-transparent), .selected-text');
+      var shown = el.querySelector('.phoenix-select__tipEle, .ant-select-selection-selected-value, .ant-select-selection-item, .el-select__selected-item:not(.el-select__input-wrapper):not(.is-transparent), .selected-text');
       if (shown) return String(shown.textContent || '').replace(/\s+/g, ' ').trim();
       var inner = el.querySelector('input.ant-input, input[type="text"]');
       if (inner && String(inner.value || '').trim()) return String(inner.value || '').trim();

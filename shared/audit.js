@@ -63,6 +63,18 @@
     var a = tight(actual);
     var x = tight(expected);
     if (a === x) return { key: e.key, label: label, expected: expected, actual: actual, status: 'ok' };
+    if (e.key === 'gradYear' && /^\d{4}$/.test(expected) &&
+        actual.replace(/[年届]/g, '') === expected) {
+      return { key: e.key, label: label, expected: expected, actual: actual, status: 'approx', level: 'year-suffix' };
+    }
+    if (/^(englishLevel|langLevel)$/.test(e.key || '')) {
+      var cet = function (v) {
+        if (/^(cet[\s-]?4|英语四级|四级)$/i.test(v)) return 'CET4';
+        if (/^(cet[\s-]?6|英语六级|六级)$/i.test(v)) return 'CET6';
+        return v;
+      };
+      if (cet(actual) === cet(expected)) return { key: e.key, label: label, expected: expected, actual: actual, status: 'approx', level: 'cet-synonym' };
+    }
 
     // 页面给值加了「(类别)(层次)(地区)」这类消歧后缀 → 近似，例如专业「自动化」显示成
     // 「自动化(自动化类)(普通本科)(中国大陆)」。只认「紧跟括号」，所以

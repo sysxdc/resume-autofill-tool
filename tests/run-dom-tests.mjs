@@ -96,6 +96,37 @@ async function clickCellByText(page, cellsSel, want) {
 // ── 用例：每个 fixture 断言「打开方式 + 写入路径 + 回读值 + 陷阱」──
 const CASES = [
   {
+    name: 'panel：网页合成点击不能读取资料，公开诊断不包含资料值',
+    file: 'panel-security.html',
+    async run(page) {
+      await page.waitForFunction(() => window.fixtureReady);
+      await page.evaluate(() => document.getElementById('__ra_panel_host__').shadowRoot.querySelector('[data-act="fill"]').click());
+      eq(await page.evaluate(() => window.fillCalls), 0, '网页合成点击被阻止');
+      await page.click('[data-act="fill"]');
+      await page.waitForFunction(() => document.getElementById('__ra_panel_host__').dataset.lastResult);
+      eq(await page.evaluate(() => window.fillCalls), 1, '真实用户点击仍可填写');
+      ok(!(await page.evaluate(() => document.getElementById('__ra_panel_host__').dataset.lastResult)).includes('PRIVATE_AUDIT_SENTINEL'), '诊断属性不泄漏原始资料值');
+    }
+  },
+  {
+    name: 'campus：标签优先、第三方隔离、数值 GPA、分区计数与未填下拉',
+    file: 'campus-regressions.html',
+    async run(page) {
+      await page.waitForFunction(() => window.fixtureReady);
+      const r = await page.evaluate(() => window.__resumeAutofill.fill({ allowCustomSelect: false }));
+      const v = (id) => page.evaluate((x) => document.getElementById(x).value, id);
+      eq(await v('school'), '测试大学', '学校');
+      eq(await v('role'), '负责人', '职务名称不能映射到项目名称');
+      eq(await v('gpa'), '3.0', '数值 GPA 不得拼接分母');
+      eq(await v('form_item_certificateNo'), 'TEST-ID', '中文证件标签优先于英文属性名');
+      for (const id of ['minor', 'family', 'familyPhone', 'stars', 'popup']) eq(await v(id), '', id + ' 不得误填');
+      eq(await page.evaluate(() => window.addCount), 0, '已有一段教育不能继续添加');
+      eq(await page.evaluate(() => ResumeAutofillContent.readBackValue(document.getElementById('phoenix'))), '本科', '只读一次选中值');
+      ok(r.unfilled.some((x) => x.label === '成绩排名' && x.required), '必填下拉出现在未填清单');
+      ok(!r.audit.wrongFill, '回读审计无错填');
+    }
+  },
+  {
     name: 'r3-ymd-selects：年/月/日 三个原生 select',
     file: 'r3-ymd-selects.html',
     async run(page) {

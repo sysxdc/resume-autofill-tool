@@ -605,8 +605,8 @@ test('mergeAiMappingWithProfile: fill from profile, no invent', () => {
   );
   assert.equal(merged[0].action, 'fill');
   assert.equal(merged[0].suggestedValue, Profile.SAMPLE_PROFILE.email);
-  assert.equal(merged[1].action, 'custom_answer');
-  assert.ok(merged[1].suggestedValue.includes('前端'));
+  assert.equal(merged[1].action, 'skip', '默认模式不能接受模型生成的正文');
+  assert.equal(merged[1].suggestedValue, '');
   assert.equal(merged[2].action, 'skip');
 });
 
@@ -687,8 +687,8 @@ test('mergeAiMappingWithProfile: yes/no select rejects paragraph custom_answer',
     Match,
     Profile
   );
-  assert.equal(merged[0].action, 'fill');
-  assert.equal(merged[0].suggestedValue, 'No');
+  assert.equal(merged[0].action, 'skip', '默认模式不能接受模型生成的是非答案');
+  assert.equal(merged[0].suggestedValue, '');
   assert.equal(merged[1].action, 'skip');
 });
 
@@ -1531,7 +1531,7 @@ test('v1.5.2: 无上下文时别名兜底 + 户籍不被抢成 schoolCity', () =
 
 test('v1.5.4: id 结构映射覆盖 ATS 行级字段', () => {
   const src = contentSrc();
-  assert.ok(/resume\(education\|work\|project\|paper\|intern\)info_/.test(src), '应解析 resumeXxxInfo_N_field 形态的 id');
+  assert.ok(/resume\(education\|work\|employment\|project\|paper\|intern\)info_/.test(src), '应解析 resumeXxxInfo_N_field 形态的 id');
   for (const f of ['schoolname', 'collegename', 'scoreRank'.toLowerCase(), 'startdate', 'enddate']) {
     assert.ok(new RegExp("'?" + f).test(src) || src.indexOf(f) !== -1, '缺字段映射: ' + f);
   }
@@ -2107,7 +2107,7 @@ test('v1.5.14: 范围控件在实习分区可回落到 workList', () => {
   assert.ok(/M\.listFor\(profile, map\.listKey\)/.test(src), '范围控件按 listFor 取段');
   const work = [{ company: '甲', title: '工程师' }, { company: '乙', title: '前端实习生' }];
   assert.deepEqual(Match.listFor({ workList: work }, 'internList').map((w) => w.company), ['乙'], '优先取写着实习的段');
-  assert.deepEqual(Match.listFor({ workList: [work[0]] }, 'internList').map((w) => w.company), ['甲'], '一段实习都没有就用整个 workList');
+  assert.deepEqual(Match.listFor({ workList: [work[0]] }, 'internList'), [], '不能把全职工作重新标成实习');
   assert.deepEqual(Match.listFor({ internList: [{ company: '丙' }], workList: work }, 'internList').map((w) => w.company), ['丙'], '有 internList 就用它');
 });
 
@@ -2584,6 +2584,41 @@ test('v1.6.0: 内容脚本模块化——加载顺序 / 依赖都有人导出 / 
 });
 
 console.log('');
+test('白名单 AI 拒绝虚构值、原型键、低置信映射', () => {
+  const fields = [{ index: 0, label: '公司', tag: 'input', type: 'text' }];
+  for (const item of [
+    { profileKey: 'company', value: '虚构公司', confidence: 0.99 },
+    { profileKey: '__proto__', value: '虚构公司', confidence: 0.99 },
+    { profileKey: 'name', confidence: 0.2 },
+    { profileKey: 'name', confidence: NaN },
+    { profileKey: 'name', confidence: Infinity }
+  ]) {
+    const result = AI.mergeAiMappingWithProfile([{ index: 0, action: 'fill', ...item }], fields, { name: '测试人' }, Match, Profile);
+    assert.equal(result[0].action, 'skip');
+    assert.equal(result[0].suggestedValue, '');
+  }
+});
+test('全文模式只在显式启用时允许开放题正文', () => {
+  const result = AI.mergeAiMappingWithProfile(
+    [{ index: 0, action: 'custom_answer', value: '测试正文', confidence: 0.9 }],
+    [{ index: 0, label: '自我介绍', tag: 'textarea' }], {}, Match, Profile, { mode: 'full' });
+  assert.equal(result[0].action, 'custom_answer');
+});
+test('真实校招标签：数值、第三方、辅修与项目职务分别匹配', () => {
+  assert.equal(Match.matchFieldKey('Github 星级'), null);
+  assert.equal(Match.matchFieldKey('英语等级成绩'), 'englishScore');
+  assert.equal(Match.matchFieldKey('意向城市选择原因'), null);
+  assert.equal(Match.matchFieldKey('职务 请输入职务名称', { context: 'project' }), 'projectRole');
+  assert.equal(Match.matchFieldKey('辅修专业', { context: 'edu' }), 'dualDegree');
+  assert.equal(Match.matchFieldKey('亲友姓名'), 'familyName');
+  assert.equal(Match.matchFieldKey('联系电话', { context: 'family', autocomplete: 'tel' }), 'familyPhone');
+  assert.equal(Match.matchFieldKey('工作单位', { context: 'family' }), 'familyEmployer');
+  assert.equal(Match.matchFieldKey('所在部门', { context: 'intern' }), 'internDepartment');
+  assert.equal(Match.findBestOption(['四级', '六级', '专业四级'], 'CET-4').text, '四级');
+  assert.equal(Audit.compareEntry({ key: 'englishLevel', expected: 'CET-4', actual: '四级' }).status, 'approx');
+  assert.equal(Audit.compareEntry({ key: 'gradYear', expected: '2027', actual: '2027届' }).status, 'approx');
+});
+
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
 

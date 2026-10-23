@@ -143,10 +143,12 @@
     iterFillableFields().forEach(function (el) {
       var scored = M.matchFieldKeyScored
         ? M.matchFieldKeyScored(collectHints(el), {
-            autocomplete: el.getAttribute('autocomplete') || ''
+            autocomplete: el.getAttribute('autocomplete') || '',
+            context: detectSectionContext(el)
           })
         : null;
-      var key = scored ? scored.key : matchKeyForElement(el);
+      var struct = detectStructuredField(el);
+      var key = struct ? struct.key : (compoundEduKey(getLabelText(el)) || sectionFallbackKey(el) || matchKeyForElement(el));
       if (!key) return;
       var sig = key + '|' + (el.name || el.id || hintSnippet(el));
       if (seen[sig]) return;
@@ -154,8 +156,8 @@
       results.push({
         key: key,
         hint: hintSnippet(el),
-        confidence: scored ? scored.confidence : 1,
-        method: scored ? scored.method : 'keyword'
+        confidence: struct ? 1 : (scored ? scored.confidence : 1),
+        method: struct ? 'structured' : (scored ? scored.method : 'label')
       });
     });
     return results;
@@ -571,6 +573,11 @@
           skipped.push({ key: key, reason: 'readonly_picker_not_found' });
         }
       } else {
+        if (key === 'gpa' && (el.type === 'number' || (el.closest && el.closest('.el-input-number')))) {
+          var gpaMatch = String(value).match(/^\s*(\d+(?:\.\d+)?)\s*(?:[/／]\s*\d+(?:\.\d+)?)?\s*$/);
+          if (!gpaMatch) { skipped.push({ key: key, reason: 'invalid_gpa' }); continue; }
+          value = gpaMatch[1];
+        }
         // 日期写进普通输入框：按控件要求的格式（type=date/month、placeholder 的 YYYY/MM…）
         dateText = dateValueForInput(el, value);
         if (dateText === '') {
@@ -679,7 +686,7 @@
         // antd 的必填星号在 label 里（"学校*"），不清理会匹配不上
         hLabel = String(hLabel).replace(/\*/g, '').replace(/（必填）|\(必填\)|必填/g, '').replace(/\s+/g, ' ').trim();
         // 带上区块上下文（教育块的「城市」是学校城市，不是申请人城市）
-        var hKey = M.matchFieldKey(hLabel, { context: detectSectionContext(host) });
+        var hKey = compoundEduKey(hLabel) || M.matchFieldKey(hLabel, { context: detectSectionContext(host) });
         if (!hKey) continue;
         var hCounterKey = occurrenceKey(hKey, hLabel);
         // 与主循环一致：第几段按出现位置算（已经有值的那一段也占位）
@@ -777,10 +784,15 @@
 
     async function applyOneMapping(m) {
       if (!m || (m.action !== 'fill' && m.action !== 'custom_answer')) return;
+      if (!Number.isInteger(m.index) || !Number.isFinite(m.confidence) || m.confidence < 0.6) return;
       var value = String(m.suggestedValue || '').trim();
       if (!value) return;
       var el = els[m.index];
       if (!el) return;
+      var currentLabel = String(getLabelText(el) || '').replace(/\s+/g, '').trim();
+      var mappedLabel = String(m.label || '').replace(/\s+/g, '').trim();
+      if (mappedLabel && currentLabel && mappedLabel !== currentLabel) return;
+      if (M.isSkipContext && M.isSkipContext(collectHints(el))) return;
       if (fieldLooksFilled(el)) return;
       var hints = collectHints(el);
       var adjacentRole = detectAdjacentDatePairRole(el);
@@ -867,12 +879,13 @@
 
   function fieldRequired(el) {
     if (!el) return false;
-    if (el.required) return true;
+    if (el.required || el.getAttribute('aria-required') === 'true') return true;
     var label = String(getLabelText(el) || '');
     if (/^\s*[*＊]/.test(label)) return true;
-    var item = el.closest ? el.closest('.el-form-item, .form-item, .field, .form-group, tr') : null;
+    var item = el.closest ? el.closest('.ant-form-item, .el-form-item, .form-item, .field, .form-group, tr') : null;
     if (item && item.className && /(^|\s)(is-)?required(\s|$)/.test(String(item.className))) return true;
-    var lab = item && item.querySelector ? item.querySelector('.el-form-item__label, label') : null;
+    var lab = item && item.querySelector ? item.querySelector('.ant-form-item-required, .el-form-item__label, .form-item__text, label') : null;
+    if (lab && lab.classList && lab.classList.contains('ant-form-item-required')) return true;
     if (lab && /^\s*[*＊]/.test(String(lab.textContent || ''))) return true;
     return false;
   }
@@ -888,7 +901,7 @@
     if (/最高学历|最高学位|学历信息/.test(t)) {
       if (/学校|院校/.test(t)) return 'school';
       if (/专业/.test(t)) return 'major';
-      if (/学院/.test(t)) return 'college';
+      if (/学院/.test(t)) return 'department';
       if (/日期|时间|毕业/.test(t)) return 'eduEnd';
       return '';
     }
@@ -969,6 +982,19 @@
         section: section,
         row: row > 1 ? row : 0
       });
+    });
+    // 自定义下拉的搜索 input 已被主循环排除，未填清单仍必须报告整个控件。
+    iterCustomSelectHosts().forEach(function (host) {
+      if (!isVisibleEl(host) || customSelectLooksFilled(host)) return;
+      var label = cleanFieldLabel(getLabelText(host));
+      if (!label) return;
+      var section = sectionTitleFor(host);
+      var sig = section + '|' + label;
+      var row = (seen[sig] || 0) + 1;
+      seen[sig] = row;
+      var id = 'f' + out.length;
+      UNFILLED_ELS[id] = host;
+      out.push({ id: id, label: label, required: fieldRequired(host), section: section, row: row > 1 ? row : 0 });
     });
     return out.slice(0, 60);
   }

@@ -1,6 +1,6 @@
 {
   "name": "resume-autofill-tool",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "private": true,
   "description": "Chrome MV3 resume autofill extension — local profile + fuzzy match + optional AI",
   "scripts": {

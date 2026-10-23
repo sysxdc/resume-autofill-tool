@@ -117,7 +117,7 @@ async function handleAiMapFields(message) {
   if (useAi) {
     try {
       var aiItems = await callLlmMap(settings, profile, fields);
-      var merged = AI.mergeAiMappingWithProfile(aiItems, fields, profile, M, P);
+      var merged = AI.mergeAiMappingWithProfile(aiItems, fields, profile, M, P, { mode: settings.mode });
       return {
         ok: true,
         source: 'ai',

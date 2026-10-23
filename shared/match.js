@@ -240,7 +240,7 @@
       '外语水平等级', 'cet等级', 'ielts', 'toefl'
     ],
     englishScore: [
-      'englishscore', 'english_score', '英语成绩', '外语成绩', '语言成绩', '英语分数',
+      'englishscore', 'english_score', '英语成绩', '英语等级成绩', '外语成绩', '语言成绩', '英语分数',
       '四六级成绩', 'cet成绩', '雅思成绩', '托福成绩',
       '四级成绩', '六级成绩', '四级分数', '六级分数', '雅思分数', '托福分数', 'cet4成绩', 'cet6成绩',
       'cet-4成绩', 'cet-6成绩', 'cet4分数', 'cet6分数'
@@ -299,7 +299,7 @@
     ],
     gradYear: [
       'graduationyear', 'gradyear', 'grad_year', 'yearofgraduation', 'endyear',
-      '毕业年份', '毕业年'
+      '毕业年份', '毕业年', '毕业届次'
     ],
     degreeAwardDate: ['degreeawarddate', 'degree_award_date', '学位授予时间', '获学位时间'],
     degreeType: ['degreetype', 'degree_type', '学位类型'],
@@ -1048,7 +1048,15 @@
    * 仅靠标签无法区分，必须带上最近区块标题（教育经历 / 工作经历 / 项目经历）。
    */
   var CONTEXT_RULES = {
+    family: [
+      { re: /姓名|名字|name/i, key: 'familyName' },
+      { re: /关系|称谓|relation/i, key: 'familyRelation' },
+      { re: /电话|手机|联系|phone|mobile|tel/i, key: 'familyPhone' },
+      { re: /单位|公司|企业|employer|company/i, key: 'familyEmployer' },
+      { re: /职位|职务|岗位|title|position/i, key: 'familyTitle' }
+    ],
     edu: [
+      { re: /辅修|第二专业|minor/i, key: 'dualDegree' },
       { re: /院系|系别|所在系|department|faculty/i, key: 'department' },
       { re: /城市|所在地|地点|city|location/i, key: 'schoolCity' },
       // 「毕业院校」是学校名，不是毕业时间 → 学校规则排在入学/毕业之前
@@ -1066,6 +1074,8 @@
       { re: /绩点|gpa/i, key: 'gpa' }
     ],
     intern: [
+      { re: /部门|department|dept\b/i, key: 'internDepartment' },
+      { re: /内容|描述|职责|description/i, key: 'internDescription' },
       { re: /单位|公司|企业|employer|company/i, key: 'internCompany' },
       { re: /职位|岗位|职务|title|position/i, key: 'internTitle' },
       { re: /城市|地点|city|location/i, key: 'internCity' },
@@ -1085,8 +1095,8 @@
       { re: /(离职|结束|截止|end)/i, key: 'workEnd' }
     ],
     project: [
-      { re: /名称|项目名|project\s*name/i, key: 'projectName' },
-      { re: /角色|担任|role/i, key: 'projectRole' },
+      { re: /项目名|project\s*name|^名称(?:\s|$)/i, key: 'projectName' },
+      { re: /角色|担任|职务|职位|role/i, key: 'projectRole' },
       { re: /(开始|起始|start)/i, key: 'projectStart' },
       { re: /(结束|截止|end)/i, key: 'projectEnd' },
       { re: /技术|栈|tech/i, key: 'techSkills' },
@@ -1097,6 +1107,12 @@
       { re: /角色|职务|担任|role/i, key: 'campusRole' },
       { re: /(开始|起始|start)/i, key: 'campusStart' },
       { re: /(结束|截止|end)/i, key: 'campusEnd' }
+    ],
+    lang: [
+      { re: /语种|语言名称|语言类型|^语言$|language/i, key: 'langName' },
+      { re: /等级|级别|水平|level/i, key: 'langLevel' },
+      { re: /成绩|分数|得分|score/i, key: 'langScore' },
+      { re: /时间|日期|date/i, key: 'langDate' }
     ]
   };
 
@@ -1105,7 +1121,7 @@
     var rules = CONTEXT_RULES[context];
     if (!rules || (!rawLower && !normalizedHints)) return null;
     // 联系方式 / 户籍类不受区块影响，先让位（避免“户口所在城市”被判成 schoolCity）
-    if (/邮箱|email|手机|电话|phone|wechat|微信|身份证|idcard/i.test(rawLower)) return null;
+    if (context !== 'family' && /邮箱|email|手机|电话|phone|wechat|微信|身份证|idcard/i.test(rawLower)) return null;
     // 是非题（“是否有亲属在本公司任职”）里的“公司”不是 company 字段，交给正常匹配
     if (/是否|有无|有没有|曾否|能否|有没有过/.test(rawLower)) return null;
     if (/户籍|户口|生源|籍贯|现居|现住|居住|家庭住址|邮编|邮政编码/.test(rawLower)) return null;
@@ -1280,6 +1296,10 @@
 
   /** 关键词命中之后的语义护栏：哪些「看起来像」其实不是 */
   function semanticGuard(key, h) {
+    if (key === 'github' && /星级|星数|star|评级/.test(h)) return false;
+    if ((key === 'expectedCity' || key === 'expectedCity2') && /原因|理由|说明/.test(h)) return false;
+    if (key === 'monthlySalary' && /期望|期待|希望/.test(h)) return false;
+    if (key === 'englishLevel' && /成绩|分数|得分/.test(h)) return false;
     // 户口/户籍/籍贯/生源/出生所在城市 不是现居城市
     if ((key === 'city' || key === 'currentCity' || key === 'address') && /户口|户籍|籍贯|生源|出生地|档案/.test(h)) return false;
     // 「期望/意向」的城市不是工作城市（工作经历里的那个）
@@ -1322,6 +1342,11 @@
   }
 
   function matchFieldKeyScoredUncached(hints, autocomplete, context) {
+    // 家庭成员分区中的姓名/电话不得使用申请人的 autocomplete 或通用别名。
+    if (context === 'family') {
+      var familyKey = contextKeyFor(splitCamel(String(hints || '')).toLowerCase(), normalize(hints), context);
+      return familyKey ? { key: familyKey, confidence: 0.95, method: 'context' } : null;
+    }
     var acKey = mapAutocomplete(autocomplete);
     if (acKey) return { key: acKey, confidence: 1, method: 'autocomplete' };
 
@@ -1329,6 +1354,8 @@
     var rawLower = splitCamel(raw).toLowerCase();
     var h = normalize(raw);
     if (!h && !autocomplete) return null;
+    if (/github.*(?:星级|星数|star)|(?:意向|期望)城市.*(?:原因|理由)/i.test(h)) return null;
+    if (/亲友姓名/.test(h)) return { key: 'familyName', confidence: 0.95, method: 'entity' };
 
     var embedded = mapAutocompleteFromHints(rawLower);
     if (embedded) return { key: embedded, confidence: 1, method: 'autocomplete' };
@@ -1630,7 +1657,7 @@
   var INTERN_LIKE_RE = /实习|intern/i;
 
   /**
-   * 取某个列表（实习列表空着时回落到 workList：先挑写着「实习」的段，一段都没有再用整个 workList ——
+   * 取某个列表（实习列表空着时从 workList 中只挑写着「实习」的段 ——
    * 校招同学常把实习写在工作经历里，这与范围日期控件的回落规则一致）。
    */
   function listFor(profile, listKey) {
@@ -1640,7 +1667,7 @@
     var interns = work.filter(function (w) {
       return w && INTERN_LIKE_RE.test(String(w.nature || '') + String(w.title || '') + String(w.company || ''));
     });
-    return interns.length ? interns : work;
+    return interns;
   }
 
   function itemValue(item, map) {
@@ -1918,6 +1945,9 @@
       var edt = profile.englishDate && String(profile.englishDate).trim();
       if (edt) return edt;
       return (profile.certDate && String(profile.certDate).trim()) || '';
+    }
+    if (key === 'langLevel' && /^(英语|english)$/i.test(String(profile.langName || ''))) {
+      return String(profile.langLevel || profile.langCertName || profile.englishLevel || '').trim();
     }
     // 国籍 ↔ 国家（仅单向：nationality 可回退 country）
     if (key === 'nationality') {
@@ -2416,6 +2446,8 @@
       if (yn === 'No') candidates.push('否', '无', '不可以', 'false', 'N', 'n', '0');
     } else {
       candidates = [raw];
+      var cet = raw.match(/^CET[\s-]?([46])$/i);
+      if (cet) candidates.push(cet[1] === '4' ? '四级' : '六级');
       var degreeExtra = expandDegreeSynonyms(raw);
       var i;
       for (i = 0; i < degreeExtra.length; i++) {

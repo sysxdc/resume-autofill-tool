@@ -270,6 +270,8 @@
    */
   function sectionContextFromText(text) {
     if (!text || text.length > 24) return '';
+    if (/家庭|亲友|家庭成员/.test(text)) return 'family';
+    if (/语言能力|语言技能|外语能力/.test(text)) return 'lang';
     // 「工作/实习经历」是混合段：按工作段处理（workList 是主档），只有纯实习段才算 intern
     if (/实习/.test(text) && !/工作/.test(text)) return 'intern';
     if (/教育|学历|学习经历|院校|在校|就读/.test(text)) return 'edu';
@@ -284,6 +286,11 @@
   }
 
   function computeSectionContext(el) {
+    var cell = el && el.closest ? el.closest('.form-cell') : null;
+    if (cell) {
+      var cellTitle = cell.querySelector('.tit-wrap .tit p');
+      if (cellTitle) return sectionContextFromText(String(cellTitle.textContent || '').trim());
+    }
     // v1.5.5：北森 Phoenix 的区块标题在 .form 的孪生 div 上（同 id），不在祖先链里
     var phoenixForm = el && el.closest ? el.closest('.form[id*="_Recruitment_"]') : null;
     if (phoenixForm) {
@@ -366,10 +373,17 @@
   }
 
   function matchKeyForElement(el) {
-    return M.matchFieldKey(collectHints(el), {
+    var options = {
       autocomplete: el.getAttribute('autocomplete') || '',
       context: detectSectionContext(el)
-    });
+    };
+    var label = getLabelText(el);
+    var primary = [label, el.getAttribute('placeholder')].filter(Boolean).join(' ');
+    if (M.isSkipContext && M.isSkipContext(primary)) return null;
+    var scored = M.matchFieldKeyScored(primary, options);
+    // 可读标签优先于不透明的 ATS 属性名（certificateNo 是证件号码，并非证书）。
+    if (scored && scored.confidence >= 0.9) return scored.key;
+    return M.matchFieldKey(collectHints(el), options);
   }
 
   /**
@@ -423,6 +437,7 @@
 
   function isSkippable(el) {
     var t = (el.type || '').toLowerCase();
+    if (el.closest && el.closest('.ant-calendar-picker-container, .ant-picker-dropdown, .ant-select-dropdown, .phoenix-date-picker, .constant-main-selector-container, .area-selector-container')) return true;
     if (el.tagName && el.tagName.toLowerCase() === 'input' && el.closest && el.closest(INNER_SELECT_SEARCH_SEL)) {
       return true;
     }

@@ -23,7 +23,7 @@
   function simulateClick() { return C.simulateClick.apply(this, arguments); }
 
   // —————— v1.5.4：按 id 的语义路径做行级映射（ATS 常见：resumeEducationInfo_0_collegeName）——————
-  var STRUCT_PATH_RE = /resume(education|work|project|paper|intern)info_(\d+)_([a-z]+)/i;
+  var STRUCT_PATH_RE = /resume(education|work|employment|project|paper|intern)info_(\d+)_([a-z]+)/i;
 
   var STRUCT_FIELDS = {
     education: {
@@ -98,6 +98,7 @@
     var m = String(el.id).match(STRUCT_PATH_RE);
     if (!m) return null;
     var section = m[1].toLowerCase();
+    if (section === 'employment') section = 'work';
     var index = parseInt(m[2], 10);
     var raw = m[3].toLowerCase();
     var map = STRUCT_FIELDS[section];
@@ -136,7 +137,8 @@
     { listKey: 'internList', key: 'intern', re: /实习/ },
     { listKey: 'projectList', key: 'project', re: /项目|科研/ },
     { listKey: 'awardList', key: 'award', re: /奖项|竞赛|荣誉|获奖|奖励/ },
-    { listKey: 'campusList', key: 'campus', re: /校园|社团|学生工作|组织经历/ }
+    { listKey: 'campusList', key: 'campus', re: /校园|社团|学生工作|组织经历/ },
+    { listKey: 'langList', key: 'lang', re: /语言能力|语言技能|外语能力/ }
   ];
 
   /** 按钮不可点的情形：附件 / 上传 / 视频 / 图片 这类点了会弹文件选择框 */
@@ -242,10 +244,17 @@
 
   /** 该分区当前已有多少条记录（按行级 id 或列表容器判断） */
   function countSectionRows(rule) {
+    var cells = document.querySelectorAll('.form-cell');
+    for (var ci = 0; ci < cells.length; ci++) {
+      var heading = cells[ci].querySelector('.tit-wrap .tit p');
+      if (heading && rule.re.test(String(heading.textContent || '').trim())) {
+        return cells[ci].querySelectorAll('.form-cell-inner').length;
+      }
+    }
     var idx = {};
     var ids = document.querySelectorAll('[id*="Info_"]');
     Array.prototype.forEach.call(ids, function (n) {
-      var m = String(n.id || '').match(/(education|work|intern|project|paper|campus)info_(\d+)_/i);
+      var m = String(n.id || '').match(/(education|work|employment|intern|project|paper|campus)info_(\d+)_/i);
       if (!m) return;
       idx[m[1].toLowerCase() + ':' + m[2]] = 1;
     });
@@ -253,7 +262,8 @@
     var n = 0;
     for (var k in idx) {
       if (!Object.prototype.hasOwnProperty.call(idx, k)) continue;
-      if (k.indexOf(sectionName + ':') === 0) n += 1;
+      if (k.indexOf(sectionName + ':') === 0 ||
+          ((rule.key === 'work' || rule.key === 'intern') && k.indexOf('employment:') === 0)) n += 1;
     }
     if (n) return n;
     // v1.5.12：快手 —— educations_0_xxx / interShips_0_xxx，按前缀 + 序号去重
@@ -281,7 +291,8 @@
     intern: /^(internships?|interships?|practices?)$/i,
     project: /^(projects?|projectexperiences?)$/i,
     award: /^(awards?|competitionawards?|honors?)$/i,
-    campus: /^(campusexperiences?|activities?)$/i
+    campus: /^(campusexperiences?|activities?)$/i,
+    lang: /^languages?$/i
   };
 
   function countIndexedRows(key) {
@@ -335,7 +346,7 @@
       });
       if (internLike.length) return internLike.length;
     }
-    var flatBySection = { edu: 'school', work: 'company', intern: 'internCompany', project: 'projectName', award: 'awardName', campus: 'campusOrg' };
+    var flatBySection = { edu: 'school', work: 'company', intern: 'internCompany', project: 'projectName', award: 'awardName', campus: 'campusOrg', lang: 'langName' };
     var flat = profile ? profile[flatBySection[rule.key]] : '';
     return flat && String(flat).trim() ? 1 : 0;
   }

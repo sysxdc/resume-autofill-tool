@@ -220,10 +220,11 @@
   /**
    * 纯函数：把 AI JSON 条目与 profile 合并为统一映射结果（无网络）。
    */
-  function mergeAiMappingWithProfile(aiItems, fields, profile, MatchApi, ProfileApi) {
+  function mergeAiMappingWithProfile(aiItems, fields, profile, MatchApi, ProfileApi, options) {
     var M = MatchApi || Match;
     var P = ProfileApi || Profile;
-    var knownKeys = {};
+    var allowGenerated = options && options.mode === 'full';
+    var knownKeys = Object.create(null);
     if (P && P.PROFILE_FIELDS) {
       P.PROFILE_FIELDS.forEach(function (k) { knownKeys[k] = 1; });
     }
@@ -280,9 +281,16 @@
 
       action = String(item.action || 'skip').toLowerCase();
       profileKey = item.profileKey || null;
-      conf = typeof item.confidence === 'number' ? item.confidence : 0.7;
+      conf = typeof item.confidence === 'number' ? item.confidence : 0;
+      if (!isFinite(conf)) conf = 0;
       if (conf > 1) conf = 1;
       if (conf < 0) conf = 0;
+      if (conf < 0.6) action = 'skip';
+
+      // 默认白名单模式的模型输出始终是不可信映射，不能提供或补造个人资料值。
+      if (action === 'custom_answer' && (!allowGenerated ||
+          !/^(textarea|text)$/.test(String(f.type || f.tag || '').toLowerCase()) ||
+          (f.options && f.options.length))) action = 'skip';
 
       if (action === 'custom_answer') {
         value = String(item.value || '').trim();
@@ -319,8 +327,6 @@
           value = M && M.profileValue
             ? M.profileValue(profile, profileKey)
             : String((profile && profile[profileKey]) || '').trim();
-          // AI 也可直接给 value（如已是 Yes/No）；优先 profile，空则用 item.value
-          if (!value && item.value) value = String(item.value).trim();
           if (!value) {
             action = 'skip';
             value = '';
@@ -343,7 +349,7 @@
               keyCounts[profileKey] = count + 1;
             }
           }
-        } else if (item.value && f.options && f.options.length) {
+        } else if (allowGenerated && item.value && f.options && f.options.length) {
           // 无合法 profileKey 但给了 value：仅允许匹配 select option（如纯 Yes/No）
           coerced = coerceSelectValue(M, f, item.value);
           if (coerced.ok) {

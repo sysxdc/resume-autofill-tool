@@ -598,7 +598,8 @@
       if (await v3KeyboardPick(host, sel, wantNorm)) { highlight(host); return true; }
       try { hit.click(); } catch (_) { simulateClick(hit); }
       await sleep(320);
-      if (antdV3SelectedText(host)) { highlight(host); return true; }
+      if (optionTextPlausible(antdV3SelectedText(host), value)) { highlight(host); return true; }
+      if (antdV3SelectedText(host)) clearCustomSelect(host);
     }
     return false;
   }
@@ -618,7 +619,7 @@
         if (actText && (actText === wantNorm || actText.indexOf(wantNorm) !== -1)) {
           search.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, which: 13, bubbles: true }));
           await sleep(460);
-          return !!antdV3SelectedText(host);
+          return optionTextPlausible(antdV3SelectedText(host), wantNorm);
         }
       }
     } catch (_) { /* ignore */ }
@@ -833,7 +834,13 @@
       var key = M.matchFieldKey(label, {});
       // 网申常用「语种/语言类型」作一级；旧关键词曾误落到 languages，这里再按标签兜底
       if (key === 'langName' || /^(语言类型|语种|语言种类)/.test(label)) langs.push({ host: host, label: label });
-      else if (key === 'langLevel' || key === 'englishLevel' || /^(掌握程度|熟练程度|语言水平|语言等级|语言级别)/.test(label)) levels.push({ host: host, label: label });
+      else if (key === 'langLevel' || key === 'englishLevel' || /^(掌握程度|熟练程度|语言水平|语言等级|语言级别)/.test(label)) {
+        // Hotjob 的「语言等级」本身又包含语种、等级两个下拉，前者必须先提交。
+        if (levels.some(function (x) { return x.item === item; })) return;
+        var nested = item.querySelectorAll('.ant-select');
+        levels.push({ host: nested.length === 2 ? nested[1] : host,
+          parentHost: nested.length === 2 ? nested[0] : null, label: label, item: item });
+      }
     });
 
     var filled = 0;
@@ -845,10 +852,11 @@
         var ln = rowLang(i, 'langName', langName);
         var lv = rowLang(i, 'langLevel', langLevel);
         if (!ln || !lv) continue;
-        res = await C.fillChain([
-          { host: langs[i].host, value: ln, label: langs[i].label },
-          { host: levels[i].host, value: lv, label: levels[i].label }
-        ]);
+        var steps = [{ host: langs[i].host, value: ln, label: langs[i].label }];
+        if (levels[i].parentHost) steps.push({ host: levels[i].parentHost, value: ln, label: '语种' });
+        if (/^CET[\s-]?[46]$/i.test(lv) && /英语|english/i.test(ln)) lv = /4/.test(lv) ? '英语四级' : '英语六级';
+        steps.push({ host: levels[i].host, value: lv, label: levels[i].label });
+        res = await C.fillChain(steps);
       } catch (_) { res = null; }
       if (res && res.ok) {
         if (runDone.chain) runDone.chain.add(levels[i].host);
