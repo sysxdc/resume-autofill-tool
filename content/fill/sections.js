@@ -112,7 +112,66 @@
       if (/毕业|结束|截止|离职|离校|至今|结束时间/.test(ph)) { field = 'end'; key = section === 'education' ? 'eduEnd' : (section === 'work' ? 'workEnd' : key); }
       else if (/入学|开始|入职|起始/.test(ph)) { field = 'start'; key = section === 'education' ? 'eduStart' : (section === 'work' ? 'startDate' : key); }
     }
-    return { listKey: STRUCT_LIST_KEY[section], index: index, field: field, key: key };
+    return { listKey: STRUCT_LIST_KEY[section], index: index, field: field, key: key, rowPrefix: String(el.id).slice(0, String(el.id).lastIndexOf('_') + 1) };
+  }
+
+  /** 先把整行绑定到资料条目，再填该行子字段；已有内容优先于页面行号。 */
+  function buildStructuredBindings(profile) {
+    var A = globalThis.ResumeAutofillAudit;
+    var groups = {};
+    var result = {};
+    var identity = {eduList:'school', workList:'company', internList:'company', projectList:'name', awardList:'name'};
+    Array.prototype.forEach.call(document.querySelectorAll('input[id], textarea[id], select[id]'), function (el) {
+      var s = detectStructuredField(el);
+      if (!s || !identity[s.listKey] || !isVisibleEl(el) || el.type === 'hidden') return;
+      var group = groups[s.listKey] || (groups[s.listKey] = {});
+      var row = group[s.rowPrefix] || (group[s.rowPrefix] = {index:s.index, anchors:[]});
+      if ([identity[s.listKey], 'start', 'end'].indexOf(s.field) === -1 || !C.fieldLooksFilled(el)) return;
+      row.anchors.push({field:s.field, key:s.key, value:C.readBackValue(el)});
+    });
+    Object.keys(groups).forEach(function (listKey) {
+      var list = M.listFor(profile, listKey);
+      if (!list.length) return; // 无列表时继续兼容第 0 段的扁平资料。
+      var rows = groups[listKey], reserved = {}, owners = {};
+      Object.keys(rows).forEach(function (prefix) {
+        var row = rows[prefix];
+        if (!row.anchors.length) return;
+        var matches = [];
+        list.forEach(function (item, index) {
+          if (row.anchors.every(function (a) {
+            var expected = item[a.field];
+            if (expected == null || !A) return false;
+            var comparison = A.compareEntry({key:a.key, expected:String(expected), actual:a.value});
+            return comparison.accepted || (/^(start|end)$/.test(a.field) && comparison.status === 'approx');
+          })) matches.push(index);
+        });
+        matches.forEach(function (index) { reserved[index] = true; });
+        if (matches.length === 1) {
+          var index = matches[0];
+          result[prefix] = {index:index};
+          if (owners[index]) {
+            result[prefix] = {reason:'duplicate_record'};
+            result[owners[index]] = {reason:'duplicate_record'};
+          } else owners[index] = prefix;
+        } else result[prefix] = {reason:matches.length ? 'record_ambiguous' : 'record_conflict'};
+      });
+      Object.keys(rows).sort(function (a, b) { return rows[a].index - rows[b].index; }).forEach(function (prefix) {
+        if (result[prefix]) return;
+        var index = rows[prefix].index;
+        if (index >= list.length || reserved[index]) {
+          index = list.findIndex(function (_, i) { return !reserved[i]; });
+        }
+        if (index < 0) result[prefix] = {reason:'no_record_available'};
+        else { result[prefix] = {index:index}; reserved[index] = true; }
+      });
+    });
+    return result;
+  }
+
+  function boundStructuredField(el, bindings) {
+    var s = detectStructuredField(el);
+    var bound = s && bindings && bindings[s.rowPrefix];
+    return bound ? Object.assign({}, s, bound) : s;
   }
 
   /** 第 N 段的值；第 0 段且条目为空时回落到扁平字段 */
@@ -403,6 +462,8 @@
   // 导出
   C.detectStructuredField = detectStructuredField;
   C.structuredValue = structuredValue;
+  C.buildStructuredBindings = buildStructuredBindings;
+  C.boundStructuredField = boundStructuredField;
   C.ADD_SECTION_RULES = ADD_SECTION_RULES;
   C.expandAddSections = expandAddSections;
 })();

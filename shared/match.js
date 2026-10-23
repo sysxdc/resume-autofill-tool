@@ -1842,10 +1842,14 @@
   function parseGpa(input) {
     var raw = String(input == null ? '' : input).trim();
     if (!raw) return null;
-    var m = raw.match(/(\d+(?:\.\d+)?)\s*[/／]\s*(\d+(?:\.\d+)?)/);
-    if (m) return { raw: raw, value: parseFloat(m[1]), scale: parseFloat(m[2]) };
-    m = raw.match(/(\d+(?:\.\d+)?)/);
-    if (m) return { raw: raw, value: parseFloat(m[1]), scale: 0 };
+    var m = raw.match(/^(\d+(?:\.\d+)?)\s*[/／]\s*(\d+(?:\.\d+)?)$/);
+    if (m) {
+      var value = Number(m[1]), scale = Number(m[2]);
+      if (!isFinite(value) || !isFinite(scale) || scale <= 0 || value > scale) return null;
+      return { raw: raw, value: value, scale: scale };
+    }
+    m = raw.match(/^\d+(?:\.\d+)?$/);
+    if (m && isFinite(Number(raw))) return { raw: raw, value: Number(raw), scale: 0 };
     return null;
   }
 
@@ -1857,10 +1861,7 @@
       out.push(String(g.value));
       out.push(String(g.value) + '/' + String(g.scale));
     }
-    // 满分 4.5 的 3.0 → 百分制 66.7，只在页面要百分制时才有意义，放最后
-    if (g.scale && g.scale !== 100) {
-      out.push(String(Math.round((g.value / g.scale) * 100)));
-    }
+    // GPA 与百分制成绩没有通用线性换算关系，只返回原始事实的等价表示。
     var seen = {};
     return out.filter(function (v) {
       var k = String(v);

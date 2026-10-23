@@ -189,7 +189,13 @@
       }
       var label = document.createElement('span');
       label.className = 'label';
-      label.textContent = it.label || '';
+      var reasons = {
+        no_profile_value:'资料中缺少此项', record_ambiguous:'经历无法唯一对应', record_conflict:'已有经历与资料不匹配',
+        duplicate_record:'已有重复经历', no_record_available:'没有对应的资料条目', unrecognized_field:'字段含义待确认',
+        set_value_failed:'控件未接受填写', date_value_unsupported:'日期格式暂不支持', value_exceeds_maxlength:'内容超过长度限制',
+        existing_value_conflict:'保留已有内容，请核对', verification_pending:'精度需要核对'
+      };
+      label.textContent = (it.label || '') + (reasons[it.reason] ? '：' + reasons[it.reason] : '');
       li.appendChild(label);
       listEl.appendChild(li);
     });
@@ -229,9 +235,12 @@
           auditRecords: r.auditRecords || 0,
           // 写了 / 点了但最后页面上没有值的字段（已从「已填」里扣掉）
           notWritten: (r.notWritten || []).slice(0, 20),
+          saveStatus: r.saveStatus || 'not_checked',
+          preserved: (r.preserved || []).slice(0, 80).map(function (x) { return { key: x.key, reason: x.reason }; }),
           audit: r.audit ? {
             checked: r.audit.checked, ok: r.audit.ok, approx: r.audit.approx,
             empty: r.audit.empty, wrong: r.audit.mismatch,
+            verified: r.audit.verified, needsReview: r.audit.needsReview,
             problems: (r.audit.problems || []).slice(0, 15).map(function (x) {
               return { key: x.key, status: x.status, level: x.level };
             })
@@ -244,12 +253,18 @@
       var blanks = (r.unfilled && r.unfilled.length !== undefined) ? r.unfilled : api.unfilled();
       var auditText = '';
       if (r.audit && r.audit.checked) {
-        auditText = '；校验 ' + r.audit.ok + '/' + r.audit.checked + ' 一致';
+        auditText = '；控件核验 ' + (r.audit.verified == null ? r.audit.ok : r.audit.verified) + '/' + r.audit.checked + ' 通过';
         if (r.audit.mismatch) auditText += '，' + r.audit.mismatch + ' 处页面值对不上（已在下方列出）';
         else if (r.audit.empty) auditText += '，' + r.audit.empty + ' 处读不回值';
+        if (r.audit.needsReview) auditText += '，' + r.audit.needsReview + ' 处精度待核对';
       }
-      setStatus('已填 ' + (r.filled || 0) + ' 项' + (r.timedOut ? '（超时，部分字段没处理完）' : '') + auditText + '，' + summary(blanks));
-      renderList(blanks);
+      if (r.preserved && r.preserved.length) auditText += '；保留 ' + r.preserved.length + ' 处已有不同内容';
+      setStatus('已填 ' + (r.filled || 0) + ' 项' + (r.timedOut ? '（超时，部分字段没处理完）' : '') + auditText + '，' + summary(blanks) + '；保存结果未验证');
+      var issues = (r.preserved || []).map(function (x) { return { label: x.label || x.key, reason:x.reason, section: '已有内容待核对' }; });
+      if (r.audit) (r.audit.problems || []).forEach(function (x) {
+        if (!x.accepted) issues.push({ label: x.label || x.key, section: x.status === 'approx' ? '精度待核对' : '控件核验未通过' });
+      });
+      renderList(issues.concat(blanks));
     } catch (err) {
       setStatus('填写失败：' + String((err && err.message) || err).slice(0, 80), true);
     } finally {

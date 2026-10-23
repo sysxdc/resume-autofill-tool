@@ -219,7 +219,7 @@
 
   var ymPartial = [];
 
-  async function fillYearMonthPairs(profile, filledKeys) {
+  async function fillYearMonthPairs(profile, filledKeys, bindings) {
     var filled = 0;
     var blocks = Array.prototype.slice.call(document.querySelectorAll('[class*="apply-block"]'));
     for (var bi = 0; bi < blocks.length; bi++) {
@@ -241,7 +241,10 @@
           });
           if (yms.length < 2) continue;
           var list = M.listFor(profile, sec.listKey);
-          var item = list[gi] || null;
+          var bound = C.boundStructuredField(yms[0], bindings);
+          if (bound && bound.reason) continue;
+          var rowIndex = bound && bound.listKey === sec.listKey ? bound.index : gi;
+          var item = list[rowIndex] || null;
           var sf = sec.startField || 'start';
           var start = item && item[sf] ? String(item[sf]) : (gi === 0 ? (M.profileValue(profile, sec.startKey) || '') : '');
           var end = sec.endKey ? (item && item.end ? String(item.end) : (gi === 0 ? (M.profileValue(profile, sec.endKey) || '') : '')) : '';
@@ -344,10 +347,13 @@
    * 单输入框范围：laydate 按面板类型写；普通可编辑输入框按 placeholder 的格式与分隔符写。
    * @returns {Promise<boolean|null>} null = 不是 / 写不了这种控件（交还主循环按普通字段处理）
    */
-  async function fillSingleInputRange(el, profile, seen) {
+  async function fillSingleInputRange(el, profile, seen, bindings) {
     var ctxKey = rangeSectionFor(el);
     if (!ctxKey) return null;
     var idx = seen[ctxKey] || 0;
+    var bound = C.boundStructuredField(el, bindings);
+    if (bound && bound.reason) return false;
+    if (bound && bound.listKey === RANGE_SECTION_MAP[ctxKey].listKey) idx = bound.index;
     var rv = rangeValuesFor(profile, ctxKey, idx);
     if (!rv.start || !rv.end) return null;
     var endOpen = isCurrentJobValue(rv.end);
@@ -380,7 +386,7 @@
   }
 
   /** 页面上的范围日期控件：按分区/段序取 eduList[i].start/end 等 */
-  async function fillRangeEditors(profile, handled, filledKeys) {
+  async function fillRangeEditors(profile, handled, filledKeys, bindings) {
     var rangeSeen = {};
     var editors = Array.prototype.filter.call(document.querySelectorAll(RANGE_EDITOR_SEL), isVisibleEl);
     // antd v3 的 RangePicker 没有专门的范围类名：认 .ant-calendar-range-picker-input 所在的 .ant-calendar-picker
@@ -394,7 +400,7 @@
       var ed = editors[i];
       var inputs = ed.querySelectorAll('input');
       if (inputs.length < 2) continue;
-      var alreadyFilled = !!String(inputs[0].value || '').trim() && !!String(inputs[1].value || '').trim();
+      var alreadyFilled = !!String(inputs[0].value || '').trim() || !!String(inputs[1].value || '').trim();
       if (handled) {
         for (var h = 0; h < inputs.length; h++) handled.add(inputs[h]);
       }
@@ -406,6 +412,9 @@
       rangeSeen[ctx.rule.key] = seenN + 1;
       if (!ctx.explicit) ctx.index = seenN;
       var map = RANGE_SECTION_MAP[ctx.rule.key];
+      var bound = C.boundStructuredField(inputs[0], bindings);
+      if (bound && bound.reason) continue;
+      if (bound && bound.listKey === map.listKey) ctx.index = bound.index;
       // 实习分区常常只有 workList（实习写在 workList 里）：listFor 会回落到 workList
       var list = M.listFor(profile, map.listKey);
       var item = list[ctx.index] || null;

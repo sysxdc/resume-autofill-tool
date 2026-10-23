@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "简历填写工具",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "description": "本地存储简历资料，匹配并填写求职表单。AI 默认只发送字段标签；全文模式需显式开启。提交前由您确认。",
   "permissions": [
     "storage",

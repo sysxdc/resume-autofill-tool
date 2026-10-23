@@ -290,6 +290,7 @@
     resetRunDone();
     var forced = [];
     var skipped = [];
+    var preserved = [];
     var keyCounts = {};
     /**
      * 同一个 key 可能被两个不同字段命中：基础信息的「毕业时间」和教育经历的「结束时间」
@@ -309,6 +310,7 @@
     }
 
     try { await waitForFormSettle(1500); } catch (_) { /* ignore */ }
+    var recordBindings = C.buildStructuredBindings(profile);
     var startedAt = Date.now();
     var timedOut = false;
     var singleRangeSeen = {};
@@ -318,11 +320,11 @@
       if (timedOut) break;
     // 起止时间合体的控件要在逐 input 匹配之前处理，否则两个 input 会被各写一份
     if (opts.allowCustomSelect !== false) {
-      try { filled += await fillRangeEditors(profile, handled, filledKeys); } catch (_) { /* ignore */ }
+      try { filled += await fillRangeEditors(profile, handled, filledKeys, recordBindings); } catch (_) { /* ignore */ }
       // Moka 的年/月自绘下拉对（毕业时间 / 就读时间 / 起止时间）
-      try { filled += await fillYearMonthPairs(profile, filledKeys); } catch (_) { /* ignore */ }
+      try { filled += await fillYearMonthPairs(profile, filledKeys, recordBindings); } catch (_) { /* ignore */ }
       // antd 弹窗选择器（专业 / 学校）：点输入框弹 modal，常规写值写不进去
-      try { filled += await fillModalPickers(profile, handled, filledKeys); } catch (_) { /* ignore */ }
+      try { filled += await fillModalPickers(profile, handled, filledKeys, recordBindings); } catch (_) { /* ignore */ }
       // 联动下拉（语种 → 语言等级）：第二级选项由第一级决定，必须按顺序写
       try { filled += await fillLinkedSelectChains(profile, filledKeys); } catch (_) { /* ignore */ }
     }
@@ -344,10 +346,15 @@
       if (el.classList && el.classList.contains('el-range-input')) continue;
       if (el.closest && el.closest(RANGE_EDITOR_SEL)) continue;
       if (el.classList && el.classList.contains('ant-calendar-range-picker-input')) continue;   // antd v3 范围
+      var struct = C.boundStructuredField(el, recordBindings);
+      if (struct && struct.reason) {
+        if (!skipped.some(function (x) { return x.row === struct.rowPrefix; })) skipped.push({key:struct.key, row:struct.rowPrefix, label:getLabelText(el), reason:struct.reason});
+        continue;
+      }
       // 一个输入框装起止两个日期：按区块取对应那段经历的开始 + 结束
       if (looksLikeSingleInputRange(el) && !fieldLooksFilled(el)) {
         var sr = null;
-        try { sr = await fillSingleInputRange(el, profile, singleRangeSeen); } catch (_) { sr = null; }
+        try { sr = await fillSingleInputRange(el, profile, singleRangeSeen, recordBindings); } catch (_) { sr = null; }
         if (sr && sr.ok) {
           filled += 1;
           [sr.map.startKey, sr.map.endKey].forEach(function (k) { if (filledKeys.indexOf(k) === -1) filledKeys.push(k); });
@@ -360,7 +367,6 @@
           continue;
         }
       }
-      var struct = detectStructuredField(el);
       // 分区兜底优先：语言技能里的「获得时间」全局会落到 certDate（证书时间），
       // 在这种分区里应该用 englishDate
       var key = struct
@@ -398,7 +404,17 @@
         if (skipped.length < 30) skipped.push({ key: key, reason: 'no_profile_value' });
         continue;
       }
-      if (fieldLooksFilled(el)) continue;
+      if (fieldLooksFilled(el)) {
+        var existingExpected = value;
+        if (key === 'gpa' && el.type === 'number') {
+          var existingGpa = M.parseGpa(value);
+          if (existingGpa) existingExpected = String(existingGpa.value);
+        }
+        if (!writtenValueMatches(readBackValue(el), existingExpected, key) && preserved.length < 80) {
+          preserved.push({ key: key, label: getLabelText(el), reason: 'existing_value_conflict' });
+        }
+        continue;
+      }
       // antd 的日期框是受控组件：往 input 里写字不会提交，只能点面板选日期
       if (el.closest && el.closest('.ant-picker, .ant-calendar-picker') && !el.closest('.ant-picker-range')) {
         var dOk = false;
@@ -469,7 +485,7 @@
           keyCounts[counterKey] = (keyCounts[counterKey] || 0) + 1;
           if (filledKeys.indexOf(key) === -1) filledKeys.push(key);
           highlight(el);
-        } else if (!looksLikeDateInput(el) && (await writeAndVerify(el, String(value).trim()))) {
+        } else if (!looksLikeDateInput(el) && (await writeAndVerify(el, String(value).trim(), { key: key }))) {
           // 没有「至今」开关、但这是个普通文本框（结束时间）→ 直接写“至今”
           filled += 1;
           keyCounts[counterKey] = (keyCounts[counterKey] || 0) + 1;
@@ -575,7 +591,7 @@
       } else {
         if (key === 'gpa' && (el.type === 'number' || (el.closest && el.closest('.el-input-number')))) {
           var gpaMatch = String(value).match(/^\s*(\d+(?:\.\d+)?)\s*(?:[/／]\s*\d+(?:\.\d+)?)?\s*$/);
-          if (!gpaMatch) { skipped.push({ key: key, reason: 'invalid_gpa' }); continue; }
+          if (!gpaMatch || !M.parseGpa(value)) { skipped.push({ key: key, reason: 'invalid_gpa' }); continue; }
           value = gpaMatch[1];
         }
         // 日期写进普通输入框：按控件要求的格式（type=date/month、placeholder 的 YYYY/MM…）
@@ -597,7 +613,7 @@
         }
         if (commitFrameworkWidget(el, value)) {
           await settle();
-          ok = writtenValueMatches(el.value, value);
+          ok = writtenValueMatches(el.value, value, key);
           // 数字框提交的是「3年」里的 3：按数值比
           if (!ok && el.closest && el.closest('.el-input-number')) {
             var nWant = Number(String(value).replace(/[^\d.\-]/g, ''));
@@ -605,17 +621,24 @@
           }
           if (!ok && skipped.length < 30) skipped.push({ key: key, reason: 'widget_not_committed' });
         } else {
-          ok = await writeAndVerify(el, value);
+          ok = await writeAndVerify(el, value, { key: key });
           if (!ok && el.tagName && el.tagName.toLowerCase() === 'select') {
             // 排名/绩点常常是区间下拉：15/120 要换算成「前20%」才匹配得上
             var alts = valueCandidates(key, value);
             for (var ai = 0; ai < alts.length && !ok; ai++) {
               if (alts[ai] === value) continue;
-              ok = await writeAndVerify(el, alts[ai]);
+              ok = await writeAndVerify(el, alts[ai], { key: key });
               if (ok) value = alts[ai];
             }
           }
-          if (!ok) skipped.push({ key: key, reason: 'set_value_failed' });
+          if (!ok) {
+            skipped.push({ key: key, reason: 'set_value_failed' });
+            // 页面把拟填值改成另一非空值时也要报告；它不会出现在“空缺”列表里。
+            if (String(el.value || '').trim()) {
+              recordFill(el, key, value);
+              fillRecords[fillRecords.length - 1].noCount = true;
+            }
+          }
         }
       }
 
@@ -729,15 +752,12 @@
     if (audit && audit.entries && audit.entries.length === fillRecords.length) {
       var goodKeys = {};
       audit.entries.forEach(function (r) {
-        if (r.status === 'ok' || r.status === 'approx') goodKeys[r.key] = 1;
+        if (r.accepted) goodKeys[r.key] = 1;
       });
       audit.entries.forEach(function (r, ri) {
-        if (r.status !== 'empty' && r.status !== 'mismatch') return;
-        // 只有回读可靠的才扣：原生 input / select / textarea，或带专用读法的（年月日三件套、年月下拉对）。
-        // 自定义下拉宿主的回读是「猜显示文字」，扣了会把选上的字段误报成没填（v1.5.23 的回退之一）
+        if (r.accepted) return;
+        // 无法通过回读证明成功的控件不能计为已验证；保留问题供用户核对。
         var rec = fillRecords[ri];
-        var reliable = !!(rec.read || (rec.el && /^(INPUT|SELECT|TEXTAREA)$/.test(String(rec.el.tagName || ''))));
-        if (!reliable) return;
         if (!rec.noCount) filled = Math.max(0, filled - 1);
         if (!goodKeys[r.key]) {
           var fk = filledKeys.indexOf(r.key);
@@ -747,6 +767,7 @@
           notWritten.push(r.key);
           if (skipped.length < 20) skipped.push({ key: r.key, reason: 'not_written: 点了 / 写了但页面上没有值' });
         }
+        if (r.status === 'approx' && skipped.length < 80) skipped.push({ key: r.key, reason: 'verification_pending: ' + r.level });
       });
     }
     // 审计完就放掉对 DOM 节点的引用（SPA 换页后旧节点不会被这份列表钉在内存里）
@@ -761,10 +782,10 @@
     }
 
     return {
-      filled: filled, expanded: expanded, filledKeys: filledKeys, skipped: skipped,
+      filled: filled, expanded: expanded, filledKeys: filledKeys, skipped: skipped, preserved: preserved,
       degradedDates: degradedDates, dateTries: lastDateTries, audit: audit,
       auditRecords: auditCount, notWritten: notWritten,
-      forced: forced, timedOut: timedOut
+      forced: forced, timedOut: timedOut, saveStatus: 'not_checked'
     };
   }
 
@@ -819,7 +840,7 @@
       var dv = dateValueForInput(el, value);
       if (dv === '') return;
       if (dv) value = dv;
-      if (await writeAndVerify(el, value)) {
+      if (await writeAndVerify(el, value, { key: m.profileKey || '' })) {
         filled += 1;
         var k = m.profileKey || ('custom:' + m.index);
         if (filledKeys.indexOf(k) === -1) filledKeys.push(k);
@@ -861,6 +882,8 @@
       expanded: result.expanded || [],
       filledKeys: result.filledKeys,
       skipped: result.skipped || [],
+      preserved: result.preserved || [],
+      saveStatus: result.saveStatus || 'not_checked',
       forced: result.forced || [],
       // 诊断/审计字段必须原样透传：handleFill 是「白名单式」重组结果，
       // 漏一个就等于该字段永远为 undefined（degradedDates / audit 之前就是这么丢的）
@@ -978,6 +1001,8 @@
       out.push({
         id: id,
         label: label,
+        key: (detectStructuredField(el) || {}).key || matchKeyForElement(el) || '',
+        record: (detectStructuredField(el) || {}).rowPrefix || '',
         required: fieldRequired(el),
         section: section,
         row: row > 1 ? row : 0
@@ -994,7 +1019,7 @@
       seen[sig] = row;
       var id = 'f' + out.length;
       UNFILLED_ELS[id] = host;
-      out.push({ id: id, label: label, required: fieldRequired(host), section: section, row: row > 1 ? row : 0 });
+      out.push({ id: id, label: label, key: matchKeyForElement(host) || '', required: fieldRequired(host), section: section, row: row > 1 ? row : 0 });
     });
     return out.slice(0, 60);
   }
@@ -1040,7 +1065,15 @@
   function reportToParent(payload) {
     try {
       if (IS_TOP_FRAME) return;
-      (window.top || window.parent).postMessage({ __raFill: payload }, '*');
+      // postMessage 对页面脚本可见：只汇报计数和原因代码，不带审计原值或资料正文。
+      var summary = {
+        filled: payload.filled || 0,
+        filledKeys: (payload.filledKeys || []).slice(0, 100),
+        skipped: (payload.skipped || []).slice(0, 30).map(function (x) {
+          return {key:x.key, reason:String(x.reason || '').split(':')[0]};
+        })
+      };
+      (window.top || window.parent).postMessage({ __raFill: summary }, '*');
     } catch (_) { /* ignore */ }
   }
 
@@ -1084,8 +1117,12 @@
     // 顶层：留一点时间收集子 frame 的汇报
     var agg = await collectFrameResults(900);
     var blanks = unfilledFields();
+    blanks.forEach(function (field) {
+      var skip = (own.skipped || []).find(function (x) { return (field.record && x.row === field.record) || (field.key && x.key === field.key); });
+      field.reason = skip ? String(skip.reason).split(':')[0] : (field.key ? 'not_filled' : 'unrecognized_field');
+    });
     if (!agg.frames) return Object.assign({}, own, { unfilled: blanks });
-    return {
+    return Object.assign({}, own, {
       ok: own.ok !== false,
       expanded: own.expanded || [],
       filled: own.filled + agg.filled,
@@ -1094,8 +1131,9 @@
       })),
       skipped: (own.skipped || []).concat(agg.skipped).slice(0, 20),
       frames: agg.frames + 1,
+      auditScope: 'top_frame',
       unfilled: blanks
-    };
+    });
   }
 
   // 悬浮窗（content/panel.js）与这里同处一个隔离世界，直接暴露一个内部 API，省掉消息中转

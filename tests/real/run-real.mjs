@@ -18,7 +18,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { execSync } from 'node:child_process';
+import { execSync, execFileSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
 // 跨平台：Windows 下 URL.pathname 是 "/D:/..."，只剥前导斜杠会留下正斜杠路径，
@@ -40,7 +40,7 @@ if (!fs.existsSync(path.join(HERE, 'node_modules', 'antd5'))) {
 }
 // 北森 Phoenix 是 ESM 包，先打成浏览器包（只在缺失时）
 if (!fs.existsSync(path.join(HERE, 'vendor', 'phoenix.bundle.js'))) {
-  execSync(process.execPath + ' ' + JSON.stringify(path.join(HERE, 'phoenix', 'build.mjs')), { stdio: 'inherit' });
+  execFileSync(process.execPath, [path.join(HERE, 'phoenix', 'build.mjs')], { stdio: 'inherit' });
 }
 
 const SMALL = {

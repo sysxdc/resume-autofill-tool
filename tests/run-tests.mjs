@@ -2181,7 +2181,7 @@ test('v1.5.16: 年+月下拉对（fillYearMonthPairs）', () => {
   assert.ok(/placeholder === '年' \|\| ph === '月'/.test(src) || /ph === '年' \|\| ph === '月'/.test(src), '按 placeholder 认年月下拉');
   assert.ok(/YM_SECTION_MAP/.test(src) && /教育背景/.test(src) && /实习经历/.test(src) && /项目经验/.test(src), '按分区取起止');
   assert.ok(/yms\.length >= 4/.test(src), '起止 4 个 / 单个 2 个');
-  assert.ok(/fillYearMonthPairs\(profile, filledKeys\)/.test(src), '接进填写主流程');
+  assert.ok(/fillYearMonthPairs\(profile, filledKeys(?:, recordBindings)?\)/.test(src), '接进填写主流程');
 });
 
 test('v1.5.16: 填写前等表单稳定（懒挂载）', () => {
@@ -2621,6 +2621,13 @@ test('真实校招标签：数值、第三方、辅修与项目职务分别匹�
 
 console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
+
+{
+  const child = spawnSync(process.execPath, ['--test', path.join(__dirname, 'field-safety.test.mjs')], {encoding:'utf8', cwd:root});
+  if (child.stdout) process.stdout.write(child.stdout);
+  if (child.stderr) process.stderr.write(child.stderr);
+  if (child.status !== 0) process.exit(child.status || 1);
+}
 
 // 串联 DOM 行为基线（Playwright；没装 playwright 只警告不阻塞）
 {

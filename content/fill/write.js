@@ -119,34 +119,16 @@
 
   /**
    * 回读值与期望是否一致：允许格式化差异（空格 / 分隔符 / 大小写 / 手机号掩码 / 日期写法），
-   * 不允许内容差异（被截断、被清空、被改成别的值）。
+   * 比较遵循字段类型，不接受标点丢失、截断或精度不足。
    */
-  function writtenValueMatches(actual, want) {
+  function writtenValueMatches(actual, want, options) {
     var a = String(actual == null ? '' : actual).trim();
     var w = String(want == null ? '' : want).trim();
     if (a === w) return true;
     if (!a || !w) return false;
-    var squash = function (t) { return t.replace(/[\s\u00a0,，\-_/.:：()（）]/g, '').toLowerCase(); };
-    if (squash(a) === squash(w)) return true;
-    // 数字被格式化：15000 → 15,000.00 / ¥15,000
-    if (/^[\s\d,.¥$€+-]+$/.test(w) && /\d/.test(w)) {
-      var nA = parseFloat(a.replace(/[^\d.\-]/g, ''));
-      var nW = parseFloat(w.replace(/[^\d.\-]/g, ''));
-      if (isFinite(nA) && isFinite(nW) && nA === nW) return true;
-    }
-    // 掩码 / 区号：「+86 138 0013 8000」包含「13800138000」的全部数字
-    var da = a.replace(/\D/g, '');
-    var dw = w.replace(/\D/g, '');
-    if (dw.length >= 6 && da.length >= dw.length && da.slice(da.length - dw.length) === dw &&
-        squash(a).replace(/\d/g, '').replace(/^\+/, '') === squash(w).replace(/\d/g, '')) return true;
-    if (D && D.parseModel) {
-      var mw = D.parseModel(w);
-      if (mw && mw.y && mw.m) {
-        var lv = D.matchLevel(a, mw).level;
-        return lv === 'exact' || lv === 'day-approx' || lv === 'month-only';
-      }
-    }
-    return false;
+    var A = globalThis.ResumeAutofillAudit;
+    var opts = typeof options === 'string' ? { key: options } : (options || {});
+    return !!(A && A.compareEntry({ key: opts.key || '', kind: opts.kind || '', expected: w, actual: a }).accepted);
   }
 
   function rawSetValue(el, v) {
@@ -226,30 +208,54 @@
 
   /**
    * 写入 + 回读确认。写不进去依次重试 execCommand / 逐字键入；
-   * 最后仍对不上（被清空、被截断、被改成别的）→ 还原原值并返回 false，让字段出现在「未填」清单里。
+   * 仍对不上返回 false；新出现的不同非空值保留供核对，避免覆盖页面异步回填。
    */
-  async function writeAndVerify(el, value) {
+  async function writeAndVerify(el, value, options) {
+    var opts = options || {};
     var tag = el.tagName.toLowerCase();
     var before = String(el.value || '');
+    var comparison = { key: opts.key || '', kind: opts.kind || (/^(number|email|tel|date|month)$/.test(el.type || '') ? (/^(date|month)$/.test(el.type) ? 'date' : el.type) : '') };
+    var hasValue = C.fieldLooksFilled ? C.fieldLooksFilled(el) : !!before.trim();
+    if (el.disabled || el.readOnly || el.isConnected === false) return false;
+    if (hasValue && !opts.overwrite) return writtenValueMatches(before, value, comparison);
+    if (el.maxLength > 0 && String(value).length > el.maxLength) return false;
+    if (el.type === 'number' && !/^[+-]?\d+(?:\.\d+)?$/.test(String(value).trim())) return false;
     if (tag === 'select') {
       if (!setNativeValue(el, value)) return false;
       var want = el.value;
       await settle();
       return el.value === want && el.selectedIndex >= 0;
     }
-    if (!setNativeValue(el, value)) return false;
-    await settle();
-    if (writtenValueMatches(el.value, value)) return true;
-    if (retryInsertText(el, value)) {
-      await settle();
-      if (writtenValueMatches(el.value, value)) return true;
+    var userEdited = false;
+    var performingWrite = false;
+    function onUserInput(event) { if (event.isTrusted && !performingWrite) userEdited = true; }
+    function ownWrite(fn) {
+      performingWrite = true;
+      try { return fn(); } finally { performingWrite = false; }
     }
-    if (String(value).length <= 120 && typeLikeUser(el, value)) {
+    el.addEventListener('input', onUserInput);
+    try {
+      if (!ownWrite(function () { return setNativeValue(el, value); })) return false;
       await settle();
-      if (writtenValueMatches(el.value, value)) return true;
-    }
-    if (String(el.value || '') !== before) restoreValue(el, before);
-    return false;
+      if (userEdited || el.isConnected === false) return false;
+      if (String(el.value || '').trim() && el.validity && !el.validity.valid) { restoreValue(el, before); return false; }
+      if (writtenValueMatches(el.value, value, comparison)) return true;
+      // 新的非空值可能来自页面异步回填；不继续覆盖，也不还原成旧值。
+      if (String(el.value || '').trim()) return false;
+      if (ownWrite(function () { return retryInsertText(el, value); })) {
+        await settle();
+        if (userEdited || el.isConnected === false) return false;
+        if ((!el.validity || el.validity.valid) && writtenValueMatches(el.value, value, comparison)) return true;
+        if (String(el.value || '').trim()) return false;
+      }
+      if (String(value).length <= 120 && ownWrite(function () { return typeLikeUser(el, value); })) {
+        await settle();
+        if (userEdited || el.isConnected === false) return false;
+        if ((!el.validity || el.validity.valid) && writtenValueMatches(el.value, value, comparison)) return true;
+      }
+      if (!userEdited && String(el.value || '') === String(value)) restoreValue(el, before);
+      return false;
+    } finally { el.removeEventListener('input', onUserInput); }
   }
 
   /**
@@ -298,7 +304,7 @@
         el: el,
         read: typeof read === 'function' ? read : null,
         key: String(key || ''),
-        label: String((el && (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('placeholder'))) ) || ''),
+        label: String((C.getLabelText && C.getLabelText(el)) || (el && el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('placeholder'))) || key || ''),
         expected: String(expected == null ? '' : expected),
         kind: String(kind || '')
       });
@@ -338,10 +344,23 @@
     try {
       var entries = fillRecords.map(function (r) {
         var actual = '';
-        try { actual = r.read ? String(r.read() || '') : readBackValue(r.el); } catch (_) { actual = ''; }
+        try { if (!r.el || r.el.isConnected !== false) actual = r.read ? String(r.read() || '') : readBackValue(r.el); } catch (_) { actual = ''; }
         return { key: r.key, label: r.label, expected: r.expected, actual: actual, kind: r.kind };
       });
-      return A.auditEntries(entries, { ignoreEmpty: false });
+      var audit = A.auditEntries(entries, { ignoreEmpty: false });
+      audit.entries.forEach(function (entry, index) {
+        var el = fillRecords[index].el;
+        if (!el || !el.validity || el.validity.valid || !entry.accepted) return;
+        if (entry.status === 'ok') audit.ok -= 1;
+        else audit.approx -= 1;
+        audit.verified -= 1;
+        audit.mismatch += 1;
+        entry.status = 'mismatch'; entry.accepted = false; entry.level = 'constraint-invalid';
+        if (audit.problems.indexOf(entry) < 0) audit.problems.push(entry);
+      });
+      audit.wrongFill = audit.mismatch;
+      audit.okAll = audit.mismatch === 0 && audit.empty === 0 && audit.needsReview === 0;
+      return audit;
     } catch (_) { return null; }
   }
 

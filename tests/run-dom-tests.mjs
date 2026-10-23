@@ -15,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
+import http from 'node:http';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
@@ -42,7 +43,8 @@ function loadPlaywright() {
 }
 
 const FIXTURES = path.join(__dirname, 'fixtures', 'dom');
-const fileUrl = (f) => 'file:///' + path.join(FIXTURES, f).replace(/\\/g, '/');
+let fixtureOrigin;
+const fileUrl = (f) => fixtureOrigin + '/tests/fixtures/dom/' + encodeURIComponent(f);
 
 // ── 断言小工具 ─────────────────────────────────────────────
 class Fail extends Error {}
@@ -688,6 +690,97 @@ const CHAIN_CASES = [
 
 const E2E_CASES = [
   {
+    name: 'privacy：iframe 汇报不向页面暴露简历原值与审计正文',
+    file: 'field-safety.html',
+    async run(page) {
+      const framePromise = page.waitForEvent('framenavigated', {predicate: f => f !== page.mainFrame()});
+      await page.evaluate(() => {
+        window.frameReports = [];
+        window.addEventListener('message', event => { if (event.data?.__raFill) window.frameReports.push(event.data); });
+        const frame = document.createElement('iframe');
+        frame.srcdoc = '<label>姓名<input id="frame-name"></label>';
+        document.body.appendChild(frame);
+      });
+      const frame = await framePromise;
+      await loadExtension(frame, {name:'PRIVATE_FRAME_SENTINEL'});
+      await frame.evaluate(() => window.__resumeAutofill.fill({allowAddSections:false, allowCustomSelect:false}));
+      await page.waitForFunction(() => window.frameReports.length > 0);
+      const reports = await page.evaluate(() => window.frameReports);
+      ok(!JSON.stringify(reports).includes('PRIVATE_FRAME_SENTINEL'), '页面监听不到审计原值');
+      ok(!reports[0].__raFill.audit, '只传汇总，不传原始审计');
+      eq(reports[0].__raFill.filled, 1, '仍可汇总填写数量');
+    }
+  },
+  {
+    name: 'binding：经历倒序、同名歧义、外部记录和空行分配',
+    file: 'record-binding.html',
+    async run(page) {
+      await loadExtension(page, {
+        eduList:[{school:'甲大学', major:'软件工程', start:'2020-09-01'}, {school:'乙大学', major:'数学', start:'2019-09-01'}],
+        workList:[{company:'同名公司', title:'职位甲', start:'2023-01'}, {company:'同名公司', title:'职位乙', start:'2024-01'}],
+        projectList:[{name:'甲项目', role:'负责人'}, {name:'乙项目', role:'开发者'}]
+      });
+      const result = await page.evaluate(() => window.__resumeAutofill.fill({allowAddSections:false, allowCustomSelect:false}));
+      eq(await value(page, '#resumeEducationInfo_0_major'), '数学', '先绑定乙大学再填专业');
+      eq(await value(page, '#resumeEducationInfo_1_major'), '软件工程', '先绑定甲大学再填专业');
+      eq(await value(page, '#resumeEducationInfo_0_startDate'), '2019-09-01', '日期使用同一条目');
+      eq(await value(page, '#resumeWorkInfo_0_position'), '', '同名公司缺时间时拒绝猜测');
+      eq(await value(page, '#resumeWorkInfo_1_position'), '', '简历外记录不混入简历条目');
+      ok(result.skipped.some(x => x.reason === 'record_ambiguous'), '歧义原因可见');
+      ok(result.skipped.some(x => x.reason === 'record_conflict'), '不匹配原因可见');
+      eq(await value(page, '#resumeProjectInfo_0_name'), '乙项目', '空行不重复占用已绑定条目');
+      eq(await value(page, '#resumeProjectInfo_0_role'), '开发者', '空行子字段一致');
+      eq(await value(page, '#resumeProjectInfo_1_role'), '负责人', '已有项目对应职务');
+    }
+  },
+  {
+    name: 'safety：已有内容保护、异步回填、字段标点与约束、重复填写',
+    file: 'field-safety.html',
+    async run(page) {
+      await loadExtension(page, {name:'测试申请人', phone:'13800138000', email:'first.last@example.test', website:'https://example.test/a-b', gpa:'3.0/4.5'});
+      const first = await page.evaluate(() => window.__resumeAutofill.fill({allowAddSections:false, allowCustomSelect:false}));
+      const v = id => value(page, '#' + id);
+      eq(await v('name'), '用户确认的名字', '保留用户内容');
+      ok(first.preserved.some(x => x.key === 'name'), '不同内容明确提示');
+      eq(await v('phone'), '138 0013 8000', '电话格式化仍支持');
+      eq(await v('gpa'), '3.0', 'GPA 数值与满分不混填');
+      ok(!first.filledKeys.includes('email') && !first.filledKeys.includes('website'), '标点变化不能通过写入核验');
+      ok(first.audit.problems.some(x => x.key === 'email' && x.status === 'mismatch'), '非空错误值也必须进入问题清单');
+      eq(first.saveStatus, 'not_checked', '控件核验不代表保存');
+      const direct = await page.evaluate(async () => {
+        const C = ResumeAutofillContent;
+        return {
+          existing: await C.writeAndVerify(document.getElementById('existing'), '新内容'),
+          asyncValue: await C.writeAndVerify(document.getElementById('async-value'), '拟填内容'),
+          number: await C.writeAndVerify(document.getElementById('constrained'), '30', {key:'gpa'}),
+          controlled: await C.writeAndVerify(document.getElementById('required-controlled'), '测试', {key:'name'}),
+        };
+      });
+      ok(!direct.existing && !direct.asyncValue && !direct.number, '底层写入拒绝覆盖与无效数值');
+      ok(direct.controlled, '必填受控组件清空后仍可重试，实际：' + await v('required-controlled'));
+      eq(await v('existing'), '保留内容', '底层保护现值');
+      eq(await v('async-value'), '页面异步回填', '不覆盖或清除异步回填');
+      eq(await v('constrained'), '', '超出最大值还原');
+      const audit = await page.evaluate(() => {
+        const C = ResumeAutofillContent;
+        C.fillRecords.length = 0;
+        const gone = document.createElement('input');
+        gone.value = '测试'; document.body.appendChild(gone);
+        C.recordFill(gone, 'name', '测试'); gone.remove();
+        const invalid = document.createElement('input');
+        invalid.type = 'number'; invalid.max = '4.5'; invalid.value = '30'; document.body.appendChild(invalid);
+        C.recordFill(invalid, 'gpa', '30');
+        return C.runFillAudit();
+      });
+      eq(audit.empty, 1, '已脱离页面的旧节点不能核验通过');
+      eq(audit.mismatch, 1, '页面约束不通过不能核验成功');
+      const second = await page.evaluate(() => window.__resumeAutofill.fill({allowAddSections:false, allowCustomSelect:false}));
+      eq(second.filled, 0, '重复执行不会重复填写');
+      ok(!second.preserved.some(x => x.key === 'gpa'), 'GPA 数值框不误报满分冲突');
+      eq(await v('name'), '用户确认的名字', '重复执行保留现值');
+    }
+  },
+  {
     name: 'e2e：一键填写——回读确认 / 日期按控件格式 / 否定词与学历不错选 / 第三方不串填',
     file: 'e2e-form.html',
     async run(page) {
@@ -733,7 +826,8 @@ const E2E_CASES = [
       ok(Array.isArray(m.range) && m.range[0] === '2021-07-01' && m.range[1] === '2023-03-31', '范围：起点补 1 号、终点补月末：' + JSON.stringify(m.range));
       eq(await page.evaluate(() => document.getElementById('rs').value), '2021-07-01', '范围开始回读');
       eq(await page.evaluate(() => document.getElementById('re').value), '2023-03-31', '范围结束回读');
-      ok(r.filledKeys.includes('birthday') && r.filledKeys.includes('startDate'), 'filledKeys：' + JSON.stringify(r.filledKeys));
+      ok(r.filledKeys.includes('birthday') && !r.filledKeys.includes('startDate'), '精度不足的范围不能计为核验通过：' + JSON.stringify(r.filledKeys));
+      ok(r.audit.needsReview > 0, '只有月份却补了日期，需要核对');
       ok(!(r.audit && r.audit.wrongFill), '审计无错填：' + JSON.stringify(r.audit && r.audit.problems));
     },
   },
@@ -765,6 +859,21 @@ const E2E_CASES = [
 (async function main() {
   const filter = process.argv[2] || '';
   const { chromium } = loadPlaywright();
+  // fixture 内的 fetch 在 file:// 下会被 CORS 拦截；通过仅监听本机的静态服务执行。
+  const repoRoot = path.resolve(__dirname, '..');
+  const server = http.createServer((req, res) => {
+    try {
+      const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
+      const target = path.resolve(repoRoot, '.' + pathname);
+      if (!target.startsWith(repoRoot + path.sep)) { res.writeHead(403).end(); return; }
+      const data = fs.readFileSync(target);
+      const types = {'.html':'text/html', '.js':'text/javascript', '.json':'application/json', '.css':'text/css'};
+      res.writeHead(200, {'Content-Type': (types[path.extname(target)] || 'application/octet-stream') + '; charset=utf-8'}).end(data);
+    } catch (_) { res.writeHead(404).end(); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  fixtureOrigin = 'http://127.0.0.1:' + server.address().port;
+  try {
   const browser = await chromium.launch();
   let passed = 0;
   const failed = [];
@@ -796,4 +905,5 @@ const E2E_CASES = [
   console.log('');
   console.log(`DOM Result: ${passed} passed, ${failed.length} failed`);
   if (failed.length) process.exit(1);
+  } finally { await new Promise(resolve => server.close(resolve)); }
 })();

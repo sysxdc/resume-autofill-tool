@@ -6,8 +6,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 
-const HERE = path.dirname(new URL(import.meta.url).pathname);
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REAL = path.dirname(HERE);
 const require = createRequire(path.join(REAL, 'package.json'));
 const esbuild = require('esbuild');

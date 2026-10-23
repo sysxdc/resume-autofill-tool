@@ -32,6 +32,23 @@
   }
 
   var DATE_HINT = /^(birthday|eduStart|eduEnd|startDate|endDate|workEnd|projectStart|projectEnd|campusStart|campusEnd|socialStart|socialEnd|awardDate|awardEnd|internStart|internEnd|trainingStart|trainingEnd|gaokaoDate|englishDate|langDate|certDate|certExpiry|degreeAwardDate|paperDate|patentApplyDate|partyJoinDate|leagueOrPartyJoinDate|expectedStartDate|earliestStart)$/;
+  var PHONE_KEY = /^(phone|emergencyContactPhone|familyPhone|refereeContact|internRefereeContact|projectRefereeContact|counselorContact)$/;
+  var NUMBER_KEY = /^(gpa|englishScore|langScore|certScore|gaokaoScore|height|weight|years|eduYears|failedCourses|majorClassSize|projectTeamSize|expectedSalary|expectedAnnualSalary|currentSalary|monthlySalary|annualSalary|internAnnualSalary)$/;
+  var REGION_KEY = /^(province|city|currentProvince|currentCity|currentDistrict|nativePlace|nativeProvince|nativeCity|studentOrigin|hukou|hukouProvince|hukouCity|schoolCity|workCity|internCity|projectCity|expectedCity|expectedCity2|interviewCity)$/;
+
+  function numberValue(s) {
+    // 不允许 parseFloat 吞掉后缀、分母、单位或证件号中的字符。
+    if (!/^[¥￥$€]?\s*[+-]?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(s)) return null;
+    var n = Number(s.replace(/[¥￥$€,\s]/g, ''));
+    return isFinite(n) ? n : null;
+  }
+
+  function phoneValue(s) {
+    if (!/^\+?[\d\s()（）-]+$/.test(s)) return null;
+    var digits = s.replace(/\D/g, '');
+    if (/^\+86/.test(s) && /^861\d{10}$/.test(digits)) return digits.slice(2);
+    return digits;
+  }
 
   /**
    * 单条比较。
@@ -43,29 +60,53 @@
     var actual = norm(e && e.actual);
     var label = (e && e.label) || (e && e.key) || '';
 
-    if (!expected) return { key: e.key, label: label, expected: expected, actual: actual, status: 'ok' };
+    function result(status, level, accepted) {
+      var r = { key: e.key, label: label, expected: expected, actual: actual, status: status, accepted: accepted === true };
+      if (level) r.level = level;
+      return r;
+    }
+    if (!expected) return result('ok', null, true);
 
-    // 日期字段：走能力层判级（月精度/补日都是合法的）
+    // 日期字段：精度损失或补日仍需核对，不能当作精确事实。
     var kind = (e && e.kind) || '';
-    var looksDate = kind === 'date' || DATE_HINT.test(String(e && e.key || '')) ||
-      /^\d{4}\s*[-/.年]/.test(expected);
+    var looksDate = kind === 'date' || DATE_HINT.test(String(e && e.key || ''));
     if (looksDate && Cap && Cap.matchLevel) {
       var m = Cap.matchLevel(actual, expected);
-      if (m.level === 'exact') return { key: e.key, label: label, expected: expected, actual: actual, status: 'ok', level: 'exact' };
+      if (m.level === 'exact') return result('ok', 'exact', true);
       if (m.level === 'day-approx' || m.level === 'month-only') {
-        return { key: e.key, label: label, expected: expected, actual: actual, status: 'approx', level: m.level };
+        return result('approx', m.level, false);
       }
-      return { key: e.key, label: label, expected: expected, actual: actual, status: actual ? 'mismatch' : 'empty', level: m.level };
+      return result(actual ? 'mismatch' : 'empty', m.level, false);
     }
 
-    if (!actual) return { key: e.key, label: label, expected: expected, actual: actual, status: 'empty' };
+    if (!actual) return result('empty', null, false);
 
-    var a = tight(actual);
-    var x = tight(expected);
-    if (a === x) return { key: e.key, label: label, expected: expected, actual: actual, status: 'ok' };
+    if (actual === expected) return result('ok', null, true);
+    var key = String(e.key || '');
+    if (PHONE_KEY.test(key) || kind === 'tel') {
+      var pa = phoneValue(actual), px = phoneValue(expected);
+      return pa && px && pa === px ? result('ok', 'phone-format', true) : result('mismatch', null, false);
+    }
+    if (NUMBER_KEY.test(key) || kind === 'number') {
+      var na = numberValue(actual), nx = numberValue(expected);
+      if (na !== null && nx !== null && na === nx) return result('ok', 'number-format', true);
+      // GPA 的分母属于资料的一部分，不能用去标点或只读分子来核验。
+      if (key === 'gpa') {
+        var ga = actual.match(/^(\d+(?:\.\d+)?)\s*[/／]\s*(\d+(?:\.\d+)?)$/);
+        var gx = expected.match(/^(\d+(?:\.\d+)?)\s*[/／]\s*(\d+(?:\.\d+)?)$/);
+        if (ga && gx && Number(ga[1]) === Number(gx[1]) && Number(ga[2]) === Number(gx[2])) return result('ok', 'gpa-format', true);
+      }
+      return result('mismatch', null, false);
+    }
+    if (/^(idNumber|eduCertNo|degreeCertNo)$/.test(key) && actual.toUpperCase() === expected.toUpperCase()) return result('ok', 'id-case', true);
+    if (/^(email|secondaryEmail)$/.test(key) || kind === 'email') {
+      var atA = actual.lastIndexOf('@'), atX = expected.lastIndexOf('@');
+      if (atA > 0 && atX > 0 && actual.slice(0, atA) === expected.slice(0, atX) && actual.slice(atA).toLowerCase() === expected.slice(atX).toLowerCase()) return result('ok', 'email-domain-case', true);
+      return result('mismatch', null, false);
+    }
     if (e.key === 'gradYear' && /^\d{4}$/.test(expected) &&
         actual.replace(/[年届]/g, '') === expected) {
-      return { key: e.key, label: label, expected: expected, actual: actual, status: 'approx', level: 'year-suffix' };
+      return result('approx', 'year-suffix', true);
     }
     if (/^(englishLevel|langLevel)$/.test(e.key || '')) {
       var cet = function (v) {
@@ -73,27 +114,27 @@
         if (/^(cet[\s-]?6|英语六级|六级)$/i.test(v)) return 'CET6';
         return v;
       };
-      if (cet(actual) === cet(expected)) return { key: e.key, label: label, expected: expected, actual: actual, status: 'approx', level: 'cet-synonym' };
+      if (cet(actual) === cet(expected)) return result('approx', 'cet-synonym', true);
     }
 
     // 页面给值加了「(类别)(层次)(地区)」这类消歧后缀 → 近似，例如专业「自动化」显示成
     // 「自动化(自动化类)(普通本科)(中国大陆)」。只认「紧跟括号」，所以
     // 「广东工业大学」vs「广东工业大学华立学院」仍然是错填（那是另一所学校）。
-    if (x && actual.length > expected.length && tight(actual).indexOf(x) === 0 &&
-        /^[（(]/.test(norm(actual).slice(expected.length))) {
-      return { key: e.key, label: label, expected: expected, actual: actual, status: 'approx', level: 'code-suffix' };
+    if (/^(major|majorCategory)$/.test(key) && actual.indexOf(expected) === 0 &&
+        /^(?:\([^()]+\)|（[^（）]+）)+$/.test(actual.slice(expected.length))) {
+      return result('approx', 'code-suffix', true);
     }
     // 页面把值截断了（期望更长、且包含页面显示）→ 近似，例如「广东省阳江市」显示成「阳江市」
-    if (x && a && x.indexOf(a) !== -1 && a.length >= 2) {
-      return { key: e.key, label: label, expected: expected, actual: actual, status: 'approx', level: 'truncated' };
+    if (REGION_KEY.test(key) && expected.indexOf(actual) !== -1 && /(?:省|市|区|县|自治州|自治区)$/.test(actual)) {
+      return result('approx', 'region-partial', false);
     }
     // 选项题：页面常把「本科」显示成「本科（学士）」。只对枚举类字段放宽，
     // 否则「广东工业大学」vs「广东工业大学华立学院」会被误判成同一个学校。
-    var optionish = /^(degree|eduDegree|workNature|gender|politicalStatus|maritalStatus|idType|employmentType|jobType|awardLevel|awardType|awardGrade|certType|langLevel|englishLevel|hukouType|schoolType|eduMode|studyMode|enrollmentType|nationality|availability|willingToRelocate|acceptAdjustment)$/;
-    if (optionish.test(String(e.key || '')) && a && x && a.indexOf(x) !== -1 && x.length >= 2) {
-      return { key: e.key, label: label, expected: expected, actual: actual, status: 'approx', level: 'option-longer' };
+    if (/^(eduDegree|highestDegree)$/.test(key)) {
+      var labels = { '本科': ['本科（学士）', '本科(学士)'], '硕士': ['硕士研究生'], '博士': ['博士研究生'] };
+      if (labels[expected] && labels[expected].indexOf(actual) !== -1) return result('approx', 'degree-label', true);
     }
-    return { key: e.key, label: label, expected: expected, actual: actual, status: 'mismatch' };
+    return result('mismatch', null, false);
   }
 
   /**
@@ -107,17 +148,19 @@
       if (!e || !e.key) return;
       rows.push(compareEntry(e));
     });
-    var res = { checked: rows.length, ok: 0, approx: 0, empty: 0, mismatch: 0, problems: [], entries: rows };
+    var res = { checked: rows.length, ok: 0, approx: 0, empty: 0, mismatch: 0, verified: 0, needsReview: 0, problems: [], entries: rows };
     rows.forEach(function (r) {
       if (r.status === 'ok') res.ok += 1;
       else if (r.status === 'approx') res.approx += 1;
       else if (r.status === 'empty') res.empty += 1;
       else res.mismatch += 1;
+      if (r.accepted) res.verified += 1;
+      else if (r.status === 'approx') res.needsReview += 1;
       if (r.status === 'mismatch' || (r.status === 'empty' && !o.ignoreEmpty) || r.status === 'approx') {
         res.problems.push(r);
       }
     });
-    res.okAll = res.mismatch === 0;
+    res.okAll = res.mismatch === 0 && (o.ignoreEmpty || res.empty === 0) && res.needsReview === 0;
     res.wrongFill = res.mismatch;   // 红线：真填错了
     return res;
   }

@@ -702,7 +702,7 @@
   }
 
   /** 预扫描这类「弹窗选择器」输入框：label 是专业/学校，且 placeholder 写着「请选择」 */
-  async function fillModalPickers(profile, handled, filledKeys) {
+  async function fillModalPickers(profile, handled, filledKeys, bindings) {
     var items = Array.prototype.slice.call(document.querySelectorAll('.ant-form-item'));
     var filled = 0;
     for (var i = 0; i < items.length; i++) {
@@ -721,7 +721,9 @@
       // 普通的「学校名称 / 专业」输入框被标成已处理，主循环永远跳过它们（antd 表单里学校专业一律不填）
       if (!/请选择|选择专业|选择学校/.test(ph)) continue;
       if (handled) handled.add(inp);
-      var val = M.profileValueForOccurrence
+      var bound = C.boundStructuredField(inp, bindings);
+      if (bound && bound.reason) continue;
+      var val = bound ? C.structuredValue(profile, bound) : M.profileValueForOccurrence
         ? M.profileValueForOccurrence(profile, key, 0)
         : M.profileValue(profile, key);
       if (!val) continue;
