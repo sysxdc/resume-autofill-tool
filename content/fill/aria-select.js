@@ -10,21 +10,28 @@
   var committed = new WeakMap(), results = new WeakMap();
   function controller(host) {
     if (!host || !host.querySelector) return null;
-    var node = host.matches('[role="combobox"]') ? host : host.querySelector('[role="combobox"]');
+    var candidates = host.querySelectorAll('[role="combobox"]');
+    var node = host.matches('[role="combobox"]') ? host : (candidates.length === 1 ? candidates[0] : null);
     if (!node || node.closest('.ant-select, .el-select, .phoenix-select, [class*="sd-Select-container"]')) return null;
     return node.hasAttribute('aria-controls') || node.hasAttribute('aria-owns') ? node : null;
   }
-  function popup(node) {
-    var ids = String(node.getAttribute('aria-controls') || node.getAttribute('aria-owns') || '').split(/\s+/);
+  function popup(node, includeHidden) {
+    var ids = String((node.getAttribute('aria-controls') || '') + ' ' + (node.getAttribute('aria-owns') || '')).trim().split(/\s+/);
     var root = node.getRootNode();
+    var foundBoxes = [];
     for (var i = 0; i < ids.length; i++) {
-      var found = (root.getElementById && root.getElementById(ids[i])) || document.getElementById(ids[i]);
-      if (found) return found;
+      var found = root.getElementById && root.getElementById(ids[i]);
+      if (!found || found.getAttribute('role') !== 'listbox' || found.getAttribute('aria-hidden') === 'true') continue;
+      if (foundBoxes.indexOf(found) < 0) foundBoxes.push(found);
     }
-    return null;
+    var visible = foundBoxes.filter(C.isVisibleEl);
+    if (visible.length) return visible.length === 1 ? visible[0] : null;
+    return includeHidden && foundBoxes.length === 1 ? foundBoxes[0] : null;
   }
   function selectedText(host, node, allowInput) {
-    var selected = host.querySelector('[data-selected-value], .selected-text');
+    var scope = host;
+    if (host === node && node.parentElement && node.parentElement.querySelectorAll('[role="combobox"]').length === 1) scope = node.parentElement;
+    var selected = scope.querySelector('[data-selected-value], .selected-text');
     if (selected && C.isVisibleEl(selected)) return String(selected.getAttribute('data-selected-value') || selected.textContent || '').trim();
     if (node.getAttribute('aria-expanded') !== 'false') return '';
     if (/^(INPUT|TEXTAREA)$/.test(node.tagName)) return allowInput ? String(node.value || '').trim() : '';
@@ -117,6 +124,8 @@
     return finish(false,node.isConnected ? 'options_timeout' : 'component_replaced');
   }
   C.ariaCombobox = controller;
+  C.ariaPopup = popup;
+  C.ariaOptions = options;
   C.fillAriaSelect = fill;
   C.ariaSelectionText = function (host) {
     var node = controller(host);

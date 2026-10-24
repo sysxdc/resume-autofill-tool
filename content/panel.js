@@ -164,6 +164,7 @@
   function reasonText(r) {
     var reason = String((r && r.reason) || '');
     if (reason === 'empty_profile') return '还没有资料，先点「编辑资料」填一份';
+    if ((r && r.unverifiedFrames || []).length) return '部分 iframe 未验证（超时或不可访问），请核对后重试';
     if (/^fill_error/.test(reason) || /^exception/.test(reason)) return '填写出错：' + reason.replace(/^[a-z_]+:\s*/i, '');
     if (r && r.ok === false) return '没填成功，换个页面状态再试一次';
     return '完成';
@@ -231,6 +232,7 @@
       try {
         host.dataset.lastResult = JSON.stringify({
           filled: r.filled || 0,
+          frames:r.frames || 1,unverifiedFrames:r.unverifiedFrames || [],
           timedOut: !!r.timedOut,
           keys: (r.filledKeys || []).slice(0, 80),
           // 降级项：值填上了但精度掉了（2023-09 被写成 2023-09-01 / 日被控件吃掉），必须看得见
@@ -254,15 +256,17 @@
         });
       } catch (_) { /* ignore */ }
       var blanks = (r.unfilled && r.unfilled.length !== undefined) ? r.unfilled : api.unfilled();
-      var auditText = '';
+      var auditText = (r.unverifiedFrames || []).length ? '；部分 iframe 未验证（超时或不可访问）' : '';
       if (r.audit && r.audit.checked) {
-        auditText = '；控件核验 ' + (r.audit.verified == null ? r.audit.ok : r.audit.verified) + '/' + r.audit.checked + ' 通过';
+        auditText += '；控件核验 ' + (r.audit.verified == null ? r.audit.ok : r.audit.verified) + '/' + r.audit.checked + ' 通过';
         if (r.audit.mismatch) auditText += '，' + r.audit.mismatch + ' 处页面值对不上（已在下方列出）';
         else if (r.audit.empty) auditText += '，' + r.audit.empty + ' 处读不回值';
         if (r.audit.needsReview) auditText += '，' + r.audit.needsReview + ' 处精度待核对';
       }
       if (r.preserved && r.preserved.length) auditText += '；保留 ' + r.preserved.length + ' 处已有不同内容';
-      setStatus('已填 ' + (r.filled || 0) + ' 项' + (r.timedOut ? '（超时，部分字段没处理完）' : '') + auditText + '，' + summary(blanks) + '；保存结果未验证');
+      var noFields = !r.filled && !blanks.length && !(r.audit && r.audit.checked) && !(r.preserved && r.preserved.length) && !(r.unverifiedFrames || []).length;
+      setStatus(noFields ? '未发现可填写字段；请等待页面加载，并先打开对应分区的「编辑/添加」后再填写' :
+        '已填 ' + (r.filled || 0) + ' 项' + (r.timedOut ? '（超时，部分字段没处理完）' : '') + auditText + '，' + summary(blanks) + '；保存结果未验证', noFields);
       var issues = (r.preserved || []).map(function (x) { return { label: x.label || x.key, reason:x.reason, section: '已有内容待核对' }; });
       if (r.audit) (r.audit.problems || []).forEach(function (x) {
         if (!x.accepted) issues.push({ label: x.label || x.key, section: x.status === 'approx' ? '精度待核对' : '控件核验未通过' });

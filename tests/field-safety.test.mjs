@@ -41,6 +41,7 @@ test('有字段依据的格式等价仍可验证', () => {
     ['englishLevel', 'CET-4', '四级'], ['gradYear', '2027', '2027届'],
     ['major', '自动化', '自动化(自动化类)(普通本科)'],
     ['eduDegree', '本科', '本科（学士）'],
+    ['degree', '工学学士', '学士'], ['studyMode', '全日制', '全日制教育'],
   ]) assert.equal(check(key, expected, actual).accepted, true, key + ': ' + actual);
   assert.equal(check('phone', '13800138000', '+1 13800138000').accepted, false);
 });

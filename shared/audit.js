@@ -65,6 +65,12 @@
       if (level) r.level = level;
       return r;
     }
+    if (e.kind === 'multi' || Array.isArray(e.expected)) {
+      var wantedSet = Array.isArray(e.expected) ? Array.from(new Set(e.expected.map(norm))).sort() : null;
+      var actualSet = Array.isArray(e.actual) ? Array.from(new Set(e.actual.map(norm))).sort() : null;
+      if (!wantedSet || !actualSet) return result('mismatch', 'set-type', false);
+      return result(JSON.stringify(wantedSet) === JSON.stringify(actualSet) ? 'ok' : (actualSet.length ? 'mismatch' : 'empty'), 'set', JSON.stringify(wantedSet) === JSON.stringify(actualSet));
+    }
     if (!expected) return result('ok', null, true);
 
     // 日期字段：精度损失或补日仍需核对，不能当作精确事实。
@@ -108,10 +114,10 @@
         actual.replace(/[年届]/g, '') === expected) {
       return result('approx', 'year-suffix', true);
     }
-    if (/^(englishLevel|langLevel)$/.test(e.key || '')) {
+    if (/^(englishLevel|langLevel|langCertName)$/.test(e.key || '')) {
       var cet = function (v) {
-        if (/^(cet[\s-]?4|英语四级|四级)$/i.test(v)) return 'CET4';
-        if (/^(cet[\s-]?6|英语六级|六级)$/i.test(v)) return 'CET6';
+        if (/^(cet[\s-]?4|大学英语四级|英语四级|四级)$/i.test(v)) return 'CET4';
+        if (/^(cet[\s-]?6|大学英语六级|英语六级|六级)$/i.test(v)) return 'CET6';
         return v;
       };
       if (cet(actual) === cet(expected)) return result('approx', 'cet-synonym', true);
@@ -131,9 +137,13 @@
     // 选项题：页面常把「本科」显示成「本科（学士）」。只对枚举类字段放宽，
     // 否则「广东工业大学」vs「广东工业大学华立学院」会被误判成同一个学校。
     if (/^(eduDegree|highestDegree)$/.test(key)) {
-      var labels = { '本科': ['本科（学士）', '本科(学士)'], '硕士': ['硕士研究生'], '博士': ['博士研究生'] };
+      var labels = { '本科': ['大学本科', '本科（学士）', '本科(学士)'], '专科': ['大学专科', '大专'], '硕士': ['硕士研究生'], '博士': ['博士研究生'] };
       if (labels[expected] && labels[expected].indexOf(actual) !== -1) return result('approx', 'degree-label', true);
     }
+    if (key === 'degree' && /^(?:工学|理学|文学|经济学|管理学|法学|教育学|农学|医学|艺术学|历史学|哲学|军事学)(?:学士|硕士|博士)$/.test(expected) &&
+        /^(学士|硕士|博士)$/.test(actual) && expected.endsWith(actual)) return result('approx', 'degree-label', true);
+    if (key === 'studyMode' && ((expected === '全日制' && actual === '全日制教育') ||
+        (expected === '非全日制' && actual === '非全日制教育'))) return result('approx', 'study-mode-label', true);
     return result('mismatch', null, false);
   }
 

@@ -1,0 +1,6 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>可信 frame 调度</title><style>iframe{width:600px;height:210px}</style>
+<label>姓名<input id="name"></label><iframe id="fast" src="frame-child.html?kind=email"></iframe><iframe id="slow" src="frame-child.html?kind=school"></iframe>
+<script>
+setInterval(()=>window.postMessage({__raFill:{filled:9999,filledKeys:['forged']}},'*'),30);
+window.__state=()=>{const fast=document.querySelector('#fast').contentDocument,slow=document.querySelector('#slow').contentDocument,nested=slow?.querySelector('iframe')?.contentDocument;return{name:document.querySelector('#name').value,email:fast?.querySelector('input')?.value,school:slow?.querySelector('input')?.value,phone:nested?.querySelector('input')?.value};};
+</script></html>

@@ -1,6 +1,6 @@
 {
   "name": "resume-autofill-tool",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "private": true,
   "description": "Chrome MV3 resume autofill extension — local profile + fuzzy match + optional AI",
   "scripts": {
@@ -11,7 +11,9 @@
     "test:safety": "node --test tests/field-safety.test.mjs",
     "test:profile": "node --test tests/profile-quality.test.mjs",
     "test:benchmark": "node tests/match-benchmark.mjs",
-    "test:real": "node tests/real/run-real.mjs"
+    "test:real": "node tests/real/run-real.mjs",
+    "verify:release": "node tests/release.mjs",
+    "release": "node tests/release.mjs --package"
   },
   "devDependencies": {
     "playwright": "^1.55.0"

@@ -151,13 +151,13 @@
   function antdV3Panel() {
     var list = [];
     try {
-      Array.prototype.forEach.call(document.querySelectorAll('.ant-calendar-picker-container'), function (n) {
+      Array.prototype.forEach.call(C.queryAll('.ant-calendar-picker-container'), function (n) {
         if (!isVisibleEl(n)) return;
         var cal = n.querySelector('.ant-calendar');
         if (cal) list.push(cal);
       });
     } catch (_) { /* ignore */ }
-    return list.length ? list[list.length - 1] : null;
+    return list.length === 1 ? list[0] : null;
   }
 
   function simulateClick(el) {
@@ -181,7 +181,7 @@
   // ————— v1.5.0：自定义下拉适配器（Element / Ant / dictionary / listbox）—————
 
   var CUSTOM_SELECT_HOST =
-    '.el-select, .ant-select, .dictionary-selector, .form-select, .phoenix-select, [role="combobox"], ' +
+    '.el-select, .ant-select, .ant-cascader-picker, .dictionary-selector, .form-select, .phoenix-select, [role="combobox"], [role="listbox"][aria-multiselectable="true"], ' +
     '[class*="sd-Select-container"]';  // Moka（app.mokahr.com）的自绘下拉
   var DROPDOWN_OPTION_SEL =
     '[role="option"], .el-select-dropdown__item, .el-option, .ant-select-item-option, ' +
@@ -205,7 +205,7 @@
   /** 关掉已经展开的下拉，避免它的选项污染下一个字段的匹配 */
   function closeOpenDropdowns() {
     var open = Array.prototype.filter.call(
-      document.querySelectorAll('.el-select-dropdown, .ant-select-dropdown'),
+      C.queryAll('.el-select-dropdown, .ant-select-dropdown'),
       isVisibleEl
     );
     if (!open.length) return;
@@ -228,21 +228,21 @@
    */
   function dropdownForHost(host) {
     if (!host || !host.querySelector) return null;
-    var input = host.querySelector('input[aria-controls], input[aria-owns], [aria-controls], [aria-owns]');
+    var input = host.matches('[aria-controls], [aria-owns]') ? host : host.querySelector('[aria-controls], [aria-owns]');
+    var boxes = [];
     if (input) {
-      var id = input.getAttribute('aria-controls') || input.getAttribute('aria-owns');
-      if (id) {
-        var byId = document.getElementById(id);
-        if (byId) {
-          // antd 的 aria 目标是 listbox 空壳（0 尺寸、没有选项），真正的选项在它所属的弹层里
-          var box = byId.closest ? byId.closest('.ant-select-dropdown') : null;
-          if (box) return box;
-          if (byId.querySelector('.ant-select-item-option')) return byId;
-        }
-      }
+      var ids = ((input.getAttribute('aria-controls') || '') + ' ' + (input.getAttribute('aria-owns') || '')).trim().split(/\s+/);
+      ids.forEach(function (id) {
+        var node = id && C.byRootId(input,id);
+        if (!node) return;
+        var box = node.closest('.ant-select-dropdown, .el-select-dropdown') || node;
+        if (isVisibleEl(box) && box.querySelector(DROPDOWN_OPTION_SEL) && boxes.indexOf(box) < 0) boxes.push(box);
+      });
+      // 明确关联但尚未刷新时，交给轮询等待，不能借用其他菜单。
+      return boxes.length === 1 ? boxes[0] : null;
     }
-    var own = host.querySelector('.el-select-dropdown, .ant-select-dropdown');
-    return own || null;
+    boxes = Array.from(host.querySelectorAll('.el-select-dropdown, .ant-select-dropdown')).filter(isVisibleEl);
+    return boxes.length === 1 ? boxes[0] : null;
   }
 
   function hostDropdownOptions(host) {
@@ -263,7 +263,7 @@
     var out = [];
     for (var i = 0; i < items.length; i++) {
       var t = String(items[i].textContent || '').replace(/\s+/g, ' ').trim();
-      if (t) out.push({ el: items[i], text: t, value: t });
+      if (t && C.optionEnabled(items[i])) out.push({ el: items[i], text: t, value: t });
     }
     return out.length ? out : null;
   }
@@ -287,7 +287,7 @@
       var wrap = host.closest(
         '.el-select, .ant-select, .dictionary-selector, .form-select, .phoenix-select, [class*="sd-Select-container"]'
       );
-      return wrap || host.parentElement || host;
+      return wrap || host;
     }
     return host;
   }
@@ -315,11 +315,13 @@
 
   function customSelectLooksFilled(host) {
     if (!host) return false;
-    if (C.ariaCombobox(host)) return !!C.ariaSelectionText(host);
+    if (C.isMultiSelect && C.isMultiSelect(host)) return C.readMultiValues(host).length > 0;
+    if (host.matches('.ant-cascader-picker')) return !!cascaderSelectionText(host);
     // antd v3：只认 .ant-select-selection-selected-value，隐藏 input 里的编码值不算
     if (typeof isAntdV3SelectHost === 'function' && isAntdV3SelectHost(host)) {
       return !!antdV3SelectedText(host);
     }
+    if (C.ariaCombobox(host)) return !!C.ariaSelectionText(host);
     var txt = '';
     var selected = host.querySelector(
       '.el-select__selected-item:not(.el-select__input-wrapper):not(.is-transparent), .el-input__inner, .ant-select-selection-selected-value, ' +
@@ -353,47 +355,23 @@
    * 快手的下拉失焦后不会关（页面上能同时挂着好几个可见弹层），
    * 所以多个弹层并存时只取 DOM 里最后出现的那个 —— 也就是刚点开的这个。
    */
-  var DROPDOWN_BOX_SEL = '.ant-select-dropdown, .el-select-dropdown, .el-popper, [role="listbox"], ' +
+  var DROPDOWN_BOX_SEL = '.ant-select-dropdown, .el-select-dropdown, .el-popper, [role="listbox"], [class*="sd-Menu-root"], ' +
     '[class*="dropdown"]:not([class*="item"]):not([class*="option"]), ' +
     '[class*="Dropdown"]:not([class*="item"]):not([class*="Item"]):not([class*="option"])';
 
-  function collectOpenDropdownOptions() {
-    var nodes = document.querySelectorAll(DROPDOWN_OPTION_SEL);
-    var groups = [];
-    var lastBox = null;
-    var out = [];
-    for (var i = 0; i < nodes.length; i++) {
-      var n = nodes[i];
-      if (!isVisibleEl(n)) continue;
-      // 从父节点开始找所属弹层：closest 包含自身，而选项自己的类名（el-select-dropdown__item）就含 dropdown，
-      // 之前每个选项各成一组、只剩最后一项（Element UI 下拉因此永远只看到「博士」）
-      var box = n.parentElement ? n.parentElement.closest(DROPDOWN_BOX_SEL) : null;
-      if (box) {
-        if (box !== lastBox) { lastBox = box; groups.push([]); }
-        groups[groups.length - 1].push(n);
-      } else {
-        out.push(n);
-      }
-    }
-    var picked = [];
-    if (groups.length) {
-      picked = groups[groups.length - 1];
-      if (groups.length > 1) {
-        // 别的弹层还开着：留给调用方清理，但选项只用最后那组
-        out = out.concat(groups.slice(0, -1).reduce(function (a, b) { return a.concat(b); }, []));
-        // 别的弹层里的选项不当候选，这里只返回最后一组
-        out = [];
-      }
-    }
-    picked = picked.length ? picked : out;
-    var res = [];
-    for (var j = 0; j < picked.length; j++) {
-      var m = picked[j];
-      var txt = String(m.textContent || '').replace(/\s+/g, ' ').trim();
-      if (!txt || txt.length > 80 || PICKER_BLOCK_RE.test(txt)) continue;
-      res.push({ el: m, text: txt, value: m.getAttribute('data-value') || txt });
-    }
-    return res;
+  function collectOpenDropdownOptions(host, before) {
+    if (!host) return [];
+    var controller = host.matches('[aria-controls], [aria-owns]') ? host : host.querySelector('[aria-controls], [aria-owns]');
+    if (controller) return [];
+    var boxes = C.queryAll(DROPDOWN_BOX_SEL, host.getRootNode()).filter(function (box) {
+      return isVisibleEl(box) && (!before || !before.has(box)) && box.querySelector(DROPDOWN_OPTION_SEL);
+    });
+    // 包含关系相同的容器仅保留最外层。
+    boxes = boxes.filter(function (box) { return !boxes.some(function (other) { return other !== box && other.contains(box); }); });
+    if (boxes.length !== 1) return [];
+    return Array.from(boxes[0].querySelectorAll(DROPDOWN_OPTION_SEL)).filter(function (node) {
+      return isVisibleEl(node) && C.optionEnabled(node);
+    }).map(function (node) { return {el:node,text:String(node.textContent || '').replace(/\s+/g,' ').trim(),value:node.getAttribute('data-value') || node.textContent}; });
   }
 
   function openCustomSelect(host) {
@@ -455,6 +433,8 @@
   /** 下拉当前显示的文字（antd / Element / 自绘都能读到） */
   function customSelectText(host) {
     if (!host) return '';
+    if (host.matches('.ant-cascader-picker')) return cascaderSelectionText(host);
+    if (isAntdV3SelectHost(host)) return antdV3SelectedText(host);
     if (C.ariaCombobox(host)) return C.ariaSelectionText(host);
     // Element Plus：第一个 .el-select__selected-item 是输入框外壳（永远空），选中文字在不透明的 placeholder 里
     var sel = host.querySelector('.ant-select-selection-item, .el-select__selected-item:not(.el-select__input-wrapper):not(.is-transparent)');
@@ -555,7 +535,7 @@
       var dd = dropdownForV3Select(sel);
       var items = dd ? Array.prototype.slice.call(dd.querySelectorAll('li.ant-select-dropdown-menu-item')) : [];
       items = items.filter(function (li) {
-        if (/disabled/.test(String(li.className))) return false;
+        if (!C.optionEnabled(li) || /disabled/.test(String(li.className))) return false;
         return !/暂无数据|无数据|无匹配|加载中|loading/i.test(String(li.textContent || ''));
       });
 
@@ -583,10 +563,16 @@
         return String(li.textContent || '').replace(/\s+/g, '') === wantNorm;
       })[0];
       if (!hit) {
+        var synonym = matchOptionByVariants(items.map(function (li) {
+          return {el:li, text:String(li.textContent || '')};
+        }), valueSynonymVariants(value));
+        if (synonym) hit = synonym.el;
+      }
+      if (!hit) {
         // 「使用“广东工业大学”作为我的学校」这种远程搜索占位项：文案里含目标就认
         hit = items.filter(function (li) {
           var t2 = String(li.textContent || '').replace(/\s+/g, '');
-          return t2.indexOf(wantNorm) !== -1;
+          return t2.indexOf(wantNorm) !== -1 && !negationConflict(t2, wantNorm);
         })[0];
       }
       if (!hit) {
@@ -633,11 +619,13 @@
     var ctrl = sel && sel.querySelector('[aria-controls]');
     var id = ctrl ? ctrl.getAttribute('aria-controls') : (sel && sel.getAttribute('aria-controls'));
     if (id) {
-      var byId = document.getElementById(id);
+      var byId = C.byRootId(sel,id);
       if (byId) return byId;
+      // 有明确归属但自身菜单尚未挂载时，不能借用别的字段正在关闭的弹层。
+      return null;
     }
-    var list = Array.prototype.filter.call(document.querySelectorAll('.ant-select-dropdown'), isVisibleEl);
-    return list.length ? list[list.length - 1] : null;
+    var list = Array.prototype.filter.call(C.queryAll('.ant-select-dropdown'), isVisibleEl);
+    return list.length === 1 ? list[0] : null;
   }
 
   function antdV3PanelIsOpen(sel) {
@@ -647,8 +635,8 @@
 
   /** 弹窗选择器：点输入框 → ant-modal 里搜关键词 → 点 .school-item → 点「选择」 */
   function visibleAntdModal() {
-    var list = Array.prototype.filter.call(document.querySelectorAll('.ant-modal'), isVisibleEl);
-    return list.length ? list[list.length - 1] : null;
+    var list = Array.prototype.filter.call(C.queryAll('.ant-modal'), isVisibleEl);
+    return list.length === 1 ? list[0] : null;
   }
 
   async function fillAntdModalPicker(input, value, key) {
@@ -705,7 +693,7 @@
 
   /** 预扫描这类「弹窗选择器」输入框：label 是专业/学校，且 placeholder 写着「请选择」 */
   async function fillModalPickers(profile, handled, filledKeys, bindings) {
-    var items = Array.prototype.slice.call(document.querySelectorAll('.ant-form-item'));
+    var items = Array.prototype.slice.call(C.queryAll('.ant-form-item'));
     var filled = 0;
     for (var i = 0; i < items.length; i++) {
       var it = items[i];
@@ -754,6 +742,8 @@
    * 精确匹配失败时按同义组再找一轮。
    */
   var VALUE_SYNONYM_SETS = [
+    ['CET-4', 'CET4', '大学英语四级', '英语四级', '四级'],
+    ['CET-6', 'CET6', '大学英语六级', '英语六级', '六级'],
     ['应届生', '应届毕业生', '应届', '在校生', '应届毕业'],
     ['本科', '学士', '大学本科', '本科生'],
     ['硕士', '研究生', '硕士研究生', '硕士生'],
@@ -816,12 +806,12 @@
    * 直接写第二级必然失败，所以按「先上一级 → 等选项刷新 → 再下一级 → 逐级回读」来做，
    * 具体实现放在 shared/select-chain.js（可被 DOM 测试直接驱动）。
    */
-  async function fillLinkedSelectChains(profile, filledKeys) {
-    var C = globalThis.ResumeAutofillSelectChain;
-    if (!C || !C.fillChain) return 0;
+  async function fillLinkedSelectChains(profile, filledKeys, bindings) {
+    var chainApi = globalThis.ResumeAutofillSelectChain;
+    if (!chainApi) return 0;
     var langName = M.profileValue(profile, 'langName') || '';
-    var langLevel = M.profileValue(profile, 'langLevel') || M.profileValue(profile, 'englishLevel') || '';
-    if (!langName || !langLevel) return 0;
+    var langLevel = M.profileValue(profile, 'langLevel') || '';
+    if (!langName) return 0;
     // v1.6.0：多段外语（langList）：第 i 组「语种 → 等级」取第 i 条
     var rowLang = function (i, k, dflt) { return i === 0 ? dflt : (M.profileValueForOccurrence(profile, k, i) || ''); };
 
@@ -832,10 +822,9 @@
     hosts.forEach(function (host) {
       var item = host.closest ? host.closest('.ant-form-item, .el-form-item, .form-item, .form-group, tr, .row') : null;
       if (!item) return;
-      var lab = item.querySelector('.ant-form-item-label, .el-form-item__label, label');
-      var label = lab ? String(lab.textContent || '').replace(/\s+/g, '').replace(/\*/g, '') : '';
+      var label = String(C.getLabelText(host) || '').replace(/\s+/g, '').replace(/\*/g, '');
       if (!label) return;
-      var key = M.matchFieldKey(label, {});
+      var key = M.matchFieldKey(label, {context:detectSectionContext(host)});
       // 网申常用「语种/语言类型」作一级；旧关键词曾误落到 languages，这里再按标签兜底
       if (key === 'langName' || /^(语言类型|语种|语言种类)/.test(label)) langs.push({ host: host, label: label });
       else if (key === 'langLevel' || key === 'englishLevel' || /^(掌握程度|熟练程度|语言水平|语言等级|语言级别)/.test(label)) {
@@ -853,15 +842,19 @@
       if (runDone.chain && runDone.chain.has(levels[i].host)) continue;
       var res = null;
       try {
-        var ln = rowLang(i, 'langName', langName);
-        var lv = rowLang(i, 'langLevel', langLevel);
-        if (/等级|级别|考试|证书/.test(levels[i].label) && !/掌握|熟练/.test(levels[i].label)) lv = M.profileValueForOccurrence(profile,'langCertName',i) || lv;
+        var ref = C.boundStructuredField(langs[i].host,bindings);
+        if (ref && ref.reason) continue;
+        var recordIndex = ref ? ref.index : i;
+        var ln = rowLang(recordIndex, 'langName', langName);
+        var lv = rowLang(recordIndex, 'langLevel', langLevel);
+        if (/等级|级别|考试|证书/.test(levels[i].label) && !/掌握|熟练/.test(levels[i].label)) lv = M.profileValueForOccurrence(profile,'langCertName',recordIndex) || lv;
         if (!ln || !lv) continue;
         var steps = [{ host: langs[i].host, value: ln, label: langs[i].label }];
         if (levels[i].parentHost) steps.push({ host: levels[i].parentHost, value: ln, label: '语种' });
         if (/^CET[\s-]?[46]$/i.test(lv) && /英语|english/i.test(ln)) lv = /4/.test(lv) ? '英语四级' : '英语六级';
         steps.push({ host: levels[i].host, value: lv, label: levels[i].label });
-        res = await C.fillChain(steps);
+        steps.forEach(function (step,si) { step.key = si === 0 || step.label === '语种' ? 'langName' : 'langLevel'; });
+        res = await chainApi.fillChain(steps);
       } catch (_) { res = null; }
       if (res && res.ok) {
         if (runDone.chain) runDone.chain.add(levels[i].host);
@@ -893,10 +886,91 @@
     return v;
   }
 
+  function cascaderSelectionText(host) {
+    var label = host && host.querySelector('.ant-cascader-picker-label');
+    var text = String(label && label.textContent || '').trim();
+    var key = host && C.matchKeyForElement(host);
+    // 学校 / 学历 / 专业的前级是分类，不能把省份或专业大类当作字段值。
+    return /^(school|schoolEnglish|major|eduDegree|degree)$/.test(key)
+      ? text.split(/\s*\/\s*/).pop() : text;
+  }
+
+  async function fillAntdCascader(host, value, key) {
+    if (!host || !value || cascaderSelectionText(host)) return false;
+    var input = host.querySelector('input:not([type="hidden"])');
+    if (!input || input.disabled) return false;
+    simulateClick(document.body);
+    await sleep(60);
+    var before = Array.from(C.queryAll('.ant-cascader-menus')).filter(function (m) {
+      return isVisibleEl(m) && !/slide-up-leave|ant-cascader-menus-hidden/.test(m.className);
+    });
+    var search = String(value).trim();
+    var isRegion = /Place|Origin|Address|City|Province|District|hukou|^province$|^city$/.test(key);
+    if (isRegion) {
+      var region = M.splitCnRegion ? M.splitCnRegion(value) : null;
+      search = region && (region.district || region.city || region.province) || search.split(/\s*\/\s*/).pop();
+    }
+    var searchable = host.classList.contains('ant-cascader-picker-show-search');
+    if (searchable && input.readOnly) return false;
+    var bridge = null;
+    if (searchable) {
+      bridge = C.bridgeCall(input, 'cascaderSearch', {text:search});
+      if (!bridge || !bridge.ok) { openCustomSelect(host); typeIntoSearch(host, search); }
+    } else openCustomSelect(host);
+    await sleep(100);
+    var deadline = Date.now() + 2400;
+    try {
+      while (Date.now() < deadline && host.isConnected) {
+        if (searchable && String(input.value || '') !== search && !cascaderSelectionText(host)) return false;
+        var menus = Array.from(C.queryAll('.ant-cascader-menus')).filter(function (m) {
+          return isVisibleEl(m) && !/slide-up-leave|ant-cascader-menus-hidden/.test(m.className);
+        });
+        var fresh = menus.filter(function (m) { return before.indexOf(m) === -1; });
+        // 已有别的弹层时只认本次出现的弹层，避免跨字段选中同名项。
+        var menu = fresh.length === 1 ? fresh[0] : (menus.length === 1 && (!before.length || (bridge && bridge.ok)) ? menus[0] : null);
+        if (menu) {
+          var options = Array.from(menu.querySelectorAll('.ant-cascader-menu-item')).filter(function (item) {
+            return isVisibleEl(item) && !/ant-cascader-menu-item-(disabled|expand)(\s|$)/.test(item.className);
+          });
+          var matches = options.filter(function (item) {
+            var text = String(item.textContent || '').trim();
+            var actual = isRegion ? text : text.split(/\s*\/\s*/).pop();
+            return globalThis.ResumeAutofillAudit.compareEntry({key:key, expected:String(value), actual:actual}).accepted;
+          });
+          var exact = matches.filter(function (item) {
+            var text = String(item.textContent || '').trim();
+            return (isRegion ? text : text.split(/\s*\/\s*/).pop()) === String(value).trim();
+          });
+          if (exact.length) matches = exact;
+          if (matches.length === 1) {
+            simulateClick(matches[0]);
+            for (var i = 0; i < 8; i++) {
+              await sleep(80);
+              var actual = cascaderSelectionText(host);
+              if (actual && globalThis.ResumeAutofillAudit.compareEntry({key:key, expected:String(value), actual:actual}).accepted) return true;
+            }
+            return false;
+          }
+          if (matches.length > 1) return false;
+        }
+        await sleep(100);
+      }
+      return false;
+    } finally {
+      // 搜索词不等于已选值；失败只撤回本轮搜索，不清除用户在等待期间的输入。
+      if (searchable && !cascaderSelectionText(host) && input.value === search) {
+        var cleared = C.bridgeCall(input, 'cascaderSearch', {text:''});
+        if (!cleared || !cleared.ok) typeIntoSearch(host, '');
+      }
+      try { input.blur(); } catch (_) { /* ignore */ }
+    }
+  }
+
   function fillCustomSelect(host, value, key) {
+    if (host && host.matches('.ant-cascader-picker')) return fillAntdCascader(host, value, key);
+    if (isAntdV3SelectHost(host)) return fillAntdV3Select(host, value);
     if (C.ariaCombobox(host)) return C.fillAriaSelect(host,value,key);
     if (isPhoenixHost(host)) return fillPhoenixHost(host, value, key);
-    if (isAntdV3SelectHost(host)) return fillAntdV3Select(host, value);
     return new Promise(function (resolve) {
       if (!host || !value) { resolve(false); return; }
       if (customSelectLooksFilled(host)) { resolve(false); return; }
@@ -904,6 +978,7 @@
       if (host.querySelector('input[type="radio"], input[type="checkbox"]')) { resolve(false); return; }
       // 先关掉别的下拉，否则会把别人家的选项当成自己的（快手的排名下拉就这么串过）
       closeOpenDropdowns();
+      var beforePanels = new Set(C.queryAll(DROPDOWN_BOX_SEL,host.getRootNode()).filter(isVisibleEl));
       openCustomSelect(host);
 
       var waited = 0;
@@ -920,7 +995,7 @@
       var checkValue = value;
 
       function candidates() {
-        return hostDropdownOptions(host) || collectOpenDropdownOptions();
+        return hostDropdownOptions(host) || collectOpenDropdownOptions(host,beforePanels);
       }
 
       // 记住「打开之前就在页面上的弹层」，只认新出现的那个
@@ -1060,7 +1135,7 @@
     // v1.5.24：归一化 + 去重 —— .el-select 里那个 role=combobox 的 input、日期控件外层的 combobox
     // 都不是独立的下拉（之前同一个下拉会被当成两个各试一遍，对不上时白耗两倍时间）
     var out = [];
-    Array.prototype.forEach.call(document.querySelectorAll(CUSTOM_SELECT_HOST), function (h) {
+    Array.prototype.forEach.call(C.queryAll(CUSTOM_SELECT_HOST), function (h) {
       if (!(isVisibleEl(h) || h.offsetParent !== null)) return;
       var n = findCustomSelectHost(h);
       if (!n) return;
@@ -1088,7 +1163,7 @@
   function pickVisibleCandidates(desired) {
     var want = String(desired || '').replace(/\s+/g, ' ').trim();
     if (!want) return [];
-    var nodes = document.querySelectorAll('[role="option"], li, dd, .option, .picker-item, .list-item, .dropdown-item, .weui-cell');
+    var nodes = C.queryAll('[role="option"], li, dd, .option, .picker-item, .list-item, .dropdown-item, .weui-cell');
     var out = [];
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
@@ -1136,6 +1211,7 @@
   C.hostOwnText = hostOwnText;
   C.customSelectLooksFilled = customSelectLooksFilled;
   C.customSelectText = customSelectText;
+  C.cascaderSelectionText = cascaderSelectionText;
   C.fillModalPickers = fillModalPickers;
   C.negationConflict = negationConflict;
   C.fillLinkedSelectChains = fillLinkedSelectChains;

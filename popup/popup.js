@@ -174,7 +174,9 @@
     if (isRestrictedUrl(tab.url)) throw new Error('当前页面无法注入脚本（浏览器内置页）');
     await ensureContentScript(tab.id);
     var msg = Object.assign({ type: type }, payload || {});
-    return chrome.tabs.sendMessage(tab.id, msg);
+    var routes = {FILL_FORM:'RUN_FILL',COLLECT_FIELDS:'RUN_COLLECT',APPLY_MAPPINGS:'RUN_APPLY',SCAN_FIELDS:'RUN_SCAN'};
+    if (routes[type]) return chrome.runtime.sendMessage(Object.assign({},msg,{type:routes[type],tabId:tab.id}));
+    return chrome.tabs.sendMessage(tab.id,msg,{frameId:0});
   }
 
   async function runMapping() {
@@ -209,15 +211,16 @@
         if (response && response.reason === 'empty_profile') {
           setStatus('资料为空，请先编辑资料', 'err');
         } else {
-          setStatus('填写失败，请刷新页面后重试', 'err');
+          setStatus((response && response.unverifiedFrames || []).length ? '部分 iframe 未验证，请核对后重试' : '填写失败，请刷新页面后重试', 'err');
         }
         return;
       }
       setLastFill(response.filled, response.filledKeys || []);
+      if ((response.unverifiedFrames || []).length) response.warning = '部分 iframe 未验证';
       if (response.filled === 0) {
-        setStatus('未匹配到可填写字段，可先点「扫描字段」或「AI 巡查」', 'err');
+        setStatus((response.warning ? response.warning + '；' : '') + '未匹配到可填写字段，可先点「扫描字段」或「AI 巡查」', 'err');
       } else {
-        setStatus('已填写 ' + response.filled + ' 个字段，请核对后再提交', 'ok');
+        setStatus('已填写 ' + response.filled + ' 个字段' + (response.warning ? '；' + response.warning : '') + '；保存结果未验证，请核对后再提交', response.warning ? 'err' : 'ok');
       }
     } catch (err) {
       setStatus('填写出错：' + (err.message || String(err)), 'err');
@@ -274,7 +277,9 @@
         return;
       }
       setLastFill(response.filled, response.filledKeys || []);
-      var prefix = mapped.warning ? mapped.warning + '。' : '';
+      if ((response.unverifiedFrames || []).length) response.warning = '部分 iframe 未验证';
+      var prefix = [mapped.warning,response.warning].filter(Boolean).join('；');
+      if (prefix) prefix += '。';
       if (response.filled === 0) {
         setStatus(prefix + '映射完成但未能写入字段（可能是 select 无匹配项）', 'err');
       } else {

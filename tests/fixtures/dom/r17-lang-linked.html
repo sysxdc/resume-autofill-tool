@@ -22,7 +22,7 @@
      3) 直接写第二级无效：选项列表还没生成，点了也没用 -->
 <div class="ant-form-item">
   <div class="ant-form-item-label"><label>语种*</label></div>
-  <div class="ant-select" id="lang">
+  <div class="ant-select" id="lang" aria-controls="dd">
     <span class="ant-select-selection">
       <span class="ant-select-selection__placeholder" id="lang-ph">请选择语种</span>
       <span class="ant-select-selection-selected-value" id="lang-val" style="display:none"></span>
@@ -31,14 +31,14 @@
 </div>
 <div class="ant-form-item">
   <div class="ant-form-item-label"><label>语言等级*</label></div>
-  <div class="ant-select disabled" id="level">
+  <div class="ant-select disabled" id="level" aria-controls="dd">
     <span class="ant-select-selection">
       <span class="ant-select-selection__placeholder" id="level-ph">请先选择语种</span>
       <span class="ant-select-selection-selected-value" id="level-val" style="display:none"></span>
     </span>
   </div>
 </div>
-<ul class="ant-select-dropdown-menu" id="dd" style="position:fixed;display:none"></ul>
+<ul class="ant-select-dropdown-menu" id="dd" role="listbox" style="position:fixed;display:none"></ul>
 
 <script>
   var LEVELS = { '英语': ['CET-4', 'CET-6', '雅思', '托福'], '日语': ['N1', 'N2', 'N3'] };

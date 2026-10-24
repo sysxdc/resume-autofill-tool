@@ -26,7 +26,7 @@
     if (!form || !form.id || form.id.indexOf('_Recruitment_') === -1) return '';
     var sel = '[id="' + (window.CSS && CSS.escape ? CSS.escape(form.id) : form.id) + '"]';
     var nodes;
-    try { nodes = document.querySelectorAll(sel); } catch (_) { return ''; }
+    try { nodes = C.queryAll(sel,form.getRootNode()); } catch (_) { return ''; }
     for (var i = 0; i < nodes.length; i++) {
       var n = nodes[i];
       if (n === form) continue;
@@ -77,13 +77,14 @@
   /** 命名 radio 组：按 name 聚合，Yes/No 与安全键可填 */
   function fillNamedRadioGroups(profile, keyCounts, filledKeys) {
     var filled = 0;
-    var radios = Array.from(document.querySelectorAll('input[type=radio][name]')).filter(function (r) {
+    var radios = Array.from(C.queryAll('input[type=radio][name]')).filter(function (r) {
       return !r.disabled && r.offsetParent !== null;
     });
     var byName = {};
     radios.forEach(function (r) {
-      if (!byName[r.name]) byName[r.name] = [];
-      byName[r.name].push(r);
+      var groupId = C.rootId(r) + ':' + r.name;
+      if (!byName[groupId]) byName[groupId] = [];
+      byName[groupId].push(r);
     });
     Object.keys(byName).forEach(function (name) {
       var group = byName[name];
@@ -156,7 +157,7 @@
 
   /** 无名 radio 分组：同一容器内 ≥2 个无 name 的 radio */
   function collectUnnamedRadioGroups() {
-    var radios = Array.from(document.querySelectorAll('input[type=radio]')).filter(function (r) {
+    var radios = Array.from(C.queryAll('input[type=radio]')).filter(function (r) {
       return !r.disabled && !r.name && r.offsetParent;
     });
     var groups = [];

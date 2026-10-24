@@ -260,6 +260,7 @@
     personalStrengths: ['personalstrengths', 'personal_strengths', '个人优势', '优势亮点'],
     hobbies: ['hobbies', 'hobby', '兴趣爱好', '爱好'],
     careerPlan: ['careerplan', 'career_plan', '职业规划', '职业目标'],
+    schoolEnglish: ['schoolenglish', '学校英文名称', '学校名称英文', '英文学校名称'],
     school: [
       'school', 'university', 'college', 'institution', 'edu_school', 'campus',
       '毕业院校', '就读院校', '学校', '大学', '院校', '教育机构', '毕业学校', '所在院校', '就读学校'
@@ -1056,6 +1057,9 @@
       { re: /职位|职务|岗位|title|position/i, key: 'familyTitle' }
     ],
     edu: [
+      { re: /学校.*(?:英文|english)|(?:英文|english).*学校/i, key: 'schoolEnglish' },
+      { re: /院校类型|学校类型/i, key: 'schoolType' },
+      { re: /专业总人数|毕业人数|专业人数/i, key: 'majorClassSize' },
       { re: /辅修|第二专业|minor/i, key: 'dualDegree' },
       { re: /院系|系别|所在系|department|faculty/i, key: 'department' },
       { re: /城市|所在地|地点|city|location/i, key: 'schoolCity' },
@@ -1474,7 +1478,7 @@
     for (i = 0; i < list.length; i++) {
       f = list[i] || {};
       var hints = [f.label, f.placeholder, f.name, f.id, f.autocomplete].filter(Boolean).join(' ');
-      scored = matchFieldKeyScored(hints, { autocomplete: f.autocomplete || '' });
+      scored = f.semanticKey ? {key:f.semanticKey,confidence:1,method:'bound'} : matchFieldKeyScored(hints, { autocomplete: f.autocomplete || '', context:f.context || '' });
       if (!scored) {
         out.push({
           index: typeof f.index === 'number' ? f.index : i,
@@ -1490,7 +1494,7 @@
       key = scored.key;
       conf = scored.confidence;
       var count = keyCounts[key] || 0;
-      if (count >= MAX_FILLS_PER_KEY) {
+      if (count >= MAX_FILLS_PER_KEY && !LIST_OCCURRENCE_MAP[key]) {
         out.push({
           index: typeof f.index === 'number' ? f.index : i,
           profileKey: key,
@@ -1503,13 +1507,16 @@
         });
         continue;
       }
-      value = profileValue(profile, key);
+      value = valueForField(profile, key, f, count);
+      var multi = f.controlKind === 'multi' ? multiValuesFor(profile,key) : [];
+      if (f.controlKind === 'multi') value = multi.length && (!(f.options || []).length || multi.every(function (v) { return matchSelectOption(f.options,v); })) ? multi.join('、') : '';
+      keyCounts[key] = count + 1;
       action = value ? 'fill' : 'skip';
       var label = f.label || f.placeholder || f.name || f.id || '';
       var opts = f.options || null;
 
       // 地区枚举 select（US/Canada/Elsewhere）：禁止用城市名强行填写
-      if (action === 'fill' && opts && opts.length) {
+      if (action === 'fill' && opts && opts.length && f.controlKind !== 'multi') {
         if ((key === 'city' || key === 'currentCity' || key === 'province' || key === 'country') &&
             (isRegionCountryEnumSelect(opts) || isBasedRegionQuestion(label))) {
           if (!matchSelectOption(opts, value)) {
@@ -1533,7 +1540,7 @@
         value = '';
       }
 
-      if (value && action === 'fill') keyCounts[key] = count + 1;
+
       out.push({
         index: typeof f.index === 'number' ? f.index : i,
         profileKey: key,
@@ -1544,7 +1551,10 @@
         label: label
       });
     }
-    return out;
+    return out.map(function (mapping, index) {
+      var f = list[index] || {};
+      return Object.assign(mapping, {fieldId:f.fieldId, recordRef:f.recordRef, controlKind:f.controlKind, frameId:f.frameId});
+    });
   }
 
   function splitName(fullName) {
@@ -1572,7 +1582,11 @@
    * 学位仅取 academicDegree；第一段与后续段均以列表为主来源。
    */
   var LIST_OCCURRENCE_MAP = {
+    schoolEnglish: ['eduList', 'schoolEnglish'],
     school: ['eduList', 'school'],
+    schoolType: ['eduList', 'schoolType'],
+    classRank: ['eduList', 'classRank'],
+    majorClassSize: ['eduList', 'majorClassSize'],
     major: ['eduList', 'major'],
     majorCategory: ['eduList', 'majorCategory'],
     eduDegree: ['eduList', 'degree'],
@@ -1655,7 +1669,13 @@
     familyPoliticalStatus: ['familyList', 'politicalStatus']
   };
 
-  var INTERN_LIKE_RE = /实习|intern/i;
+  var INTERN_LIKE_RE = /实习|\bintern(?:ship)?\b/i;
+
+  function isInternRecord(row) {
+    if (!row) return false;
+    var nature = String(row.nature || '').trim();
+    return INTERN_LIKE_RE.test(nature || String(row.title || ''));
+  }
 
   /**
    * 取某个列表（实习列表空着时从 workList 中只挑写着「实习」的段 ——
@@ -1666,7 +1686,7 @@
     if (arr.length || listKey !== 'internList') return arr;
     var work = profile && Array.isArray(profile.workList) ? profile.workList : [];
     var interns = work.filter(function (w) {
-      return w && INTERN_LIKE_RE.test(String(w.nature || '') + String(w.title || '') + String(w.company || ''));
+      return isInternRecord(w);
     });
     return interns;
   }
@@ -1680,20 +1700,55 @@
 
   function profileValueForOccurrence(profile, key, occurrence) {
     var idx = occurrence | 0;
-    if (idx > 0) {
-      var map = LIST_OCCURRENCE_MAP[key];
-      if (map) {
-        var rows = listFor(profile, map[0]);
-        var v = itemValue(rows[idx], map);
-        if (v || !SHARED_ROW_KEYS[key] || !rows[idx]) return v;
-        // 「学习形式」这类人人各段多半相同的属性：哪一段都没单独写 → 沿用扁平值（1.5.x 的行为）
-        for (var r = 0; r < rows.length; r++) if (itemValue(rows[r], map)) return '';
-        return profileValue(profile, key);
-      }
+    var map = LIST_OCCURRENCE_MAP[key];
+    if (map) {
+      var rows = listFor(profile, map[0]);
+      if (rows.length) return recordValue(profile, key, {listKey:map[0], index:idx, field:map[1]});
+      if (idx > 0) return '';
     }
     return profileValue(profile, key);
   }
-  var SHARED_ROW_KEYS = { studyMode: 1 };
+
+  // 兼容主字段只能补给身份和起止时间都明确相同的第一条记录。
+  function compatibleMainRecord(profile, listKey, row) {
+    var anchors = {
+      eduList: ['school', 'eduStart', 'eduEnd', 'school'],
+      workList: ['company', 'startDate', 'workEnd', 'company'],
+      internList: ['internCompany', 'internStart', 'internEnd', 'company'],
+      projectList: ['projectName', 'projectStart', 'projectEnd', 'name']
+    }[listKey];
+    if (!anchors || !row) return false;
+    return [[anchors[0], anchors[3]], [anchors[1], 'start'], [anchors[2], 'end']].every(function (pair) {
+      var a = String(profile[pair[0]] || '').trim(), b = String(row[pair[1]] || '').trim();
+      return !!a && !!b && normalize(a) === normalize(b);
+    });
+  }
+
+  function recordValue(profile, key, ref) {
+    if (!ref || ref.reason) return '';
+    var map = LIST_OCCURRENCE_MAP[key];
+    if (!map || map[0] !== ref.listKey || (ref.field && map[1] !== ref.field)) return '';
+    var rows = listFor(profile, ref.listKey), row = rows[ref.index];
+    if (!row) return !rows.length && ref.index === 0 ? profileValueFlat(profile, key) : '';
+    var value = itemValue(row, map);
+    if (!value && key === 'workNature' && isInternRecord(row)) value = '实习';
+    var compatible = ref.index === 0 && compatibleMainRecord(profile, ref.listKey, row);
+    if (key === 'gpa' && value && compatible) {
+      var a = parseGpa(value), b = parseGpa(profile.gpa);
+      if (a && b && a.value === b.value && !a.scale && b.scale) return b.raw;
+    }
+    return value || (compatible ? profileValueFlat(profile, key) : '');
+  }
+
+  function valueForField(profile, key, field, occurrence) {
+    if (field && field.recordRef) return recordValue(profile, key, field.recordRef);
+    return profileValueForOccurrence(profile, key, occurrence || 0);
+  }
+
+  function multiValuesFor(profile, key) {
+    var values = profile && profile.multiValues && profile.multiValues[key];
+    return Array.isArray(values) ? Array.from(new Set(values.filter(function (v) { return typeof v === 'string' && v.trim(); }).map(function (v) { return v.trim(); }))) : [];
+  }
 
   // —— v1.6.0：省 / 市 / 区 拆分（籍贯、户籍、现居地只填了一整串时，供分栏下拉用）——
   var PROVINCES = ['黑龙江', '内蒙古', '北京', '天津', '上海', '重庆', '河北', '山西', '辽宁', '吉林', '江苏', '浙江', '安徽',
@@ -1879,20 +1934,25 @@
     var map = LIST_OCCURRENCE_MAP[key];
     var rows = map && profile ? listFor(profile, map[0]) : [];
     if (rows.length) {
-      var primary = itemValue(rows[0], map);
-      if (primary) {
-        if (key === 'gpa') {
-          var rowGpa = parseGpa(primary), flatGpa = parseGpa(profile.gpa);
-          if (rowGpa && flatGpa && rowGpa.value === flatGpa.value && !rowGpa.scale && flatGpa.scale) return flatGpa.raw;
-        }
-        return primary;
-      }
+      return recordValue(profile, key, {listKey:map[0],index:0,field:map[1]});
     }
     var v = profileValueFlat(profile, key);
     if (v || !profile) return v;
     var lm = LIST_OCCURRENCE_MAP[key];
     if (lm) return itemValue(listFor(profile, lm[0])[0], lm);
     return '';
+  }
+
+  function englishExam(profile) {
+    var p = profile || {};
+    if (p.englishLevel || p.englishScore || p.englishDate) return {name:String(p.englishLevel || '').trim(),score:String(p.englishScore || '').trim(),date:String(p.englishDate || '').trim()};
+    var re = /CET|英语|english|IELTS|TOEFL|雅思|托福|TEM[-\s]?[48]/i;
+    var language = (p.langList || []).find(function (row) { return re.test(String(row.certName || '')) || re.test(String(row.name || '')); });
+    if (language) return {name:String(language.certName || '').trim(),score:String(language.score || '').trim(),date:String(language.date || '').trim()};
+    var cert = (p.certList || []).find(function (row) { return re.test(String(row.name || '')); });
+    if (cert) return {name:String(cert.name || '').trim(),score:String(cert.score || '').trim(),date:String(cert.date || '').trim()};
+    if (re.test(String(p.certName || ''))) return {name:String(p.certName).trim(),score:String(p.certScore || '').trim(),date:String(p.certDate || '').trim()};
+    return {name:'',score:'',date:''};
   }
 
   function profileValueFlat(profile, key) {
@@ -1948,19 +2008,9 @@
       return (profile.techSkills && String(profile.techSkills).trim()) || '';
     }
     // 外语成绩 / 取得时间：单独没填时回退到证书的成绩 / 时间（老档案只有 certScore/certDate）
-    if (key === 'englishScore') {
-      var esc = profile.englishScore && String(profile.englishScore).trim();
-      if (esc) return esc;
-      var englishRow = (profile.langList || []).find(function (row) { return /^(英语|english)$/i.test(String(row.name || '')); });
-      if (englishRow && englishRow.score) return String(englishRow.score).trim();
-      return /CET|英语|IELTS|TOEFL|雅思|托福|TEM[48]/i.test(String(profile.certName || '')) ? String(profile.certScore || '').trim() : '';
-    }
-    if (key === 'englishDate') {
-      var edt = profile.englishDate && String(profile.englishDate).trim();
-      if (edt) return edt;
-      var englishDateRow = (profile.langList || []).find(function (row) { return /^(英语|english)$/i.test(String(row.name || '')); });
-      if (englishDateRow && englishDateRow.date) return String(englishDateRow.date).trim();
-      return /CET|英语|IELTS|TOEFL|雅思|托福|TEM[48]/i.test(String(profile.certName || '')) ? String(profile.certDate || '').trim() : '';
+    if (/^english(Level|Score|Date)$/.test(key)) {
+      var exam = englishExam(profile);
+      return exam[{englishLevel:'name', englishScore:'score', englishDate:'date'}[key]] || '';
     }
     if (key === 'langLevel' && /^(英语|english)$/i.test(String(profile.langName || ''))) {
       return String(profile.langLevel || '').trim();
@@ -2001,9 +2051,9 @@
       var first = wl[0] || null;
       if (first) {
         if (first.nature && String(first.nature).trim()) return String(first.nature).trim();
-        if (/实习/.test(String(first.title || '')) || /实习/.test(String(first.company || ''))) return '实习';
+        if (isInternRecord(first)) return '实习';
       }
-      if (/实习/.test(String(profile.title || ''))) return '实习';
+      if (INTERN_LIKE_RE.test(String(profile.title || ''))) return '实习';
       return '';
     }
     // 工作描述 ↔ 业绩
@@ -2446,6 +2496,7 @@
    * Yes/No 选项集会先 normalizeToYesNo，再匹配；无法归一则跳过（永不贴段落）。
    */
   function matchSelectOption(options, value) {
+    options = (options || []).filter(function (o) { return o && !o.disabled && !o.groupDisabled; });
     if (!options || !options.length) return null;
     var raw = String(value || '').trim();
     if (!raw) return null;
@@ -2591,7 +2642,7 @@
     for (i = 0; i < options.length; i++) {
       o = options[i];
       if (typeof o === 'string') normalized.push({ value: o, text: o });
-      else normalized.push({ value: o.value != null ? o.value : '', text: o.text != null ? o.text : '' });
+      else if (!o.disabled && !o.groupDisabled) normalized.push({ value: o.value != null ? o.value : '', text: o.text != null ? o.text : '' });
     }
     return matchSelectOption(normalized, value);
   }
@@ -2741,7 +2792,7 @@
     if (container) {
       var labelBox = findChildByClassOrTag(container, [
         function (node, tag, cn) {
-          return classHasToken(cn, 'ant-form-item-label') ||
+          return classHasToken(cn, 'form-item_label') || classHasToken(cn, 'ant-form-item-label') ||
             classHasToken(cn, 'el-form-item__label') ||
             classIncludes(cn, '-form-item-label') ||
             tag === 'LABEL';
@@ -3177,6 +3228,12 @@
     splitRegion: splitRegion,
     listFor: listFor,
     profileValueForOccurrence: profileValueForOccurrence,
+    recordValue: recordValue,
+    valueForField: valueForField,
+    multiValuesFor: multiValuesFor,
+    compatibleMainRecord: compatibleMainRecord,
+    isInternRecord: isInternRecord,
+    englishExam: englishExam,
     parseRank: parseRank,
     rankBandTexts: rankBandTexts,
     rankValueCandidates: rankValueCandidates,

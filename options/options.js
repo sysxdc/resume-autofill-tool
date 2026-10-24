@@ -18,6 +18,23 @@
   var LIST_KEYS = P.LIST_FIELDS || ['eduList', 'workList', 'projectList'];
   var LIST_LABELS = P.LIST_ITEM_LABELS || {};
   var LIST_ITEM_FIELDS = P.LIST_ITEM_FIELDS || {};
+  var formBase = {};
+  var rowData = new WeakMap();
+  var rowIds = new WeakMap();
+  var rowSequence = 0;
+
+  function copyData(value) { return JSON.parse(JSON.stringify(value || {})); }
+
+  function readRawList(listKey) {
+    var root = document.getElementById('list-' + listKey);
+    if (!root) return copyData(formBase[listKey] || []);
+    return Array.from(root.querySelectorAll('.list-row')).map(function (row) {
+      var item = copyData(rowData.get(row));
+      row.querySelectorAll('[data-field]').forEach(function (inp) { item[inp.dataset.field] = String(inp.value || '').trim(); });
+      rowIds.set(item, row.dataset.rowId);
+      return item;
+    });
+  }
 
   function emptyListItem(listKey) {
     var keys = LIST_ITEM_FIELDS[listKey] || [];
@@ -27,19 +44,7 @@
   }
 
   function readListFromDom(listKey) {
-    var root = document.getElementById('list-' + listKey);
-    if (!root) return [];
-    var rows = root.querySelectorAll('.list-row');
-    var out = [];
-    Array.prototype.forEach.call(rows, function (row) {
-      var item = emptyListItem(listKey);
-      var keys = LIST_ITEM_FIELDS[listKey] || [];
-      keys.forEach(function (k) {
-        var inp = row.querySelector('[data-field="' + k + '"]');
-        item[k] = inp ? String(inp.value || '').trim() : '';
-      });
-      out.push(item);
-    });
+    var out = readRawList(listKey);
     return P.normalizeList ? P.normalizeList(listKey, out) : out;
   }
 
@@ -85,6 +90,10 @@
           '<div class="grid">' + fields + '</div>' +
         '</div>';
     }).join('');
+    root.querySelectorAll('.list-row').forEach(function (row, index) {
+      rowData.set(row, copyData(arr[index]));
+      row.dataset.rowId = rowIds.get(arr[index]) || ('row-' + (++rowSequence));
+    });
     refreshMirrors(listKey);
   }
 
@@ -122,18 +131,23 @@
   }
 
   function readForm() {
-    var data = P.emptyProfile();
+    var data = copyData(formBase);
     FIELDS.forEach(function (key) {
       var el = form.elements.namedItem(key);
-      data[key] = el ? String(el.value || '').trim() : '';
+      if (el) data[key] = String(el.value || '').trim();
     });
     var lists = readAllLists();
     LIST_KEYS.forEach(function (k) { data[k] = lists[k]; });
+    data.multiValues = copyData(formBase.multiValues);
+    form.querySelectorAll('[data-multi-key]').forEach(function (el) {
+      data.multiValues[el.dataset.multiKey] = el.value.split(/\r?\n/).map(function (v) { return v.trim(); }).filter(Boolean);
+    });
     return data;
   }
 
   function writeForm(profile) {
     var p = P.normalizeProfile(profile);
+    formBase = copyData(p);
     FIELDS.forEach(function (key) {
       var el = form.elements.namedItem(key);
       if (el) {
@@ -142,6 +156,7 @@
       }
     });
     writeLists(p);
+    form.querySelectorAll('[data-multi-key]').forEach(function (el) { el.value = ((p.multiValues || {})[el.dataset.multiKey] || []).join('\n'); });
   }
 
   var qualityEl = document.getElementById('profile-quality');
@@ -499,43 +514,17 @@
 
   // ————— v1.5.0：多段经历编辑器事件 —————
   function moveListItem(listKey, index, delta) {
-    var items = readListFromDom(listKey);
-    // readListFromDom normalizes and may drop empties — re-read raw from DOM without normalize for reorder
-    var root = document.getElementById('list-' + listKey);
-    if (!root) return;
-    var keys = LIST_ITEM_FIELDS[listKey] || [];
-    var raw = [];
-    Array.prototype.forEach.call(root.querySelectorAll('.list-row'), function (row) {
-      var item = emptyListItem(listKey);
-      keys.forEach(function (k) {
-        var inp = row.querySelector('[data-field="' + k + '"]');
-        item[k] = inp ? String(inp.value || '') : '';
-      });
-      raw.push(item);
-    });
-    var j = index + delta;
-    if (j < 0 || j >= raw.length) return;
-    var tmp = raw[index];
-    raw[index] = raw[j];
-    raw[j] = tmp;
+    var raw = readRawList(listKey), next = index + delta;
+    if (next < 0 || next >= raw.length) return;
+    var item = raw.splice(index, 1)[0];
+    raw.splice(next, 0, item);
     renderListEditor(listKey, raw);
   }
 
   document.querySelectorAll('button.list-add').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var listKey = btn.getAttribute('data-list');
-      var root = document.getElementById('list-' + listKey);
-      if (!root) return;
-      var keys = LIST_ITEM_FIELDS[listKey] || [];
-      var raw = [];
-      Array.prototype.forEach.call(root.querySelectorAll('.list-row'), function (row) {
-        var item = emptyListItem(listKey);
-        keys.forEach(function (k) {
-          var inp = row.querySelector('[data-field="' + k + '"]');
-          item[k] = inp ? String(inp.value || '') : '';
-        });
-        raw.push(item);
-      });
+      var listKey = btn.dataset.list;
+      var raw = readRawList(listKey);
       raw.push(emptyListItem(listKey));
       renderListEditor(listKey, raw);
     });
@@ -544,26 +533,12 @@
   document.addEventListener('click', function (e) {
     var btn = e.target && e.target.closest ? e.target.closest('button[data-list-act]') : null;
     if (!btn) return;
-    var act = btn.getAttribute('data-list-act');
-    var listKey = btn.getAttribute('data-list');
-    var index = parseInt(btn.getAttribute('data-index'), 10);
-    if (!listKey || isNaN(index)) return;
-    if (act === 'up') moveListItem(listKey, index, -1);
-    else if (act === 'down') moveListItem(listKey, index, 1);
+    var listKey = btn.dataset.list, index = Number(btn.dataset.index), act = btn.dataset.listAct;
+    if (!listKey || !Number.isInteger(index)) return;
+    if (act === 'up' || act === 'down') moveListItem(listKey, index, act === 'up' ? -1 : 1);
     else if (act === 'remove') {
-      var root = document.getElementById('list-' + listKey);
-      if (!root) return;
-      var keys = LIST_ITEM_FIELDS[listKey] || [];
-      var raw = [];
-      Array.prototype.forEach.call(root.querySelectorAll('.list-row'), function (row, i) {
-        if (i === index) return;
-        var item = emptyListItem(listKey);
-        keys.forEach(function (k) {
-          var inp = row.querySelector('[data-field="' + k + '"]');
-          item[k] = inp ? String(inp.value || '') : '';
-        });
-        raw.push(item);
-      });
+      var raw = readRawList(listKey);
+      raw.splice(index, 1);
       renderListEditor(listKey, raw);
     }
   });

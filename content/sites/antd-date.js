@@ -51,7 +51,7 @@
   function antdPanel() {
     var list = [];
     try {
-      Array.prototype.forEach.call(document.querySelectorAll(ANTD_DROPDOWN), function (n) {
+      Array.prototype.forEach.call(C.queryAll(ANTD_DROPDOWN), function (n) {
         if (isVisibleEl(n)) list.push(n);
       });
     } catch (_) { /* ignore */ }
@@ -162,7 +162,7 @@
       if (yearSelect) {
         simulateClick(yearSelect);
         await sleep(220);
-        var yearPanel = Array.prototype.filter.call(document.querySelectorAll('.ant-calendar-year-panel'), isVisibleEl).pop();
+        var yearPanel = Array.prototype.filter.call(C.queryAll('.ant-calendar-year-panel'), isVisibleEl).pop();
         var yearCell = yearPanel && Array.prototype.filter.call(
           yearPanel.querySelectorAll('.ant-calendar-year-panel-year'),
           function (n) { return String(n.textContent || '').trim() === String(y) && !/disabled/.test(String(n.className)); }
@@ -179,7 +179,7 @@
       if (monthSelect) {
         simulateClick(monthSelect);
         await sleep(220);
-        var monthPanel = Array.prototype.filter.call(document.querySelectorAll('.ant-calendar-month-panel'), isVisibleEl).pop();
+        var monthPanel = Array.prototype.filter.call(C.queryAll('.ant-calendar-month-panel'), isVisibleEl).pop();
         var monthCell = monthPanel && Array.prototype.filter.call(
           monthPanel.querySelectorAll('.ant-calendar-month-panel-month'),
           function (n) { return String(n.textContent || '').trim() === (m + '月') && !/disabled/.test(String(n.className)); }

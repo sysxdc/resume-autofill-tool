@@ -73,14 +73,15 @@
   }
 
   function setSelectByNumber(sel, want) {
+    if (!sel || sel.disabled) return false;
     var wantNum = parseInt(want, 10);
     for (var i = 0; i < sel.options.length; i++) {
       var o = sel.options[i];
+      if (o.disabled || (o.parentElement && o.parentElement.disabled)) continue;
       var raw = String(o.value !== '' ? o.value : o.text || '').trim();
       var num = parseInt(raw.replace(/\D/g, ''), 10);
       if (raw === String(want) || (!isNaN(num) && num === wantNum)) {
         sel.selectedIndex = i;
-        try { sel.value = o.value; } catch (_) { /* ignore */ }
         sel.dispatchEvent(new Event('input', { bubbles: true }));
         sel.dispatchEvent(new Event('change', { bubbles: true }));
         return true;

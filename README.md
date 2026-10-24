@@ -1,10 +1,22 @@
+# 1.9.0 更新
+
+- 扫描、本地匹配和 AI 填写共用经历绑定；AI 只建议语义，字段值在本地取得。记录缺值时，只有主字段的身份和起止日期全部一致才可补全。
+- 教育条目支持学校英文名、院校类型、班级排名和专业人数。编辑器增删排序保留记录的未知及嵌套数据，未渲染字段保持原值。
+- 支持嵌套开放 Shadow DOM、原生 multiple select 和标准 ARIA 多选 listbox。多选只使用 `multiValues` 中显式录入的数组，已有任意选择就保留；不拆分旧的自由文本。
+- 弹窗和悬浮窗由后台按 `runId` 定向调度各 frame，汇总经 runtime 返回。超时或不可访问的 frame 显示为未验证；不再使用页面 `postMessage` 计数。
+- `npm run verify:release` 执行全部单元、DOM、解析、匹配基准和真实扩展组件检查；`npm run release` 在全部通过后打包。
+
+详细实施与验证记录见 [docs/implementation-1.9.0.md](docs/implementation-1.9.0.md)。
+
 # 简历填写工具（resume-autofill-tool）
 
 一款 **Chrome Manifest V3** 扩展：在本地保存你的简历资料，打开求职/申请表单页面后一键自动填写常见字段。支持 **中英同义模糊匹配**，以及可选的 **AI 巡查 / AI 填写**（OpenAI 兼容接口）。灵感来自 Simplify Copilot、Teal 等产品形态，**并非复制其代码**。
 
 填写后由你自行核对并提交，扩展**不会自动点击提交**。
 
-当前版本：**1.8.1**
+当前版本：**1.9.0**
+
+1.8.2 修复南方电网招聘网的级联选择器、Vue 2 日期、旧版下拉框、英文学校字段隔离、绩点排名拆栏及外语级别联动。进入需要填写分区的「编辑/添加」后点击填写；字段选中后仍需人工核对和确认。空扫描会提示先展开表单。详见 [南网适配记录](docs/csg-resume.md)。
 
 1.8.1 修复主字段在资料页被空经历字段或冲突值覆盖、重复整理覆盖恢复点、恢复丢弃未保存编辑、保存期间切换档案及实习合并丢失附加信息的问题。ARIA 下拉要求明确的选中证据，搜索失败后清理本次查询，保留用户已有输入。复审范围见 [实现复审](docs/review-reliability-plan.md)。
 
@@ -176,7 +188,7 @@ node tests/run-tests.mjs
 node tests/run-dom-tests.mjs
 ```
 
-DOM 基线依赖可选的 `playwright`（见 `package.json` `devDependencies`）。未安装时 `run-dom-tests.mjs` 会尝试 `npm root -g` 与 `~/.local/lib/node_modules/playwright`；仍找不到则跳过并提示，不阻塞主套件。
+DOM 基线依赖 `playwright`（见 `package.json` `devDependencies`）。未安装时 `run-dom-tests.mjs` 会尝试 `npm root -g` 与 `~/.local/lib/node_modules/playwright`；仍找不到则失败。发布验证不允许缺依赖、跳过必需套件或过滤后零用例。
 
 三套分层，各管一件事，别再混着看：
 

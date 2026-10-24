@@ -65,7 +65,7 @@
     // 1. label[for]
     if (el.id) {
       try {
-        var label = document.querySelector('label[for="' + CSS.escape(el.id) + '"]');
+        var label = el.getRootNode().querySelector('label[for="' + CSS.escape(el.id) + '"]');
         if (label) {
           var tFor = M.visibleLabelText(label);
           if (tFor) return tFor;
@@ -89,19 +89,10 @@
     // 1c. aria-label
     var aria = el.getAttribute('aria-label');
     if (aria && String(aria).trim()) return String(aria).trim();
-    // 1d. aria-describedby
-    var describedBy = el.getAttribute('aria-describedby');
-    if (describedBy) {
-      var desc = document.getElementById(describedBy);
-      if (desc) {
-        var tDesc = String(desc.textContent || '').replace(/\s+/g, ' ').trim();
-        if (tDesc) return tDesc;
-      }
-    }
     // 2. aria-labelledby
     if (M.resolveAriaLabelledByText) {
       var tAria = M.resolveAriaLabelledByText(el, function (id) {
-        return document.getElementById(id);
+        return C.byRootId(el, id);
       });
       if (tAria) return tAria;
     }
@@ -174,6 +165,15 @@
         if (tPv && tPv.length <= 40 && !labelNoise(tPv)) return tPv;
       }
     }
+    // 1d. aria-describedby
+    var describedBy = el.getAttribute('aria-describedby');
+    if (describedBy) {
+      var desc = describedBy.split(/\s+/).map(function (id) { return C.byRootId(el,id); }).find(Boolean);
+      if (desc) {
+        var tDesc = String(desc.textContent || '').replace(/\s+/g, ' ').trim();
+        if (tDesc) return tDesc;
+      }
+    }
     return '';
   }
 
@@ -185,12 +185,14 @@
    */
   function fieldLooksFilled(el) {
     if (!el) return false;
+    if (C.isMultiSelect && C.isMultiSelect(el)) return C.readMultiValues(el).length > 0;
     var host = C.findCustomSelectHost && C.findCustomSelectHost(el);
     if (host && C.ariaCombobox && C.ariaCombobox(host)) return C.customSelectLooksFilled(host);
     var tag = el.tagName.toLowerCase();
     var type = (el.type || '').toLowerCase();
     if (type === 'checkbox' || type === 'radio') return false;
     if (tag === 'select') {
+      if (el.multiple) return Array.from(el.selectedOptions).some(function (o) { return String(o.value || '').trim(); });
       var opt = el.options && el.selectedIndex >= 0 ? el.options[el.selectedIndex] : null;
       if (!opt) return false;
       var v = String(opt.value || '').trim();
@@ -273,12 +275,12 @@
   function sectionContextFromText(text) {
     if (!text || text.length > 24) return '';
     if (/家庭|亲友|家庭成员/.test(text)) return 'family';
-    if (/语言能力|语言技能|外语能力/.test(text)) return 'lang';
+    if (/语言能力|语言技能|外语能力|外语水平/.test(text)) return 'lang';
     // 「工作/实习经历」是混合段：按工作段处理（workList 是主档），只有纯实习段才算 intern
     if (/实习/.test(text) && !/工作/.test(text)) return 'intern';
     if (/教育|学历|学习经历|院校|在校|就读/.test(text)) return 'edu';
     if (/工作|职业|任职|履历|工作经验/.test(text)) return 'work';
-    if (/项目/.test(text)) return 'project';
+    if (/项目|科研经历/.test(text)) return 'project';
     if (/校园|社团|学生工作|社会实践/.test(text)) return 'campus';
     return '';
   }
@@ -288,6 +290,12 @@
   }
 
   function computeSectionContext(el) {
+    var module = el && el.closest ? el.closest('.experience-module, .single-form') : null;
+    var moduleTitle = module && module.querySelector('.header-title');
+    if (moduleTitle) {
+      var moduleContext = sectionContextFromText(String(moduleTitle.textContent || '').trim());
+      if (moduleContext) return moduleContext;
+    }
     var cell = el && el.closest ? el.closest('.form-cell') : null;
     if (cell) {
       var cellTitle = cell.querySelector('.tit-wrap .tit p');
@@ -301,7 +309,7 @@
     }
     var node = el;
     // v1.5.24：12 层（antd / Element 的表单项本身就套了 6~7 层，原来的 7 层够不到分区标题）
-    for (var up = 0; up < 12 && node && node.parentElement; up++) {
+    for (var up = 0; up < 12 && node && C.parentComposed(node); up++) {
       var text = '';
       if (node.tagName === 'FIELDSET') {
         var lg = node.querySelector('legend');
@@ -317,7 +325,7 @@
         var ctx = sectionContextFromText(text);
         if (ctx) return ctx;
       }
-      node = node.parentElement;
+      node = C.parentComposed(node);
     }
     // v1.5.12：没有区块标题的 ATS（wecruit / antd 表单）用同一组字段里的兄弟标签推断
     var bySiblings = sectionContextBySiblingLabels(el);
@@ -375,6 +383,8 @@
   }
 
   function matchKeyForElement(el) {
+    var split = splitNumericField(el);
+    if (split) return split.key;
     var options = {
       autocomplete: el.getAttribute('autocomplete') || '',
       context: detectSectionContext(el)
@@ -388,15 +398,43 @@
     return M.matchFieldKey(collectHints(el), options);
   }
 
+  // 同一个标签下的「个人绩点 / 满分绩点」「名次 / 毕业人数」是一个值的两部分。
+  function splitNumericField(el) {
+    if (!el || !el.matches || !el.matches('input')) return null;
+    var item = el.closest('.form-item, .ant-form-item, .el-form-item, .field, .form-group');
+    if (!item) return null;
+    var ph = String(el.getAttribute('placeholder') || '').trim();
+    var label = getLabelText(el);
+    if (/绩点|gpa/i.test(label) && item.querySelector('input[placeholder="个人绩点"]') && item.querySelector('input[placeholder="满分绩点"]')) {
+      if (ph === '个人绩点' || ph === '满分绩点') return {key:'gpa', part:ph === '满分绩点' ? 'scale' : 'value'};
+    }
+    if (/排名/.test(label) && item.querySelector('input[placeholder="名次"]') && item.querySelector('input[placeholder="毕业人数"]')) {
+      if (ph === '名次' || ph === '毕业人数') return {key:'majorRank', part:ph === '毕业人数' ? 'total' : 'ordinal'};
+    }
+    return null;
+  }
+
+  function splitNumericValue(split, value, fallback) {
+    if (!split) return value;
+    var parsed = split.key === 'gpa' ? M.parseGpa(value) : M.parseRank(value);
+    if (split.key === 'gpa' && parsed && !parsed.scale && fallback) {
+      var flat = M.parseGpa(fallback);
+      if (flat && flat.scale && flat.value === parsed.value) parsed = flat;
+    }
+    var part = parsed && parsed[split.part];
+    if (part == null || ((split.part === 'scale' || split.part === 'total') && !part)) return '';
+    return String(part);
+  }
+
   /**
    * v1.5.8：语言技能分区里的泛化标签（「成绩」= 语言考试成绩，不是高考/绩点）。
    * 只在区块标题是「语言技能 / 外语」时兜底，避免把通用「成绩」映射到 certScore。
    */
   function sectionFallbackKey(el) {
     if (!el || !el.closest) return null;
-    var sec = el.closest('.resume-section');
+    var sec = el.closest('.resume-section, .single-form');
     if (!sec) return null;
-    var head = sec.querySelector('.section-title .title') || sec.querySelector('.section-title');
+    var head = sec.querySelector('.section-title .title') || sec.querySelector('.section-title, .header-title');
     var title = String((head && head.textContent) || '').replace(/\s+/g, ' ').trim();
     if (!/语言|外语/.test(title)) return null;
     var label = String(getLabelText(el) || '').replace(/\s+/g, '');
@@ -465,6 +503,8 @@
   C.collectHints = collectHints;
   C.detectSectionContext = detectSectionContext;
   C.matchKeyForElement = matchKeyForElement;
+  C.splitNumericField = splitNumericField;
+  C.splitNumericValue = splitNumericValue;
   C.sectionFallbackKey = sectionFallbackKey;
   C.hintSnippet = hintSnippet;
   C.isSkippable = isSkippable;

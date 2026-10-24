@@ -36,23 +36,25 @@
   }
 
   /** 可见的选项节点（antd v3 / v4-v5 / Element / 原生 select 都覆盖） */
-  function optionNodes() {
-    var out = [];
-    ['.ant-select-dropdown-menu-item', '.ant-select-item-option', '.el-select-dropdown__item',
-      '[role="option"]', '.option-item', '.dropdown-item'].forEach(function (sel) {
-      Array.prototype.forEach.call(document.querySelectorAll(sel), function (n) {
-        if (isVisible(n)) out.push(n);
-      });
-    });
-    return out;
+  function enabled(node) { return !!node && !node.disabled && !node.closest('[disabled], [aria-disabled="true"], .disabled, .is-disabled, optgroup[disabled]'); }
+  function popupFor(host) {
+    if (!host) return null;
+    var node = host.matches('[aria-controls], [aria-owns]') ? host : host.querySelector('[aria-controls], [aria-owns]');
+    if (!node) return null;
+    var ids = ((node.getAttribute('aria-controls') || '') + ' ' + (node.getAttribute('aria-owns') || '')).trim().split(/\s+/);
+    var root = node.getRootNode(), boxes = [];
+    ids.forEach(function (id) { var box = root.getElementById && root.getElementById(id); if (box && boxes.indexOf(box) < 0 && box.querySelector('[role="option"], li, option')) boxes.push(box); });
+    var visible = boxes.filter(isVisible);
+    return visible.length === 1 ? visible[0] : (visible.length ? null : (boxes.length === 1 ? boxes[0] : null));
   }
-
-  function optionTexts() {
-    return optionNodes().map(function (n) { return String(n.textContent || '').trim(); });
+  function optionNodes(host) {
+    var box = popupFor(host);
+    return box ? Array.from(box.querySelectorAll('[role="option"], .ant-select-dropdown-menu-item, .ant-select-item-option, .el-select-dropdown__item, .option-item, .dropdown-item')).filter(function (node) { return isVisible(node) && enabled(node); }) : [];
   }
+  function optionTexts(host) { return optionNodes(host).map(function (node) { return String(node.textContent || '').trim(); }); }
 
   function nativeOptions(select) {
-    return Array.prototype.map.call(select.options || [], function (o) {
+    return Array.from(select.options || []).filter(enabled).map( function (o) {
       return { el: o, text: String(o.textContent || '').trim(), value: String(o.value || '') };
     });
   }
@@ -97,70 +99,66 @@
    * 已经是目标值就直接返回 true（幂等，便于整表重跑）。
    */
   async function fillOne(host, want, opts) {
-    var o = opts || {};
-    if (!host || !want) return false;
-    var cur = readShown(host);
-    if (cur && norm(cur) === norm(want)) return true;
-
-    if (String(host.tagName || '').toLowerCase() === 'select') {
-      var hit0 = pickBest(nativeOptions(host), want);
-      if (!hit0) return false;
-      host.value = hit0.el.value;
-      host.dispatchEvent(new Event('input', { bubbles: true }));
-      host.dispatchEvent(new Event('change', { bubbles: true }));
+    if (!host || !want || !enabled(host)) return false;
+    var C = globalThis.ResumeAutofillContent;
+    var cur = C && C.readBackValue ? C.readBackValue(host) : readShown(host);
+    if (cur && !/请选择|请先选择|select|choose/i.test(cur)) return norm(cur) === norm(want);
+    var key = (opts && opts.key) || '';
+    if (C && C.fillCustomSelect && host.tagName !== 'SELECT') return C.fillCustomSelect(host,want,key);
+    if (host.tagName === 'SELECT') {
+      var hit = pickBest(nativeOptions(host),want);
+      if (!hit) return false;
+      host.selectedIndex = Array.from(host.options).indexOf(hit.el);
+      host.dispatchEvent(new Event('input',{bubbles:true})); host.dispatchEvent(new Event('change',{bubbles:true}));
       await sleep(60);
-      return norm(readShown(host)) === norm(want) || norm(readShown(host)).indexOf(norm(want)) !== -1;
+      return norm(readShown(host)) === norm(want);
     }
-
-    var trigger = host.querySelector('.ant-select-selection, .el-select .select-trigger, .select-trigger') || host;
-    if (!optionNodes().length) {
-      click(trigger);
-      // 等选项出现（最多 ~1.2s）
-      for (var w = 0; w < 12 && !optionNodes().length; w++) await sleep(100);
+    // 独立测试/使用只支持具有明确 ARIA 归属的菜单；生产选择交给组件适配器。
+    click(host.querySelector('.ant-select-selection, .select-trigger') || host);
+    var deadline = Date.now() + 1800;
+    while (Date.now() < deadline) {
+      var pick = pickBest(optionNodes(host).map(function (n) { return {el:n,text:n.textContent}; }),want);
+      if (pick) { click(pick.el); await sleep(100); return norm(readShown(host)) === norm(want); }
+      await sleep(80);
     }
-    var opts1 = optionNodes();
-    if (!opts1.length) return false;
-    var pick = pickBest(opts1.map(function (n) { return { el: n, text: String(n.textContent || '').trim() }; }), want);
-    if (!pick) return false;
-    click(pick.el);
-    await sleep(o.afterPickMs || 260);
-    var after = readShown(host);
-    return norm(after) === norm(want) || (after && norm(after).indexOf(norm(want)) !== -1);
+    return false;
   }
 
-  /**
-   * 联动链条：按顺序填，每级都要回读通过才继续；下一级的选项以「选项集合发生变化」为就绪信号。
-   * @param {Array<{host:Element, value:string, label?:string}>} chain
-   */
+  function fingerprint(host) {
+    var box = host.tagName === 'SELECT' ? host : popupFor(host);
+    var items = box ? Array.from(box.querySelectorAll('option,[role="option"],.ant-select-dropdown-menu-item,.ant-select-item-option,.el-select-dropdown__item')).map(function (node) {
+      return [node.value || node.getAttribute('data-value') || '',node.textContent,enabled(node)].join(':');
+    }) : [];
+    return [enabled(host),host.getAttribute('aria-busy'),items.join(';'),box ? box.getAttribute('aria-busy') : ''].join('|');
+  }
   async function fillChain(chain, opts) {
-    var o = opts || {};
-    var results = [];
-    for (var i = 0; i < (chain || []).length; i++) {
-      var step = chain[i];
-      if (!step || !step.host || !step.value) { results.push({ ok: false, reason: 'missing' }); continue; }
-      var before = i === 0 ? [] : optionTexts();
-      var ok = await fillOne(step.host, step.value, o);
-      results.push({ label: step.label || '', value: step.value, ok: ok, shown: readShown(step.host) });
-      if (!ok) break;                       // 上一级没成就别去写下一级（会写进错的列表）
-      if (i < chain.length - 1) {
-        // 等下一级的选项刷新：选项集合与上一级不同，或至少出现目标字样
-        var nextWant = norm(chain[i + 1].value);
-        var ready = false;
-        for (var t = 0; t < 15 && !ready; t++) {
-          await sleep(120);
-          var texts = optionTexts().map(norm);
-          if (!texts.length) continue;
-          var changed = texts.join('|') !== before.map(norm).join('|');
-          if (changed || texts.some(function (x) { return x.indexOf(nextWant) !== -1; })) ready = true;
+    var results = [], steps = chain || [];
+    for (var i = 0; i < steps.length; i++) {
+      var step = steps[i], next = steps[i + 1];
+      if (!step || !step.host || !step.value) return {ok:false,steps:results,reason:'missing'};
+      var before = next ? fingerprint(next.host) : '';
+      var unchanged = norm(readShown(step.host)) === norm(step.value);
+      var ok = await fillOne(step.host,step.value,Object.assign({},opts || {},{key:step.key || ''}));
+      results.push({label:step.label || '',ok:ok,shown:readShown(step.host)});
+      if (!ok) break;
+      if (next && !unchanged) {
+        if (next.host.tagName !== 'SELECT') {
+          var C = globalThis.ResumeAutofillContent;
+          if (C && C.openCustomSelect) C.openCustomSelect(next.host);
+          else click(next.host.querySelector('.ant-select-selection, .select-trigger') || next.host);
         }
-        if (!ready) await sleep(200);
-        // 上一轮的下拉可能还开着，关掉免得选项混在一起
-        try { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true })); } catch (_) { /* ignore */ }
-        await sleep(120);
+        var deadline = Date.now() + 3000, stable = 0, last = '', ready = false;
+        while (Date.now() < deadline) {
+          await sleep(100);
+          var signature = fingerprint(next.host), box = next.host.tagName === 'SELECT' ? next.host : popupFor(next.host);
+          var busy = next.host.getAttribute('aria-busy') === 'true' || (box && box.getAttribute('aria-busy') === 'true');
+          stable = signature === last ? stable + 1 : 0; last = signature;
+          if (enabled(next.host) && !busy && stable >= 2 && (signature !== before || !box)) { ready = true; break; }
+        }
+        if (!ready) return {ok:false,steps:results,reason:'next_not_refreshed'};
       }
     }
-    var allOk = results.length > 0 && results.every(function (r) { return r.ok; });
-    return { ok: allOk, steps: results };
+    return {ok:results.length === steps.length && results.every(function (r) { return r.ok; }),steps:results};
   }
 
   return {

@@ -92,12 +92,17 @@
       if (!filled) return;
       out.push({ key: k });
     });
-    // 多段经历里的子字段（eduList[].school 这种）单独给一行标签，便于模型理解
-    var labels = (P && P.LIST_ITEM_LABELS) || {};
-    Object.keys(labels).forEach(function (listKey) {
-      var arr = prof[listKey];
-      if (!Array.isArray(arr) || !arr.length) return;
-      out.push({ key: listKey, label: '多段：' + Object.keys(labels[listKey]).join('/') });
+    ((P && P.MULTI_VALUE_KEYS) || []).forEach(function (key) {
+      if (Match.multiValuesFor(prof,key).length && !out.some(function (item) { return item.key === key; })) out.push({key:key});
+    });
+    // 列表资料展开成可用语义键；目录不含记录值。
+    var mappings = (Match && Match.LIST_OCCURRENCE_MAP) || {};
+    Object.keys(mappings).forEach(function (key) {
+      var map = mappings[key], rows = prof[map[0]];
+      if (!Array.isArray(rows) || !rows.some(function (row) { return row && String(row[map[1]] || '').trim(); })) return;
+      if (!out.some(function (item) { return item.key === key; })) {
+        out.push({key:key, label:((P.LIST_ITEM_LABELS || {})[map[0]] || {})[map[1]] || key});
+      }
     });
     return out;
   }
@@ -119,7 +124,7 @@
       '4. EEO / 种族 / 残疾 / 性别自认 / veteran / how did you hear / 法律竞业 / 是否曾在本公司任职 → skip。',
       '5. 证件号、银行账号、紧急联系人电话这类敏感字段 → 低置信时 skip。',
       '6. confidence：高 ≥0.85，中 0.6–0.85，低 <0.6；低于 0.6 会被本地直接丢弃。',
-      '7. 一个资料键最多映射给 2 个页面字段（多次出现按顺序取不同条目）。'
+      '7. 同一语义可用于多段经历；只确定语义，记录来源由本地绑定。'
     ].join('\n');
   }
 
@@ -130,7 +135,8 @@
         index: typeof f.index === 'number' ? f.index : i,
         label: String(f.label || f.placeholder || f.name || f.id || '').slice(0, 80)
       };
-      var type = String(f.controlType || f.tag || f.type || '').toLowerCase();
+      if (f.fieldId) item.fieldId = f.fieldId;
+      var type = String(f.controlKind || f.controlType || f.tag || f.type || '').toLowerCase();
       if (type) item.controlType = type;
       var opts = f.options || [];
       if (opts.length) {
@@ -221,176 +227,58 @@
    * 纯函数：把 AI JSON 条目与 profile 合并为统一映射结果（无网络）。
    */
   function mergeAiMappingWithProfile(aiItems, fields, profile, MatchApi, ProfileApi, options) {
-    var M = MatchApi || Match;
-    var P = ProfileApi || Profile;
-    var allowGenerated = options && options.mode === 'full';
-    var knownKeys = Object.create(null);
-    if (P && P.PROFILE_FIELDS) {
-      P.PROFILE_FIELDS.forEach(function (k) { knownKeys[k] = 1; });
+    var M = MatchApi || Match, P = ProfileApi || Profile;
+    var known = new Set((P && P.PROFILE_FIELDS) || []);
+    function semanticKey(key) {
+      if (known.has(key)) return key;
+      return Object.keys(M.LIST_OCCURRENCE_MAP).find(function (candidate) {
+        var map = M.LIST_OCCURRENCE_MAP[candidate];
+        return key === map[0] + '[].' + map[1];
+      }) || key;
     }
-    var byIndex = {};
+    var fallback = M.heuristicMapFields(fields, profile);
+    var byIndex = {}, byId = {}, counts = {};
     (aiItems || []).forEach(function (item) {
-      if (item && typeof item.index === 'number') byIndex[item.index] = item;
+      if (!item) return;
+      if (item.fieldId) byId[item.fieldId] = item;
+      if (Number.isInteger(item.index)) byIndex[item.index] = item;
     });
-
-    var keyCounts = {};
-    var out = [];
-    var i, f, item, idx, action, profileKey, value, conf, label, coerced;
-
-    for (i = 0; i < (fields || []).length; i++) {
-      f = fields[i] || {};
-      idx = typeof f.index === 'number' ? f.index : i;
-      item = byIndex[idx] || null;
-      label = f.label || f.placeholder || f.name || f.id || '';
-
-      var hints = [f.label, f.placeholder, f.name, f.id].filter(Boolean).join(' ');
-      if (M && M.isSkipContext && M.isSkipContext(hints)) {
-        out.push({
-          index: idx,
-          profileKey: null,
-          action: 'skip',
-          confidence: 1,
-          suggestedValue: '',
-          method: 'denylist',
-          label: label,
-          reason: 'denylist'
-        });
-        continue;
+    return (fields || []).map(function (f, i) {
+      var idx = Number.isInteger(f.index) ? f.index : i;
+      var item = (f.fieldId && byId[f.fieldId]) || byIndex[idx];
+      var local = fallback[i];
+      var occurrenceKey = semanticKey(item && item.profileKey || local.profileKey);
+      var occurrence = counts[occurrenceKey] || 0;
+      counts[occurrenceKey] = occurrence + 1;
+      var metadata = {index:idx, fieldId:f.fieldId, recordRef:f.recordRef, controlKind:f.controlKind, frameId:f.frameId,
+        label:f.label || f.placeholder || f.name || f.id || ''};
+      if (!item) return Object.assign({}, local, metadata, {method:(local.method || 'heuristic') + '+fallback'});
+      var out = Object.assign({profileKey:null,action:'skip',confidence:0,suggestedValue:'',method:'ai'}, metadata);
+      if (M.isSkipContext([f.label,f.placeholder,f.name,f.id].filter(Boolean).join(' '))) return Object.assign(out,{method:'denylist',reason:'denylist',confidence:1});
+      var conf = Number.isFinite(item.confidence) ? Math.max(0,Math.min(1,item.confidence)) : 0;
+      out.confidence = conf;
+      if (conf < 0.6) return out;
+      if (item.action === 'custom_answer' && options && options.mode === 'full' &&
+          /^(textarea|text)$/.test(String(f.type || f.tag || '').toLowerCase()) && !(f.options || []).length) {
+        return Object.assign(out,{action:'custom_answer',suggestedValue:String(item.value || '').trim()});
       }
-
-      if (!item) {
-        if (M && M.heuristicMapFields) {
-          var h = M.heuristicMapFields([f], profile)[0];
-          if (h) {
-            h.method = (h.method || 'heuristic') + '+fallback';
-            out.push(h);
-            continue;
-          }
-        }
-        out.push({
-          index: idx,
-          profileKey: null,
-          action: 'skip',
-          confidence: 0,
-          suggestedValue: '',
-          method: 'ai-missing',
-          label: label
-        });
-        continue;
+      var key = semanticKey(item.profileKey);
+      // 兼容列表路径形式的语义键；不允许模型决定数组下标。
+      if (item.action !== 'fill' || !known.has(key)) return out;
+      out.profileKey = key;
+      var count = occurrence;
+      if (!f.recordRef && !M.LIST_OCCURRENCE_MAP[key] && count >= M.MAX_FILLS_PER_KEY) return out;
+      if (f.controlKind === 'multi') {
+        var multi = M.multiValuesFor(profile,key);
+        if (multi.length && (!(f.options || []).length || multi.every(function (v) { return M.matchSelectOption(f.options,v); }))) return Object.assign(out,{action:'fill',suggestedValue:multi.join('、'),multiValues:multi});
+        return Object.assign(out,{reason:'no_multi_values'});
       }
-
-      action = String(item.action || 'skip').toLowerCase();
-      profileKey = item.profileKey || null;
-      conf = typeof item.confidence === 'number' ? item.confidence : 0;
-      if (!isFinite(conf)) conf = 0;
-      if (conf > 1) conf = 1;
-      if (conf < 0) conf = 0;
-      if (conf < 0.6) action = 'skip';
-
-      // 默认白名单模式的模型输出始终是不可信映射，不能提供或补造个人资料值。
-      if (action === 'custom_answer' && (!allowGenerated ||
-          !/^(textarea|text)$/.test(String(f.type || f.tag || '').toLowerCase()) ||
-          (f.options && f.options.length))) action = 'skip';
-
-      if (action === 'custom_answer') {
-        value = String(item.value || '').trim();
-        if (!value) {
-          action = 'skip';
-        } else if (f.options && f.options.length) {
-          // select 禁止粘贴 custom_answer 段落；尝试 Yes/No 归一或 option 匹配
-          coerced = coerceSelectValue(M, f, value);
-          if (!coerced.ok) {
-            action = 'skip';
-            value = '';
-          } else {
-            // 成功映射到 option 时降为 fill（短 Yes/No），不再当开放题
-            action = 'fill';
-            value = coerced.value;
-            profileKey = null;
-          }
-        }
-        out.push({
-          index: idx,
-          profileKey: profileKey,
-          action: action,
-          confidence: conf,
-          suggestedValue: value || '',
-          method: 'ai',
-          label: label,
-          reason: item.reason || (action === 'skip' ? 'select-reject-custom' : '')
-        });
-        continue;
-      }
-
-      if (action === 'fill') {
-        if (profileKey && knownKeys[profileKey]) {
-          value = M && M.profileValue
-            ? M.profileValue(profile, profileKey)
-            : String((profile && profile[profileKey]) || '').trim();
-          if (!value) {
-            action = 'skip';
-            value = '';
-          } else {
-            var count = keyCounts[profileKey] || 0;
-            var cap = (M && M.MAX_FILLS_PER_KEY) || 2;
-            if (count >= cap) {
-              action = 'skip';
-              value = '';
-            } else if (f.options && f.options.length) {
-              coerced = coerceSelectValue(M, f, value);
-              if (!coerced.ok) {
-                action = 'skip';
-                value = '';
-              } else {
-                value = coerced.value;
-                keyCounts[profileKey] = count + 1;
-              }
-            } else {
-              keyCounts[profileKey] = count + 1;
-            }
-          }
-        } else if (allowGenerated && item.value && f.options && f.options.length) {
-          // 无合法 profileKey 但给了 value：仅允许匹配 select option（如纯 Yes/No）
-          coerced = coerceSelectValue(M, f, item.value);
-          if (coerced.ok) {
-            action = 'fill';
-            profileKey = null;
-            value = coerced.value;
-          } else {
-            action = 'skip';
-            profileKey = null;
-            value = '';
-          }
-        } else {
-          action = 'skip';
-          profileKey = null;
-          value = '';
-        }
-        out.push({
-          index: idx,
-          profileKey: profileKey,
-          action: action,
-          confidence: conf,
-          suggestedValue: value || '',
-          method: 'ai',
-          label: label,
-          reason: item.reason || (action === 'skip' ? 'select-no-match' : '')
-        });
-        continue;
-      }
-
-      out.push({
-        index: idx,
-        profileKey: profileKey,
-        action: 'skip',
-        confidence: conf,
-        suggestedValue: '',
-        method: 'ai',
-        label: label,
-        reason: item.reason || 'skip'
-      });
-    }
-    return out;
+      var value = M.valueForField(profile,key,f,count);
+      if (!value) return Object.assign(out,{reason:'no_profile_value'});
+      var coerced = coerceSelectValue(M,f,value);
+      if (!coerced.ok) return Object.assign(out,{reason:coerced.reason});
+      return Object.assign(out,{action:'fill',suggestedValue:coerced.value});
+    });
   }
 
   return {

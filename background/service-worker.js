@@ -147,7 +147,105 @@ async function handleAiMapFields(message) {
   };
 }
 
+// 运行只由扩展 runtime 创建；结果仅通过定向 tabs 消息返回，不接收网页 postMessage。
+var tabRuns = new Map();
+var FRAME_TIMEOUT_MS = 60000;
+
+async function accessibleFrames(tabId) {
+  var frames;
+  try {
+    frames = await chrome.scripting.executeScript({target:{tabId:tabId,allFrames:true},func:function () { return {children:window.frames.length}; }});
+  } catch (_) {
+    // 某个受限子 frame 使 allFrames 探测失败时，保留顶层结果，子 frame 明确列为未验证。
+    frames = await chrome.scripting.executeScript({target:{tabId:tabId,frameIds:[0]},func:function () { return {children:window.frames.length}; }});
+  }
+  var unique = new Map();
+  frames.forEach(function (frame) { unique.set(frame.frameId,frame); });
+  return Array.from(unique.values());
+}
+
+async function dispatchRun(tabId, type, payload) {
+  var runId = crypto.randomUUID();
+  var frames = await accessibleFrames(tabId);
+  var expected = 1 + frames.reduce(function (sum,f) { return sum + ((f.result || {}).children || 0); },0);
+  var results = await Promise.all(frames.map(async function (frame) {
+    var timer;
+    try {
+      var target = {frameId:frame.frameId};
+      if (frame.documentId) target.documentId = frame.documentId;
+      var message = Object.assign({},payload || {},{type:type,runId:runId});
+      if (type === 'APPLY_FRAME') message.mappings = (message.mappings || []).filter(function (m) { return m.frameId === frame.frameId; });
+      var response = await Promise.race([
+        chrome.tabs.sendMessage(tabId,message,target),
+        new Promise(function (_,reject) { timer = setTimeout(function () { reject(new Error('frame_timeout')); },FRAME_TIMEOUT_MS); })
+      ]);
+      if (!response || response.runId !== runId) throw new Error('invalid_run_result');
+      return {frameId:frame.frameId,status:response.ok === false ? 'failed' : 'verified',result:response};
+    } catch (err) {
+      return {frameId:frame.frameId,status:'unverified',reason:err.message === 'frame_timeout' ? 'frame_timeout' : 'frame_inaccessible'};
+    } finally { clearTimeout(timer); }
+  }));
+  var unverified = results.filter(function (r) { return r.status !== 'verified'; }).map(function (r) { return {frameId:r.frameId,reason:r.reason || (r.result || {}).reason || 'frame_failed'}; });
+  if (expected > frames.length) unverified.push({count:expected - frames.length,reason:'frame_inaccessible'});
+  var out = {ok:results.some(function (r) { return r.status === 'verified'; }),runId:runId,filled:0,filledKeys:[],fields:[],unfilled:[],expanded:[],forced:[],dateTries:[],skipped:[],preserved:[],notWritten:[],degradedDates:[],auditRecords:0,frames:results.length,unverifiedFrames:unverified,saveStatus:'not_checked',timedOut:false};
+  var audit = null;
+  results.forEach(function (r) {
+    var value = r.result;
+    if (!value) return;
+    out.filled += Number(value.filled) || 0;
+    out.auditRecords += Number(value.auditRecords) || 0;
+    out.timedOut = out.timedOut || !!value.timedOut;
+    (value.filledKeys || []).forEach(function (key) { if (out.filledKeys.indexOf(key) < 0) out.filledKeys.push(key); });
+    ['fields','unfilled','expanded','forced','dateTries','skipped','preserved','notWritten','degradedDates'].forEach(function (key) {
+      (value[key] || []).forEach(function (item) {
+        var tagged = Object.assign({},item,{frameId:r.frameId});
+        if (key === 'unfilled') tagged.id = r.frameId + ':' + item.id;
+        out[key].push(tagged);
+      });
+    });
+    if (value.audit) {
+      if (!audit) audit = {entries:[],problems:[]};
+      Object.keys(value.audit).forEach(function (key) {
+        if (typeof value.audit[key] === 'number') audit[key] = (audit[key] || 0) + value.audit[key];
+      });
+      ['entries','problems'].forEach(function (key) { (value.audit[key] || []).forEach(function (entry) { audit[key].push(Object.assign({},entry,{frameId:r.frameId})); }); });
+    }
+  });
+  if (audit) audit.okAll = !audit.mismatch && !audit.empty && !audit.needsReview && !unverified.length;
+  out.fields.forEach(function (field,index) { field.index = index; });
+  out.audit = audit; out.auditScope = 'accessible_frames'; out.count = out.fields.length;
+  if (!out.ok) out.reason = ((results.find(function (r) { return r.result; }) || {}).result || {}).reason || 'frames_unverified';
+  return out;
+}
+
+function runForTab(tabId,type,payload) {
+  if (!Number.isInteger(tabId)) return Promise.reject(new Error('missing_tab'));
+  if (tabRuns.has(tabId)) return Promise.resolve({ok:false,reason:'run_in_progress',filled:0});
+  var run = dispatchRun(tabId,type,payload).finally(function () { tabRuns.delete(tabId); });
+  tabRuns.set(tabId,run);
+  return run;
+}
+
+function requestedTab(message, sender) {
+  var extensionPage = String(sender.url || '').indexOf('chrome-extension://' + chrome.runtime.id + '/') === 0;
+  return extensionPage ? message.tabId : (sender.tab ? sender.tab.id : message.tabId);
+}
+
 chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
+  if (!_sender || _sender.id !== chrome.runtime.id) return false;
+  var runTypes = {RUN_FILL:'FILL_FRAME',RUN_COLLECT:'COLLECT_FRAME',RUN_APPLY:'APPLY_FRAME',RUN_SCAN:'SCAN_FRAME'};
+  if (message && runTypes[message.type]) {
+    var tabId = requestedTab(message,_sender);
+    runForTab(tabId,runTypes[message.type],message).then(sendResponse).catch(function (err) {
+      sendResponse({ok:false,filled:0,reason:String(err.message || err)});
+    });
+    return true;
+  }
+  if (message && message.type === 'REVEAL_FRAME') {
+    var tabId = requestedTab(message,_sender);
+    chrome.tabs.sendMessage(tabId,{type:'REVEAL_FIELD',id:message.id},{frameId:message.frameId}).then(sendResponse).catch(function () { sendResponse({ok:false}); });
+    return true;
+  }
   if (message && message.type === 'ping') {
     var manifest = chrome.runtime.getManifest();
     sendResponse({ ok: true, version: manifest.version });

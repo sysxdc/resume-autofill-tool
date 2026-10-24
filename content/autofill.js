@@ -127,8 +127,8 @@
   var ymPartial = C.ymPartial;
 
   function iterFillableFields() {
-    return Array.from(document.querySelectorAll('input, textarea, select')).filter(
-      function (el) { return !isSkippable(el); }
+    return Array.from(C.queryAll('input, textarea, select')).filter(
+      function (el) { return !isSkippable(el) && isVisibleEl(el); }
     );
   }
 
@@ -138,67 +138,41 @@
   }
 
   function scanFieldsInner() {
-    var results = [];
-    var seen = {};
-    iterFillableFields().forEach(function (el) {
-      var scored = M.matchFieldKeyScored
-        ? M.matchFieldKeyScored(collectHints(el), {
-            autocomplete: el.getAttribute('autocomplete') || '',
-            context: detectSectionContext(el)
-          })
-        : null;
-      var struct = detectStructuredField(el);
-      var key = struct ? struct.key : (compoundEduKey(getLabelText(el)) || sectionFallbackKey(el) || matchKeyForElement(el));
-      if (!key) return;
-      var sig = key + '|' + (el.name || el.id || hintSnippet(el));
-      if (seen[sig]) return;
-      seen[sig] = true;
-      results.push({
-        key: key,
-        hint: hintSnippet(el),
-        confidence: struct ? 1 : (scored ? scored.confidence : 1),
-        method: struct ? 'structured' : (scored ? scored.method : 'label')
-      });
+    return collectFieldsDetailedInner(profileCache).filter(function (f) { return !!f.semanticKey; }).map(function (f) {
+      return {key:f.semanticKey,fieldId:f.fieldId,recordRef:f.recordRef,controlKind:f.controlKind,hint:f.label,confidence:1,method:f.recordRef ? 'bound' : 'label'};
     });
-    return results;
   }
 
   /**
    * 收集可填字段描述，供 AI / 启发式映射。
    */
-  function collectFieldsDetailed() {
+  function collectFieldsDetailed(profile) {
     var owned = beginMemo();
-    try { return collectFieldsDetailedInner(); } finally { endMemo(owned); }
+    try { return collectFieldsDetailedInner(profile); } finally { endMemo(owned); }
   }
 
-  function collectFieldsDetailedInner() {
-    var els = iterFillableFields();
-    return els.map(function (el, index) {
-      var tag = el.tagName.toLowerCase();
-      var type = (el.type || '').toLowerCase();
-      var label = String(getLabelText(el) || '').replace(/\s+/g, ' ').trim();
-      if (label.length > 120) label = label.slice(0, 117) + '…';
+  var fieldSnapshots = new Map();
+  var profileCache = {};
+  function fieldFingerprint(el) {
+    return [C.rootId(el),el.tagName,el.id || '',el.name || '',getLabelText(el),el.getAttribute('role') || '',el.type || ''].join('|');
+  }
+  function collectFieldsDetailedInner(profile) {
+    var bindings = C.buildStructuredBindings(profile || {});
+    fieldSnapshots.clear();
+    return C.logicalControls().map(function (el,index) {
+      var ref = C.boundStructuredField(el,bindings);
+      var key = ref ? ref.key : (compoundEduKey(getLabelText(el)) || sectionFallbackKey(el) || matchKeyForElement(el));
+      var multi = C.isMultiSelect(el);
+      var kind = multi ? 'multi' : (C.ariaCombobox(el) ? 'aria-select' : (findCustomSelectHost(el) ? 'custom-select' : (el.isContentEditable ? 'rich-text' : el.tagName.toLowerCase())));
       var item = {
-        index: index,
-        tag: tag,
-        type: type,
-        name: el.name || '',
-        id: el.id || '',
-        label: label,
-        placeholder: el.getAttribute('placeholder') || '',
-        autocomplete: el.getAttribute('autocomplete') || '',
-        currentValue: ''
+        index:index, fieldId:C.fieldId(el), rootId:C.rootId(el), controlKind:kind,
+        recordRef:ref || null, semanticKey:key || '', context:detectSectionContext(el),
+        tag:el.tagName.toLowerCase(), type:(el.type || '').toLowerCase(),
+        name:el.name || '',id:el.id || '',label:String(getLabelText(el) || '').replace(/\s+/g,' ').trim().slice(0,120),
+        placeholder:el.getAttribute('placeholder') || '',autocomplete:el.getAttribute('autocomplete') || '',currentValue:C.readBackValue(el)
       };
-      try {
-        if (tag === 'select') {
-          item.currentValue = el.value || '';
-          item.options = Array.from(el.options).slice(0, 40).map(function (o) {
-            return { value: o.value, text: String(o.text || '').trim() };
-          });
-        } else if (type !== 'checkbox' && type !== 'radio') {
-          item.currentValue = el.value || '';
-        }
-      } catch (_) { /* ignore */ }
+      if (el.tagName === 'SELECT') item.options = Array.from(el.options).slice(0,100).map(function (o) { return {value:o.value,text:o.text,disabled:!C.optionEnabled(o)}; });
+      fieldSnapshots.set(item.fieldId,{el:el,fingerprint:fieldFingerprint(el),ref:ref || null});
       return item;
     });
   }
@@ -239,7 +213,7 @@
     var waited = 0;
     var limit = typeof maxMs === 'number' ? maxMs : 1500;
     while (waited < limit) {
-      var n = document.querySelectorAll('input, textarea, select').length;
+      var n = C.queryAll('input, textarea, select').length;
       if (n === last) {
         stable += 1;
         if (stable >= 2) return;
@@ -318,6 +292,7 @@
     var triedHosts = typeof WeakSet === 'function' ? new WeakSet() : null;
     for (var pass = 0; pass < 2; pass++) {
       if (timedOut) break;
+      if (pass) recordBindings = C.buildStructuredBindings(profile);
     // 起止时间合体的控件要在逐 input 匹配之前处理，否则两个 input 会被各写一份
     if (opts.allowCustomSelect !== false) {
       try { filled += await fillRangeEditors(profile, handled, filledKeys, recordBindings); } catch (_) { /* ignore */ }
@@ -326,7 +301,7 @@
       // antd 弹窗选择器（专业 / 学校）：点输入框弹 modal，常规写值写不进去
       try { filled += await fillModalPickers(profile, handled, filledKeys, recordBindings); } catch (_) { /* ignore */ }
       // 联动下拉（语种 → 语言等级）：第二级选项由第一级决定，必须按顺序写
-      try { filled += await fillLinkedSelectChains(profile, filledKeys); } catch (_) { /* ignore */ }
+      try { filled += await fillLinkedSelectChains(profile, filledKeys, recordBindings); } catch (_) { /* ignore */ }
     }
     var els = fastFirst(iterFillableFields());
     var pageKeys = null;
@@ -347,6 +322,7 @@
       if (el.closest && el.closest(RANGE_EDITOR_SEL)) continue;
       if (el.classList && el.classList.contains('ant-calendar-range-picker-input')) continue;   // antd v3 范围
       var struct = C.boundStructuredField(el, recordBindings);
+      if (!C.bindingStillValid(el,struct,profile,recordBindings)) struct = Object.assign({},struct || {},{reason:(struct && struct.reason) || 'stale_record_binding'});
       if (struct && struct.reason) {
         if (!skipped.some(function (x) { return x.row === struct.rowPrefix; })) skipped.push({key:struct.key, row:struct.rowPrefix, label:getLabelText(el), reason:struct.reason});
         continue;
@@ -374,9 +350,23 @@
         : (compoundEduKey(getLabelText(el)) || sectionFallbackKey(el) || matchKeyForElement(el));
       if (!key) key = aliasKeyForLabel(getLabelText(el), null);
       if (!key) continue;
+      if (C.isMultiSelect(el)) {
+        if (!C.readMultiValues(el).length) {
+          var multiValues = M.multiValuesFor(profile,key);
+          if (multiValues.length && await C.fillMultiSelect(el,multiValues)) {
+            filled += 1; if (filledKeys.indexOf(key) < 0) filledKeys.push(key);
+            recordFill(el,key,C.multiSelectResult(el).expected,'multi'); highlight(el);
+          } else if (C.multiSelectResult(el)) {
+            recordFill(el,key,C.multiSelectResult(el).expected,'multi'); fillRecords[fillRecords.length - 1].noCount = true;
+            skipped.push({key:key,reason:'multiselect_not_committed'});
+          }
+        }
+        continue;
+      }
       // 「紧急联系人」单框：同页另有「紧急联系电话」时它就是姓名栏，别填「姓名 + 电话」组合串
       if (key === 'emergencyContact' && pageHasKey('emergencyContactPhone')) key = 'emergencyContactName';
-      var counterKey = occurrenceKey(key, getLabelText(el));
+      var splitNumeric = C.splitNumericField(el);
+      var counterKey = occurrenceKey(key, getLabelText(el) + (splitNumeric ? '|' + splitNumeric.part : ''));
       // v1.5.24：第几段按「出现位置」算，不按「成功次数」算 —— 第 1 段没填上（已有值 / 写失败），
       // 第 2 段也必须拿 list[1]，否则会把第 1 段的值填进第 2 段（错位）
       var count = 0;
@@ -391,9 +381,9 @@
           ? M.profileValueForOccurrence(profile, key, count)
           : M.profileValue(profile, key));
       if (key === 'langLevel' && /等级|级别|考试|证书/.test(getLabelText(el)) && !/掌握|熟练/.test(getLabelText(el))) {
-        value = M.profileValueForOccurrence(profile,'langCertName',count) || value;
+        value = M.profileValueForOccurrence(profile,'langCertName',struct ? struct.index : count) || value;
       }
-      if (!value) {
+      if (!value && !struct) {
         // 主 key 取不到值：试一下别名（所在地 / 工作经验 / 职责 / 语言类型 ...）
         var aliasKey = aliasKeyForLabel(getLabelText(el), key);
         if (aliasKey) {
@@ -403,6 +393,7 @@
           if (value) key = aliasKey;
         }
       }
+      if (splitNumeric) value = C.splitNumericValue(splitNumeric, value, struct ? structuredValue(profile,Object.assign({},struct,{key:splitNumeric.key,field:(M.LIST_OCCURRENCE_MAP[splitNumeric.key] || [])[1]})) : (count === 0 ? profile[splitNumeric.key] : ''));
       if (!value) {
         if (skipped.length < 30) skipped.push({ key: key, reason: 'no_profile_value' });
         continue;
@@ -664,7 +655,7 @@
 
     // 富文本正文有独立写入协议，不能用 input.value 或 innerHTML 冒充组件提交。
     var richSeen = {};
-    var richNodes = document.querySelectorAll('[contenteditable="true"][role="textbox"], .ProseMirror[contenteditable="true"], .ql-editor[contenteditable="true"]');
+    var richNodes = C.queryAll('[contenteditable="true"][role="textbox"], .ProseMirror[contenteditable="true"], .ql-editor[contenteditable="true"]');
     for (var richIndex = 0; richIndex < richNodes.length; richIndex++) {
       if (Date.now() - startedAt > 45000) { timedOut = true; break; }
       var rich = richNodes[richIndex];
@@ -723,9 +714,9 @@
         var host = hosts[hi];
         if (triedHosts && triedHosts.has(host)) continue;   // 主循环已经试过（对不上的下拉别再耗一遍）
         var hostFilled = customSelectLooksFilled(host);
-        var hLabel = '';
+        var hLabel = getLabelText(host);
         var prev = host.previousElementSibling;
-        if (prev) {
+        if (!hLabel && prev) {
           hLabel = M.visibleLabelText ? M.visibleLabelText(prev) : String(prev.textContent || '');
           hLabel = String(hLabel || '').replace(/\s+/g, ' ').trim();
           if (M.cleanLabelPunctuation) hLabel = M.cleanLabelPunctuation(hLabel);
@@ -745,15 +736,33 @@
         // 带上区块上下文（教育块的「城市」是学校城市，不是申请人城市）
         var hKey = compoundEduKey(hLabel) || M.matchFieldKey(hLabel, { context: detectSectionContext(host) });
         if (!hKey) continue;
+        var hRef = C.boundStructuredField(host,recordBindings);
+        if (!C.bindingStillValid(host,hRef,profile,recordBindings)) continue;
+        if (hRef) hKey = hRef.key;
+        if (C.isMultiSelect(host)) {
+          if (!C.readMultiValues(host).length) {
+            var hValues = M.multiValuesFor(profile,hKey);
+            if (hValues.length && await C.fillMultiSelect(host,hValues)) {
+              filled += 1; if (filledKeys.indexOf(hKey) < 0) filledKeys.push(hKey);
+              recordFill(host,hKey,C.multiSelectResult(host).expected,'multi'); highlight(host);
+            } else if (C.multiSelectResult(host)) {
+              recordFill(host,hKey,C.multiSelectResult(host).expected,'multi'); fillRecords[fillRecords.length - 1].noCount = true;
+              skipped.push({key:hKey,reason:'multiselect_not_committed'});
+            }
+          }
+          if (triedHosts) triedHosts.add(host);
+          continue;
+        }
         var hCounterKey = occurrenceKey(hKey, hLabel);
         // 与主循环一致：第几段按出现位置算（已经有值的那一段也占位）
         var hCount = occurSeen[hCounterKey] || 0;
         occurSeen[hCounterKey] = hCount + 1;
         if (hostFilled) continue;
         if ((keyCounts[hCounterKey] || 0) >= MAX_FILLS_PER_KEY && !M.LIST_OCCURRENCE_MAP[hKey]) continue;
-        var hVal = M.profileValueForOccurrence
-          ? M.profileValueForOccurrence(profile, hKey, hCount)
-          : M.profileValue(profile, hKey);
+        var hVal = hRef ? structuredValue(profile,hRef) : M.profileValueForOccurrence(profile,hKey,hCount);
+        if (hKey === 'langLevel' && /等级|级别|考试|证书/.test(hLabel) && !/掌握|熟练/.test(hLabel)) {
+          hVal = M.profileValueForOccurrence(profile, 'langCertName', hRef ? hRef.index : hCount) || hVal;
+        }
         if (!hVal) continue;
         try {
           var hOk = await fillCustomSelect(host, hVal, hKey);
@@ -828,65 +837,66 @@
    * mappings: { index, action, suggestedValue }[]
    */
   async function applyMappings(mappings) {
-    var els = iterFillableFields();
-    var filled = 0;
-    var filledKeys = [];
-    var list = mappings || [];
-    for (var li = 0; li < list.length; li++) {
-      await applyOneMapping(list[li]);
-    }
-    return { filled: filled, filledKeys: filledKeys };
-
-    async function applyOneMapping(m) {
-      if (!m || (m.action !== 'fill' && m.action !== 'custom_answer')) return;
-      if (!Number.isInteger(m.index) || !Number.isFinite(m.confidence) || m.confidence < 0.6) return;
-      var value = String(m.suggestedValue || '').trim();
-      if (!value) return;
-      var el = els[m.index];
-      if (!el) return;
-      var currentLabel = String(getLabelText(el) || '').replace(/\s+/g, '').trim();
-      var mappedLabel = String(m.label || '').replace(/\s+/g, '').trim();
-      if (mappedLabel && currentLabel && mappedLabel !== currentLabel) return;
-      if (M.isSkipContext && M.isSkipContext(collectHints(el))) return;
-      if (fieldLooksFilled(el)) return;
-      var hints = collectHints(el);
-      var adjacentRole = detectAdjacentDatePairRole(el);
-      var dateOpts = { adjacentPairRole: adjacentRole || undefined };
-      var role = M.detectDatePartRole ? M.detectDatePartRole(hints, dateOpts) : null;
-      // AI 已给纯年/月则保留；完整日期且字段为年/月分栏时再拆
-      if (role && M.extractDatePart) {
-        var alreadyPart =
-          (role === 'year' && /^\d{4}$/.test(value)) ||
-          (role === 'month' && /^(0?[1-9]|1[0-2])$/.test(value)) ||
-          (role === 'day' && /^(0?[1-9]|[12]\d|3[01])$/.test(value));
-        if (!alreadyPart && M.extractDatePart(value, role)) {
-          var maxLen = el.getAttribute('maxlength');
-          var ph = el.getAttribute('placeholder') || '';
-          value = M.maybeExtractDatePartValue(value, hints, {
-            profileKey: m.profileKey || '',
-            maxLength: maxLen ? parseInt(maxLen, 10) : 0,
-            zeroPadMonth: maxLen === '2' || /^(mm|月)$/i.test(String(ph).trim()),
-            adjacentPairRole: adjacentRole || undefined
-          });
+    var profile = await loadProfile(), bindings = C.buildStructuredBindings(profile);
+    var filled = 0, keys = [], skipped = [];
+    fillRecords.length = 0;
+    for (var m of (mappings || [])) {
+      if (!m || !Number.isFinite(m.confidence) || m.confidence < 0.6 || !/^(fill|custom_answer)$/.test(m.action)) continue;
+      // index 只用于旧 UI 展示，不再决定 DOM 写入目标。
+      var snapshot = m.fieldId && fieldSnapshots.get(m.fieldId);
+      var el = snapshot && snapshot.el;
+      if (!el || !el.isConnected || !isVisibleEl(el) || isSkippable(el) || fieldFingerprint(el) !== snapshot.fingerprint) {
+        skipped.push({reason:'stale_field_binding',key:m.profileKey || ''}); continue;
+      }
+      var ref = C.boundStructuredField(el,bindings) || null;
+      if (JSON.stringify(ref) !== JSON.stringify(snapshot.ref) || (ref && ref.reason)) { skipped.push({reason:'stale_record_binding',key:m.profileKey || ''}); continue; }
+      if (M.isSkipContext(collectHints(el)) || fieldLooksFilled(el) || customSelectLooksFilled(findCustomSelectHost(el))) continue;
+      var key = m.profileKey || '';
+      var value = key ? M.valueForField(profile,key,{recordRef:ref},0) : '';
+      if (m.action === 'custom_answer') {
+        var settings = await new Promise(function (resolve) { chrome.storage.local.get('aiSettings',function (v) { resolve(v.aiSettings || {}); }); });
+        if (settings.mode !== 'full' || !el.matches('textarea,input[type="text"],input:not([type])')) continue;
+        value = String(m.suggestedValue || '').trim();
+      }
+      var ok = false, expected = value, kind = '';
+      if (C.isMultiSelect(el)) {
+        var values = M.multiValuesFor(profile,key);
+        ok = await C.fillMultiSelect(el,values); expected = (C.multiSelectResult(el) || {}).expected || values; kind = 'multi';
+      } else if (value) {
+        var host = findCustomSelectHost(el);
+        if (host) { ok = await fillCustomSelect(host,value,key); el = host; }
+        else if (el.isContentEditable) ok = await C.writeRichText(el,value,key);
+        else if (el.closest('.ant-picker, .ant-calendar-picker')) {
+          ok = fillAntdPickerByModel(el,value);
+          if (!ok) ok = await fillReadonlyPickerAntd(el,value);
+          if (ok) { await sleep(100); ok = dateValueMatches(el.value,value); }
+        } else if (isReadonlyPicker(el)) ok = await fillReadonlyPicker(el,value);
+        else {
+          var part = C.splitNumericField(el);
+          if (part) value = C.splitNumericValue(part,value,'');
+          if (key === 'gpa' && el.type === 'number') { var g = M.parseGpa(value); value = g ? String(g.value) : ''; }
+          value = M.maybeExtractDatePartValue(value,collectHints(el),{profileKey:key,adjacentPairRole:detectAdjacentDatePairRole(el) || undefined}) || value;
+          var dateValue = dateValueForInput(el,value);
+          if (dateValue === '') continue;
+          if (dateValue) value = dateValue;
+          expected = value;
+          ok = await writeAndVerify(el,value,{key:key});
         }
       }
-      if (!value) return;
-      var dv = dateValueForInput(el, value);
-      if (dv === '') return;
-      if (dv) value = dv;
-      if (await writeAndVerify(el, value, { key: m.profileKey || '' })) {
-        filled += 1;
-        var k = m.profileKey || ('custom:' + m.index);
-        if (filledKeys.indexOf(k) === -1) filledKeys.push(k);
-        highlight(el);
-      }
+      if (ok) { filled += 1; keys.push(key); recordFill(el,key,expected,kind); highlight(el); }
+      else skipped.push({key:key,reason:'selection_not_committed'});
     }
+    await sleep(150);
+    var audit = runFillAudit();
+    if (audit) filled = Math.max(0,filled - audit.empty - audit.mismatch - audit.needsReview);
+    return {filled:filled,filledKeys:Array.from(new Set(keys)),skipped:skipped,audit:audit,saveStatus:'not_checked'};
   }
 
   function loadProfile() {
     return new Promise(function (resolve) {
       chrome.storage.local.get('profile', function (result) {
-        resolve(result.profile || {});
+        profileCache = result.profile || {};
+        resolve(profileCache);
       });
     });
   }
@@ -895,6 +905,8 @@
     if (!profile) return false;
     return Object.keys(profile).some(function (k) {
       var v = profile[k];
+      if (k === 'multiValues') return Object.keys(v || {}).some(function (key) { return M.multiValuesFor(profile,key).length > 0; });
+      if (v && typeof v === 'object' && !Array.isArray(v)) return false;
       return v && String(v).trim();
     });
   }
@@ -1015,53 +1027,22 @@
   }
 
   function unfilledFieldsInner() {
-    var out = [];
-    var seen = {};
+    var out = [], seen = {}, bindings = C.buildStructuredBindings(profileCache);
     UNFILLED_ELS = {};
-    iterFillableFields().forEach(function (el) {
-      if (!el || el.disabled) return;
-      if (!isVisibleEl(el)) return;
+    C.logicalControls().forEach(function (el) {
+      if (el.disabled || !isVisibleEl(el)) return;
       var host = findCustomSelectHost(el);
       if (host && customSelectLooksFilled(host)) return;
-      if (fieldLooksFilled(el)) return;
+      if (el.isContentEditable ? !!readBackValue(el) : fieldLooksFilled(el)) return;
       var label = cleanFieldLabel(getLabelText(el));
       if (!label) return;
-      var section = sectionTitleFor(el);
-      var sig = section + '|' + label;
-      var row = seen[sig] ? seen[sig] + 1 : 1;
-      seen[sig] = row;
-      var id = 'f' + out.length;
+      var section = sectionTitleFor(el), sig = section + '|' + label;
+      var row = (seen[sig] || 0) + 1; seen[sig] = row;
+      var id = 'f' + out.length, ref = C.boundStructuredField(el,bindings);
       UNFILLED_ELS[id] = el;
-      out.push({
-        id: id,
-        label: label,
-        key: (detectStructuredField(el) || {}).key || matchKeyForElement(el) || '',
-        record: (detectStructuredField(el) || {}).rowPrefix || '',
-        required: fieldRequired(el),
-        section: section,
-        row: row > 1 ? row : 0
-      });
+      out.push({id:id,fieldId:C.fieldId(el),label:label,key:ref ? ref.key : matchKeyForElement(el) || '',record:ref && ref.rowPrefix || '',recordRef:ref || null,required:fieldRequired(el),section:section,row:row > 1 ? row : 0});
     });
-    // 自定义下拉的搜索 input 已被主循环排除，未填清单仍必须报告整个控件。
-    Array.prototype.forEach.call(document.querySelectorAll('[contenteditable="true"][role="textbox"], .ProseMirror[contenteditable="true"], .ql-editor[contenteditable="true"]'),function (node) {
-      if (!isVisibleEl(node) || readBackValue(node) || node.parentElement.closest('[contenteditable="true"]')) return;
-      var label = cleanFieldLabel(getLabelText(node)); if (!label) return;
-      var id = 'f' + out.length; UNFILLED_ELS[id] = node;
-      out.push({id:id,label:label,key:matchKeyForElement(node) || '',section:sectionTitleFor(node),required:fieldRequired(node),row:0});
-    });
-    iterCustomSelectHosts().forEach(function (host) {
-      if (!isVisibleEl(host) || customSelectLooksFilled(host)) return;
-      var label = cleanFieldLabel(getLabelText(host));
-      if (!label) return;
-      var section = sectionTitleFor(host);
-      var sig = section + '|' + label;
-      var row = (seen[sig] || 0) + 1;
-      seen[sig] = row;
-      var id = 'f' + out.length;
-      UNFILLED_ELS[id] = host;
-      out.push({ id: id, label: label, key: matchKeyForElement(host) || '', required: fieldRequired(host), section: section, row: row > 1 ? row : 0 });
-    });
-    return out.slice(0, 60);
+    return out.slice(0,60);
   }
 
   /** 点「未填字段」清单 → 滚到那个字段并闪一下 */
@@ -1084,96 +1065,29 @@
   }
 
   async function handleCollect() {
-    var fields = collectFieldsDetailed();
+    var fields = collectFieldsDetailed(await loadProfile());
     return { ok: true, fields: fields, count: fields.length };
   }
 
   async function handleApply(message) {
     var result = await applyMappings(message.mappings || []);
-    return { ok: true, filled: result.filled, filledKeys: result.filledKeys };
+    return Object.assign({ok:true},result);
   }
 
-  var IS_TOP_FRAME = (function () {
-    try { return window.top === window; } catch (_) { return false; }
-  })();
-
-  /**
-   * v1.3.1（iframe 支持）：all_frames 后每个子 frame 都会收到 FILL_FORM 广播。
-   * 子 frame 自己填完 → 用 postMessage 把统计结果汇报给父 frame，并且**不**调用
-   * sendResponse，这样消息通道里只有顶层 frame 应答，popup 拿到的是汇总结果。
-   */
-  function reportToParent(payload) {
-    try {
-      if (IS_TOP_FRAME) return;
-      // postMessage 对页面脚本可见：只汇报计数和原因代码，不带审计原值或资料正文。
-      var summary = {
-        filled: payload.filled || 0,
-        filledKeys: (payload.filledKeys || []).slice(0, 100),
-        skipped: (payload.skipped || []).slice(0, 30).map(function (x) {
-          return {key:x.key, reason:String(x.reason || '').split(':')[0]};
-        })
-      };
-      (window.top || window.parent).postMessage({ __raFill: summary }, '*');
-    } catch (_) { /* ignore */ }
-  }
-
-  function collectFrameResults(ms) {
-    return new Promise(function (resolve) {
-      var agg = { filled: 0, filledKeys: [], frames: 0, skipped: [] };
-      // v1.5.23：页面里没有 iframe 就不用干等 900ms；有的话全部汇报完就提前结束
-      var frameCount = 0;
-      try { frameCount = document.querySelectorAll('iframe, frame').length; } catch (_) { frameCount = 0; }
-      if (!frameCount) { resolve(agg); return; }
-      var timer = null;
-      var finish = function () {
-        try { window.removeEventListener('message', onMsg); } catch (_) { /* ignore */ }
-        if (timer) clearTimeout(timer);
-        resolve(agg);
-      };
-      var onMsg = function (e) {
-        var d = e && e.data;
-        if (!d || !d.__raFill) return;
-        agg.filled += Number(d.__raFill.filled) || 0;
-        agg.frames += 1;
-        (d.__raFill.filledKeys || []).forEach(function (k) {
-          if (agg.filledKeys.indexOf(k) === -1) agg.filledKeys.push(k);
-        });
-        (d.__raFill.skipped || []).forEach(function (x) {
-          if (agg.skipped.length < 20) agg.skipped.push(x);
-        });
-        if (agg.frames >= frameCount) finish();
-      };
-      try { window.addEventListener('message', onMsg); } catch (_) { /* ignore */ }
-      timer = setTimeout(finish, ms);
-    });
-  }
-
-  async function handleFillMultiFrame(options) {
+  async function handleLocalFill(options) {
     var own = await handleFill(options || {});
-    if (!IS_TOP_FRAME) {
-      reportToParent(own);
-      return own;
-    }
-    // 顶层：留一点时间收集子 frame 的汇报
-    var agg = await collectFrameResults(900);
     var blanks = unfilledFields();
     blanks.forEach(function (field) {
       var skip = (own.skipped || []).find(function (x) { return (field.record && x.row === field.record) || (field.key && x.key === field.key); });
       field.reason = skip ? String(skip.reason).split(':')[0] : (field.key ? 'not_filled' : 'unrecognized_field');
     });
-    if (!agg.frames) return Object.assign({}, own, { unfilled: blanks });
-    return Object.assign({}, own, {
-      ok: own.ok !== false,
-      expanded: own.expanded || [],
-      filled: own.filled + agg.filled,
-      filledKeys: own.filledKeys.concat(agg.filledKeys.filter(function (k) {
-        return own.filledKeys.indexOf(k) === -1;
-      })),
-      skipped: (own.skipped || []).concat(agg.skipped).slice(0, 20),
-      frames: agg.frames + 1,
-      auditScope: 'top_frame',
-      unfilled: blanks
-    });
+    return Object.assign({},own,{unfilled:blanks});
+  }
+
+  function handleFillMultiFrame(options) {
+    // 没有 runtime.sendMessage 的环境仅用于不加载扩展的 DOM 行为测试。
+    if (typeof chrome.runtime.sendMessage !== 'function') return handleLocalFill(options);
+    return chrome.runtime.sendMessage({type:'RUN_FILL',options:options || {}});
   }
 
   // 悬浮窗（content/panel.js）与这里同处一个隔离世界，直接暴露一个内部 API，省掉消息中转
@@ -1181,7 +1095,11 @@
     window.__resumeAutofill = {
       fill: function (options) { return handleFillMultiFrame(options || {}); },
       unfilled: function () { return unfilledFields(); },
-      revealField: function (id) { return revealField(id); },
+      revealField: function (id) {
+        var m = String(id).match(/^(\d+):(.*)$/);
+        if (m && chrome.runtime.sendMessage) return chrome.runtime.sendMessage({type:'REVEAL_FRAME',frameId:Number(m[1]),id:m[2]});
+        return revealField(id);
+      },
       scan: function () { return handleScan(); }
     };
   } catch (_) { /* ignore */ }
@@ -1205,17 +1123,20 @@
     });
   }
 
+  var frameBusy = false;
   chrome.runtime.onMessage.addListener(function (message, _sender, sendResponse) {
+    if (_sender && _sender.id && _sender.id !== chrome.runtime.id) return false;
+    var operations = {FILL_FRAME:function () { return handleLocalFill(message.options); },COLLECT_FRAME:handleCollect,SCAN_FRAME:handleScan,APPLY_FRAME:function () { return handleApply(message); }};
+    if (message && operations[message.type]) {
+      if (!_sender || _sender.id !== chrome.runtime.id || _sender.tab || !message.runId) return false;
+      if (frameBusy) { sendResponse({ok:false,runId:message.runId,reason:'frame_busy'}); return false; }
+      frameBusy = true;
+      Promise.resolve().then(operations[message.type]).then(function (r) { sendResponse(Object.assign({},r,{runId:message.runId})); }).catch(function () { sendResponse({ok:false,runId:message.runId,reason:'frame_error'}); }).finally(function () { frameBusy = false; });
+      return true;
+    }
+    if (message && message.type === 'REVEAL_FIELD') { sendResponse({ok:revealField(message.id)}); return false; }
     if (message && message.type === 'FILL_FORM') {
-
-      handleFillMultiFrame(message.options || {}).then(function (r) {
-        // 子 frame 不应答，只把结果 postMessage 给顶层
-        if (IS_TOP_FRAME) sendResponse(r);
-      }).catch(function (err) {
-        if (IS_TOP_FRAME) {
-          sendResponse({ ok: false, filled: 0, filledKeys: [], skipped: [], reason: 'exception: ' + String(err && err.message || err).slice(0, 160) });
-        }
-      });
+      handleFillMultiFrame(message.options || {}).then(sendResponse).catch(function () { sendResponse({ok:false,reason:'run_failed',filled:0}); });
       return true;
     }
     if (message && message.type === 'SCAN_FIELDS') {

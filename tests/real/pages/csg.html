@@ -1,0 +1,28 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>南网 Vue 2 组件隔离环境回归</title>
+<link rel="stylesheet" href="../node_modules/antdv1/dist/antd.min.css"><style>body{padding:20px}.form-item{margin:10px}.form-item_label{margin-bottom:4px}input{min-height:28px}.form-item_value{width:320px}</style>
+<div id="app">
+  <section class="experience-module"><h3>教育经历</h3>
+    <div class="form-item"><div class="form-item_label">学校名称(中文)</div><div class="form-item_value"><a-cascader v-model="s.school" :options="schools" :show-search="true" placeholder="请输入/选择学校名称"></a-cascader></div></div>
+    <div class="form-item"><div class="form-item_label">学校名称(英文)</div><div class="form-item_value"><a-cascader v-model="s.english" :options="english" :show-search="true" placeholder="请输入/选择学校名称"></a-cascader></div></div>
+    <div class="form-item"><div class="form-item_label">学历</div><div class="form-item_value"><a-cascader v-model="s.degree" :options="degrees" placeholder="请选择学历"></a-cascader></div></div>
+    <div class="form-item"><div class="form-item_label">专业名称</div><div class="form-item_value"><a-cascader v-model="s.major" :options="majors" :show-search="true" placeholder="请输入/选择专业名称"></a-cascader></div></div>
+    <div class="form-item"><div class="form-item_label">院校类型</div><select v-model="s.schoolType"><option value="">请选择</option><option>境内院校</option><option>境外院校</option></select></div>
+    <div class="form-item"><div class="form-item_label">学分绩点</div><input v-model="s.gpa" placeholder="个人绩点"> / <input v-model="s.scale" placeholder="满分绩点"></div>
+    <div class="form-item"><div class="form-item_label">专业排名</div><input v-model="s.rank" placeholder="名次"> / <input v-model="s.total" placeholder="毕业人数"></div>
+    <div class="form-item"><div class="form-item_label">在校开始时间</div><a-date-picker v-model="s.start" value-format="YYYY-MM-DD" placeholder="请选择在校开始时间"></a-date-picker></div>
+    <div class="form-item"><div class="form-item_label">在校结束时间</div><a-date-picker v-model="s.end" value-format="YYYY-MM-DD" placeholder="请选择在校结束时间"></a-date-picker></div>
+  </section>
+  <section class="single-form"><h3>外语水平</h3>
+    <div class="form-item"><div class="form-item_label">语言</div><a-select v-model="s.lang" style="width:220px" @change="changeLanguage"><a-select-option value="EN">英语</a-select-option><a-select-option value="JP">日语</a-select-option></a-select></div>
+    <div class="form-item"><div class="form-item_label">级别</div><a-select v-model="s.cert" style="width:220px" :disabled="!s.lang"><a-select-option v-for="item in levels" :key="item.value" :value="item.value">{{item.label}}</a-select-option></a-select></div>
+    <div class="form-item"><div class="form-item_label">分数</div><input v-model="s.score" placeholder="请输入分数"></div>
+  </section>
+  <label><input type="checkbox" v-model="s.declaration">本人声明全部属实</label><button @click="s.saved++">暂存简历</button><button @click="s.submitted++">简历确认</button>
+</div>
+<script src="../node_modules/vue2/dist/vue.min.js"></script><script src="../node_modules/moment/min/moment.min.js"></script><script src="../node_modules/antdv1/dist/antd-with-locales.min.js"></script>
+<script>
+Vue.use(antd);
+const vm=new Vue({el:'#app',data:{s:{school:[],english:[],degree:[],major:[],schoolType:'',gpa:'',scale:'',rank:'',total:'',start:null,end:null,lang:undefined,cert:undefined,score:'',declaration:false,saved:0,submitted:0},
+schools:[{value:'GD',label:'广东',children:[{value:'TEST',label:'测试工业大学'},{value:'OTHER',label:'测试工业大学独立学院'}]}],english:[{value:'GD',label:'Guangdong',children:[{value:'TEST',label:'Test University'}]}],degrees:[{value:'B',label:'大学本科'},{value:'M',label:'硕士研究生'}],majors:[{value:'ENG',label:'工学',children:[{value:'AUTO',label:'自动化'}]}],levels:[]},methods:{changeLanguage(){this.s.cert=undefined;this.s.score='';this.levels=[];setTimeout(()=>this.levels=this.s.lang==='EN'?[{value:'C4',label:'大学英语四级'},{value:'C6',label:'大学英语六级'}]:[{value:'N1',label:'N1'}],350);}}});
+window.__state=()=>JSON.parse(JSON.stringify(vm.s));
+</script></html>

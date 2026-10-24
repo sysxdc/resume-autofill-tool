@@ -10,7 +10,7 @@
 <div class="ant-picker-dropdown"><label>学校<input id="popup"></label></div>
 <script>
 window.addCount=0;
-window.testProfile={name:'测试人',phone:'13800000000',idNumber:'TEST-ID',school:'测试大学',gpa:'3.0/4.5',github:'https://example.test/dev',eduList:[{school:'测试大学'}],projectList:[{name:'测试项目',role:'负责人'}]};
+window.testProfile={name:'测试人',phone:'13800000000',idNumber:'TEST-ID',school:'测试大学',gpa:'3.0/4.5',github:'https://example.test/dev',eduList:[{school:'测试大学',gpa:'3.0/4.5'}],projectList:[{name:'测试项目',role:'负责人'}]};
 globalThis.chrome={storage:{local:{get:(k,cb)=>cb({profile:window.testProfile})}},runtime:{onMessage:{addListener:()=>{}}}};
 (async()=>{const m=await (await fetch('../../../manifest.json')).json();for(const src of ['content/page-bridge.js',...m.content_scripts[0].js.filter(x=>x!=='content/panel.js')])await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='../../../'+src;s.onload=resolve;s.onerror=reject;document.head.append(s)});window.fixtureReady=true;})();
 </script></html>

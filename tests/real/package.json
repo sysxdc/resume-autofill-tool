@@ -17,6 +17,7 @@
     "element-ui": "2.15.14",
     "element-plus": "2.8.4",
     "ant-design-vue": "4.2.6",
+    "antdv1": "npm:ant-design-vue@1.7.8",
     "layui": "2.9.16",
     "@beisen-phoenix/select": "3.3.55",
     "@beisen-phoenix/select-list": "3.3.55",

@@ -86,7 +86,7 @@
 
   function closePhoenixPanels() {
     // 点回处于 active 的宿主最稳（合成 Escape 对部分组件无效）
-    var active = document.querySelector('.phoenix-select--active');
+    var active = C.queryOne('.phoenix-select--active');
     if (active) {
       simulateClick(active.querySelector('.phoenix-select__input') || active);
       return;
@@ -144,7 +144,7 @@
   }
 
   function phoenixVisiblePanels() {
-    return Array.prototype.filter.call(document.querySelectorAll(PHOENIX_PANEL_SEL), function (n) {
+    return Array.prototype.filter.call(C.queryAll(PHOENIX_PANEL_SEL), function (n) {
       return isVisibleEl(n);
     });
   }
@@ -377,7 +377,7 @@
 
   async function fillPhoenixRadioGroups(profile, keyCounts, filledKeys) {
     var filled = 0;
-    var groups = Array.from(document.querySelectorAll('.phoenix-radio-group')).filter(function (g) {
+    var groups = Array.from(C.queryAll('.phoenix-radio-group')).filter(function (g) {
       return isVisibleEl(g);
     });
     for (var gi = 0; gi < groups.length; gi++) {

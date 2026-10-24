@@ -79,19 +79,14 @@
     if (el.disabled || el.readOnly) return false;
     var tag = el.tagName.toLowerCase();
     if (tag === 'select') {
-      var opts = Array.from(el.options).map(function (o) {
-        return { value: o.value, text: o.text };
+      if (el.multiple) return false;
+      var opts = Array.from(el.options).filter(C.optionEnabled).map(function (o) {
+        return { value: o.value, text: o.text, el:o };
       });
       var matched = M.matchSelectOption(opts, value);
       if (!matched) return false;
-      el.value = matched.value;
-      // 同 value 的选项有多个 / value 为空时，el.value 赋值可能落不到目标项：按下标再落一次
-      if (el.value !== matched.value || (el.options[el.selectedIndex] || {}).text !== matched.text) {
-        for (var si = 0; si < el.options.length; si++) {
-          if (el.options[si].value === matched.value && el.options[si].text === matched.text) { el.selectedIndex = si; break; }
-        }
-      }
-      if (el.value !== matched.value) return false;
+      el.selectedIndex = Array.from(el.options).indexOf(matched.el);
+      if (el.value !== matched.value || !C.optionEnabled(el.options[el.selectedIndex])) return false;
     } else if (el.type === 'checkbox' || el.type === 'radio') {
       return false;
     } else {
@@ -305,7 +300,7 @@
         read: typeof read === 'function' ? read : null,
         key: String(key || ''),
         label: String((C.getLabelText && C.getLabelText(el)) || (el && el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('placeholder'))) || key || ''),
-        expected: String(expected == null ? '' : expected),
+        expected: Array.isArray(expected) ? expected.slice() : String(expected == null ? '' : expected),
         kind: String(kind || '')
       });
     } catch (_) { /* ignore */ }
@@ -314,6 +309,7 @@
   /** 回读一个控件当前显示的值（覆盖 input / textarea / select / antd 宿主 / 单选组） */
   function readBackValue(el) {
     if (!el || el.nodeType !== 1) return '';
+    if (C.isMultiSelect && C.isMultiSelect(el)) return C.readMultiValues(el);
     if (el.isContentEditable) return String(el.innerText || '').trim();
     var tag = String(el.tagName || '').toLowerCase();
     try {
@@ -330,6 +326,8 @@
         return String(el.value || '').trim();
       }
       // 自定义下拉宿主
+      if (el.matches('.ant-cascader-picker') && C.cascaderSelectionText) return C.cascaderSelectionText(el);
+      if (el.matches('.ant-select') && el.querySelector('.ant-select-selection--single')) return C.customSelectText(el);
       if (C.ariaCombobox && C.ariaCombobox(el)) return C.ariaSelectionText(el);
       var shown = el.querySelector('.phoenix-select__tipEle, .ant-select-selection-selected-value, .ant-select-selection-item, .el-select__selected-item:not(.el-select__input-wrapper):not(.is-transparent), .selected-text');
       if (shown) return String(shown.textContent || '').replace(/\s+/g, ' ').trim();
@@ -346,7 +344,7 @@
     try {
       var entries = fillRecords.map(function (r) {
         var actual = '';
-        try { if (!r.el || r.el.isConnected !== false) actual = r.read ? String(r.read() || '') : readBackValue(r.el); } catch (_) { actual = ''; }
+        try { if (!r.el || r.el.isConnected !== false) actual = r.read ? r.read() : readBackValue(r.el); } catch (_) { actual = ''; }
         return { key: r.key, label: r.label, expected: r.expected, actual: actual, kind: r.kind };
       });
       var audit = A.auditEntries(entries, { ignoreEmpty: false });

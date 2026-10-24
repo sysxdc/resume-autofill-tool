@@ -221,7 +221,7 @@
 
   async function fillYearMonthPairs(profile, filledKeys, bindings) {
     var filled = 0;
-    var blocks = Array.prototype.slice.call(document.querySelectorAll('[class*="apply-block"]'));
+    var blocks = Array.prototype.slice.call(C.queryAll('[class*="apply-block"]'));
     for (var bi = 0; bi < blocks.length; bi++) {
       var blockEl = blocks[bi];
       var sec = ymSectionOf(blockEl);
@@ -246,8 +246,8 @@
           var rowIndex = bound && bound.listKey === sec.listKey ? bound.index : gi;
           var item = list[rowIndex] || null;
           var sf = sec.startField || 'start';
-          var start = item && item[sf] ? String(item[sf]) : (gi === 0 ? (M.profileValue(profile, sec.startKey) || '') : '');
-          var end = sec.endKey ? (item && item.end ? String(item.end) : (gi === 0 ? (M.profileValue(profile, sec.endKey) || '') : '')) : '';
+          var start = M.profileValueForOccurrence(profile,sec.startKey,rowIndex);
+          var end = sec.endKey ? M.profileValueForOccurrence(profile,sec.endKey,rowIndex) : '';
           if (!start) continue;
           var sp = parseDateParts(start);
           var ep = end && end !== '至今' ? parseDateParts(end) : null;
@@ -388,9 +388,9 @@
   /** 页面上的范围日期控件：按分区/段序取 eduList[i].start/end 等 */
   async function fillRangeEditors(profile, handled, filledKeys, bindings) {
     var rangeSeen = {};
-    var editors = Array.prototype.filter.call(document.querySelectorAll(RANGE_EDITOR_SEL), isVisibleEl);
+    var editors = Array.prototype.filter.call(C.queryAll(RANGE_EDITOR_SEL), isVisibleEl);
     // antd v3 的 RangePicker 没有专门的范围类名：认 .ant-calendar-range-picker-input 所在的 .ant-calendar-picker
-    Array.prototype.forEach.call(document.querySelectorAll('.ant-calendar-range-picker-input'), function (inp) {
+    Array.prototype.forEach.call(C.queryAll('.ant-calendar-range-picker-input'), function (inp) {
       var box = inp.closest('.ant-calendar-picker');
       if (box && editors.indexOf(box) === -1 && isVisibleEl(box)) editors.push(box);
     });

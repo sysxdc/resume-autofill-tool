@@ -21,8 +21,8 @@ test('整理修复错误类型、补足 GPA 精度，不覆盖真实冲突且不
   const copy = structuredClone(source);
   const result = P.repairProfile(source);
   assert.deepEqual(source,copy);
-  assert.equal(result.profile.degree,'工学学士');
-  assert.equal(result.profile.eduList[0].gpa,'3.0/4.5');
+  assert.equal(result.profile.degree,'本科','来源冲突时不重写主学位');
+  assert.equal(result.profile.eduList[0].gpa,'3.0','来源冲突时不补分母');
   assert.equal(result.profile.school,'另一个学校');
   assert.equal(result.profile.customRetained,'保留扩展数据');
   assert.ok(result.report.issues.some(x=>x.path==='school'));

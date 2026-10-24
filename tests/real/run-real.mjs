@@ -35,8 +35,7 @@ function loadPlaywright() {
 }
 
 if (!fs.existsSync(path.join(HERE, 'node_modules', 'antd5'))) {
-  console.log('（跳过：没装组件库。先执行 cd tests/real && npm install）');
-  process.exit(0);
+  throw new Error('缺少必需组件库：先执行 cd tests/real && npm install');
 }
 // 北森 Phoenix 是 ESM 包，先打成浏览器包（只在缺失时）
 if (!fs.existsSync(path.join(HERE, 'vendor', 'phoenix.bundle.js'))) {
@@ -87,8 +86,8 @@ const BEISEN_PROFILE = {
 const BEISEN_EXPECT = {
   name: '张三', gender: '男', birth: '1998-05-20', phone: '13800138000', email: 'zs@example.com', pol: '中共党员', hd: '硕士',
   fresh: '是', report: '2025-07', emName: '李四', emPhone: '13900139000',
-  school0: '某理工大学', major0: '计算机科学与技术', deg0: '硕士', mode0: '全日制', es0: '2021-09', ee0: '2024-06',
-  school1: '某大学', major1: '软件工程', deg1: '本科', mode1: '全日制', es1: '2017-09', ee1: '2021-06',
+  school0: '某理工大学', major0: '计算机科学与技术', deg0: '硕士', mode0: undefined, es0: '2021-09', ee0: '2024-06',
+  school1: '某大学', major1: '软件工程', deg1: '本科', mode1: undefined, es1: '2017-09', ee1: '2021-06',
   co: '甲科技', ti: '前端工程师', ws: '2024-07', we: '2025-08'
 };
 
@@ -106,6 +105,9 @@ const MOKA_EXPECT = {
 };
 
 const CASES = [
+  {page:'csg',profile:{eduList:[{school:'测试工业大学',schoolEnglish:'Test University',degree:'本科',major:'自动化',schoolType:'境内院校',gpa:'3.0/4.5',rank:'15/120',start:'2023-09-01',end:'2027-06-30'}],langList:[{name:'英语',certName:'CET-4',level:'良好',score:'520'}],englishLevel:'CET-4',englishScore:'520'},
+    expect:{school:['GD','TEST'],english:['GD','TEST'],degree:['B'],major:['ENG','AUTO'],schoolType:'境内院校',gpa:'3',scale:'4.5',rank:'15',total:'120',start:'2023-09-01',end:'2027-06-30',lang:'EN',cert:'C4',score:'520',declaration:false,saved:0,submitted:0},maxMs:22000},
+  ...['content','popup','panel'].map(trigger=>({page:'frames',name:'frames-'+trigger,trigger,profile:{name:'测试人',email:'test@example.test',school:'测试大学',phone:'13800000000'},expect:{name:'测试人',email:'test@example.test',school:'测试大学',phone:'13800000000'},maxMs:14000,expectedFilled:4})),
   {page:'aria-generic',profile:{school:'测试大学',highestDegree:'硕士'},expect:{school:'UNI-CODE',degree:'CODE-42'},maxMs:10000},
   {page:'rich-generic',profile:{summary:'第一段。\n第二段。',projectList:[{name:'测试项目',description:'纯文本项目内容'}],workList:[{description:'拟填内容'}]},expect:{summary:'第一段。\n第二段。',project:'纯文本项目内容',work:'用户已有的内容'},maxMs:8000},
   { page: 'moka', profile: MOKA_PROFILE, expect: MOKA_EXPECT, maxMs: 30000 },
@@ -132,6 +134,8 @@ const CASES = [
   { page: 'big-antd4', profile: BIG, expect: BIG_EXPECT, maxMs: 25000 }
 ].filter((c) => !filter || filter.split(',').includes(c.page));
 
+if (!CASES.length) throw new Error('真实扩展测试过滤后零用例：' + filter);
+
 const MIME = { '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html; charset=utf-8', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf' };
 const fixtureAliases = new Map([
   ['/pages/aria-generic.html',path.resolve(HERE,'../fixtures/dom/aria-components.html')],
@@ -155,6 +159,15 @@ const ctx = await chromium.launchPersistentContext('', {
 });
 let [sw] = ctx.serviceWorkers();
 if (!sw) sw = await ctx.waitForEvent('serviceworker', { timeout: 15000 });
+// 等安装初始化完成再写用例资料，避免 onInstalled 的空档案晚到并覆盖首例。
+await sw.evaluate(async () => {
+  for (let i=0;i<100;i++) {
+    const data=await chrome.storage.local.get('aiSettings');
+    if (data.aiSettings) return;
+    await new Promise(resolve=>setTimeout(resolve,50));
+  }
+  throw new Error('扩展安装初始化未完成');
+});
 
 let passed = 0;
 const failed = [];
@@ -196,7 +209,18 @@ for (const c of CASES) {
       }, tabId);
     }
     const t0 = Date.now();
-    const r = await sw.evaluate(async (id) => chrome.tabs.sendMessage(id, { type: 'FILL_FORM', options: { allowAddSections: false } }, { frameId: 0 }), tabId);
+    let r;
+    if (c.trigger === 'panel') {
+      await page.click('#__ra_panel_host__ [data-act="fill"]');
+      await page.waitForFunction(()=>!!document.getElementById('__ra_panel_host__').dataset.lastResult);
+      r=await page.evaluate(()=>JSON.parse(document.getElementById('__ra_panel_host__').dataset.lastResult));
+      r.ok=true;
+    } else if (c.trigger === 'popup') {
+      const popup=await ctx.newPage();
+      await popup.goto('chrome-extension://'+new URL(sw.url()).hostname+'/popup/popup.html');
+      r=await popup.evaluate(id=>chrome.runtime.sendMessage({type:'RUN_FILL',tabId:id,options:{allowAddSections:false}}),tabId);
+      await popup.close();
+    } else r = await sw.evaluate(async (id) => chrome.tabs.sendMessage(id, { type: 'FILL_FORM', options: { allowAddSections: false } }, { frameId: 0 }), tabId);
     const ms = Date.now() - t0;
     await page.waitForTimeout(300);
     // 页面状态必须从「已填充的那个 frame」里取：page.evaluate 只打主 frame，
@@ -226,6 +250,9 @@ for (const c of CASES) {
     });
     if (!r || r.ok === false) bad.push('填写失败：' + JSON.stringify(r));
     if (r && r.timedOut) bad.push('超时');
+    if (r && (r.unverifiedFrames || []).length) bad.push('存在未验证 frame：'+JSON.stringify(r.unverifiedFrames));
+    if (c.expectedFilled && r.filled !== c.expectedFilled) bad.push('frame 汇总应为 '+c.expectedFilled+'，实际 '+r.filled);
+    if ((r.filledKeys || r.keys || []).includes('forged')) bad.push('网页伪造的统计不应被接受');
     if (r && r.reason === 'empty_profile') {
       // 定位用：到底是档没写进去，还是内容脚本读不到
       const diag = await sw.evaluate(async (id) => {
@@ -240,7 +267,13 @@ for (const c of CASES) {
     }
     if (ms > c.maxMs) bad.push(`耗时 ${ms}ms > ${c.maxMs}ms`);
     if (errs.length) bad.push('页面报错：' + errs.join('; '));
-    if (bad.length) throw new Error(bad.join('\n     '));
+    if (bad.length) {
+      if (c.page==='csg' || c.page==='element-plus') {
+        const fields=await sw.evaluate(id=>chrome.tabs.sendMessage(id,{type:'COLLECT_FIELDS'},{frameId:0}),tabId);
+        bad.push('组件诊断：'+JSON.stringify({skipped:r.skipped,fields:fields.fields.filter(f=>/学历|入学|开始|结束/.test(f.label)).map(f=>({label:f.label,key:f.semanticKey,ref:f.recordRef}))}));
+      }
+      throw new Error(bad.join('\n     '));
+    }
     passed += 1;
     console.log(`  ✓ ${c.name || c.page}  ${ms}ms  filled=${r.filled}`);
   } catch (e) {

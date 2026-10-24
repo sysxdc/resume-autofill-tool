@@ -51,7 +51,7 @@
     'hasRelativeAtCompany', 'referralSource', 'acceptAdjustment',
     'availability', 'noticePeriod', 'earliestStart', 'workAuth',
     // —— 教育背景（主条目） ——
-    'school', 'eduDegree', 'degree', 'isUpgradeFromCollege', 'department', 'major', 'majorCategory',
+    'school', 'schoolEnglish', 'eduDegree', 'degree', 'isUpgradeFromCollege', 'department', 'major', 'majorCategory',
     'schoolCity', 'schoolType', 'eduStatus', 'eduYears', 'studyMode', 'eduMode',
     'eduStart', 'eduEnd', 'gradYear', 'degreeAwardDate',
     'degreeType', 'degreeCategory', 'enrollmentType', 'isTongzhao',
@@ -113,8 +113,8 @@
 
   var LIST_ITEM_FIELDS = {
     // degree = 学历（本科 / 硕士），academicDegree = 学位（工学学士），两者在网申里是两个不同的下拉
-    eduList: ['school', 'department', 'major', 'majorCategory', 'degree', 'academicDegree', 'studyMode', 'start', 'end',
-      'city', 'gpa', 'rank', 'courses', 'advisor', 'research', 'thesis', 'description'],
+    eduList: ['school', 'schoolEnglish', 'department', 'major', 'majorCategory', 'degree', 'academicDegree', 'studyMode', 'start', 'end',
+      'city', 'schoolType', 'gpa', 'classRank', 'rank', 'majorClassSize', 'courses', 'advisor', 'research', 'thesis', 'description'],
     internList: ['company', 'department', 'title', 'nature', 'industry', 'start', 'end', 'city', 'salary', 'achievements', 'description', 'leaveReason',
       'refereeName', 'refereeContact'],
     workList: ['company', 'department', 'title', 'nature', 'industry', 'start', 'end', 'city', 'salary', 'description',
@@ -130,9 +130,10 @@
   /** 选项页多段编辑：字段中文标签 */
   var LIST_ITEM_LABELS = {
     eduList: {
+      schoolEnglish: '学校英文名称',
       school: '学校', department: '院系', major: '专业', majorCategory: '专业类别', degree: '学历（本科/硕士）',
       academicDegree: '学位（如 工学学士）', studyMode: '学习形式（全日制）', start: '开始', end: '结束',
-      city: '城市（学校所在）', gpa: 'GPA', rank: '排名（如 5/120）', courses: '主修课程', advisor: '导师',
+      city: '城市（学校所在）', schoolType: '院校类型', gpa: 'GPA', classRank: '班级排名', rank: '专业排名（如 5/120）', majorClassSize: '专业人数', courses: '主修课程', advisor: '导师',
       research: '研究方向', thesis: '毕业论文', description: '描述'
     },
     internList: {
@@ -170,9 +171,9 @@
   /** 数组第一条 → 扁平主条目字段名映射 */
   var MAIN_ENTRY_MAP = {
     eduList: {
-      school: 'school', department: 'department', major: 'major', majorCategory: 'majorCategory', degree: 'eduDegree',
+      school: 'school', schoolEnglish: 'schoolEnglish', department: 'department', major: 'major', majorCategory: 'majorCategory', degree: 'eduDegree',
       academicDegree: 'degree', studyMode: 'studyMode', start: 'eduStart', end: 'eduEnd', city: 'schoolCity', gpa: 'gpa',
-      rank: 'majorRank', courses: 'majorCourses', advisor: 'advisorName', research: 'researchDirection', thesis: 'thesisTitle', description: 'eduDescription'
+      schoolType: 'schoolType', classRank: 'classRank', majorClassSize: 'majorClassSize', rank: 'majorRank', courses: 'majorCourses', advisor: 'advisorName', research: 'researchDirection', thesis: 'thesisTitle', description: 'eduDescription'
     },
     internList: {
       company: 'internCompany', department: 'internDepartment', title: 'internTitle', industry: 'internIndustry',
@@ -205,7 +206,7 @@
   function normalizeListItem(listKey, item) {
     var keys = LIST_ITEM_FIELDS[listKey] || [];
     var src = item || {};
-    var out = {};
+    var out = cloneData(src);
     for (var i = 0; i < keys.length; i++) {
       var k = keys[i];
       out[k] = src[k] == null ? '' : String(src[k]).trim();
@@ -222,7 +223,7 @@
       for (var j = 0; j < LIST_ITEM_FIELDS[listKey].length; j++) {
         if (it[LIST_ITEM_FIELDS[listKey][j]]) hasValue = true;
       }
-      if (hasValue) out.push(it);
+      if (hasValue || Object.keys(it).some(function (k) { return LIST_ITEM_FIELDS[listKey].indexOf(k) < 0 && it[k] != null; })) out.push(it);
     }
     return out;
   }
@@ -311,7 +312,8 @@
       });
     });
     var education = p.eduList[0];
-    if (education) {
+    var sameEducation = education && [['school','school'],['eduStart','start'],['eduEnd','end']].every(function (pair) { return text(p[pair[0]]) && text(p[pair[0]]) === text(education[pair[1]]); });
+    if (sameEducation) {
       var flatGpa = gpaParts(p.gpa), rowGpa = gpaParts(education.gpa);
       if (flatGpa && rowGpa && Number(flatGpa[1]) === Number(rowGpa[1])) {
         if (flatGpa[2] && !rowGpa[2]) { education.gpa = text(p.gpa); changed('gpa_scale_completed','eduList[0].gpa','gpa'); }
@@ -327,14 +329,14 @@
     if (!p.langList.length && text(p.langName)) {
       var language = {};
       Object.keys(MAIN_ENTRY_MAP.langList).forEach(function (field) { language[field] = text(p[MAIN_ENTRY_MAP.langList[field]]); });
-      if (!language.certName && /^(英语|english)$/i.test(language.name)) language.certName = text(p.englishLevel);
+
       p.langList.push(language); changed('language_structured','langList','langName');
     }
     p.workList = p.workList.filter(function (row) {
       if (!/^(实习|intern|internship)$/i.test(text(row.nature))) return true;
       var beforeChanges = changes.length;
       var originalRow = JSON.parse(JSON.stringify(row));
-      if (/^(实习生|intern)$/i.test(text(row.title)) && /实习|intern/i.test(text(p.internTitle)) &&
+      if (/^(实习生|intern)$/i.test(text(row.title)) && /实习|\bintern(?:ship)?\b/i.test(text(p.internTitle)) &&
           text(p.internCompany) === text(row.company) && text(row.company) &&
           (!text(p.internStart) || text(p.internStart) === text(row.start)) &&
           (!text(p.internEnd) || text(p.internEnd) === text(row.end))) {
@@ -665,9 +667,24 @@
     ]
   };
 
+  var MULTI_VALUE_KEYS = ['expectedCity', 'expectedIndustry', 'techSkills', 'softwareSkills'];
+
+  function cloneData(value) {
+    return value == null ? {} : JSON.parse(JSON.stringify(value));
+  }
+
+  function normalizeMultiValues(raw) {
+    var out = cloneData(raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {});
+    MULTI_VALUE_KEYS.forEach(function (key) {
+      if (!Array.isArray(out[key])) { delete out[key]; return; }
+      out[key] = Array.from(new Set(out[key].filter(function (v) { return typeof v === 'string'; }).map(function (v) { return v.trim(); }).filter(Boolean)));
+    });
+    return out;
+  }
+
   function normalizeProfile(raw) {
-    var out = emptyProfile();
     var src = raw || {};
+    var out = Object.assign(emptyProfile(), cloneData(src));
     for (var i = 0; i < PROFILE_FIELDS.length; i++) {
       var k = PROFILE_FIELDS[i];
       if (src[k] != null) out[k] = String(src[k]).trim();
@@ -676,6 +693,7 @@
       var lk = LIST_FIELDS[j];
       out[lk] = normalizeList(lk, src[lk] || []);
     }
+    out.multiValues = normalizeMultiValues(src.multiValues);
     return out;
   }
 
@@ -685,7 +703,7 @@
   function mergeFlatOntoProfile(flat, existing) {
     var base = existing && typeof existing === 'object' ? existing : {};
     var overlay = flat && typeof flat === 'object' ? flat : {};
-    var merged = {};
+    var merged = Object.assign({}, cloneData(base), cloneData(overlay));
     var i, k;
     for (i = 0; i < PROFILE_FIELDS.length; i++) {
       k = PROFILE_FIELDS[i];
@@ -706,6 +724,7 @@
 
   function profileHasData(profile) {
     var p = profile || {};
+    if (MULTI_VALUE_KEYS.some(function (key) { return Array.isArray((p.multiValues || {})[key]) && p.multiValues[key].some(function (v) { return typeof v === 'string' && v.trim(); }); })) return true;
     for (var i = 0; i < PROFILE_FIELDS.length; i++) {
       var v = p[PROFILE_FIELDS[i]];
       if (v && String(v).trim()) return true;
@@ -726,6 +745,8 @@
   }
 
   return {
+    MULTI_VALUE_KEYS: MULTI_VALUE_KEYS,
+    normalizeMultiValues: normalizeMultiValues,
     PROFILE_FIELDS: PROFILE_FIELDS,
     LIST_FIELDS: LIST_FIELDS,
     LIST_ITEM_FIELDS: LIST_ITEM_FIELDS,

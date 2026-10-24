@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "简历填写工具",
-  "version": "1.8.1",
+  "version": "1.9.0",
   "description": "本地存储简历资料，匹配并填写求职表单。AI 默认只发送字段标签；全文模式需显式开启。提交前由您确认。",
   "permissions": [
     "storage",
@@ -40,11 +40,13 @@
         "shared/date-strategies.js",
         "shared/audit.js",
         "shared/select-chain.js",
+        "content/fill/dom.js",
         "content/fill/recognize.js",
         "content/fill/write.js",
         "content/fill/sections.js",
         "content/fill/aria-select.js",
         "content/fill/select.js",
+        "content/fill/multi-select.js",
         "content/fill/dates.js",
         "content/sites/antd-date.js",
         "content/sites/laydate.js",

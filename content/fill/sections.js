@@ -28,6 +28,10 @@
   var STRUCT_FIELDS = {
     education: {
       schoolname: { field: 'school', key: 'school' },
+      schoolenglish: {field:'schoolEnglish',key:'schoolEnglish'},
+      schooltype: {field:'schoolType',key:'schoolType'},
+      classrank: {field:'classRank',key:'classRank'},
+      majorclasssize: {field:'majorClassSize',key:'majorClassSize'},
       city: { field: 'city', key: 'schoolCity' },
       collegename: { field: 'department', key: 'department' },
       department: { field: 'department', key: 'department' },
@@ -112,79 +116,139 @@
       if (/毕业|结束|截止|离职|离校|至今|结束时间/.test(ph)) { field = 'end'; key = section === 'education' ? 'eduEnd' : (section === 'work' ? 'workEnd' : key); }
       else if (/入学|开始|入职|起始/.test(ph)) { field = 'start'; key = section === 'education' ? 'eduStart' : (section === 'work' ? 'startDate' : key); }
     }
-    return { listKey: STRUCT_LIST_KEY[section], index: index, field: field, key: key, rowPrefix: String(el.id).slice(0, String(el.id).lastIndexOf('_') + 1) };
+    return { listKey: STRUCT_LIST_KEY[section], index: index, field: field, key: key, rowPrefix: C.rootId(el) + ':' + String(el.id).slice(0, String(el.id).lastIndexOf('_') + 1) };
   }
 
   /** 先把整行绑定到资料条目，再填该行子字段；已有内容优先于页面行号。 */
   function buildStructuredBindings(profile) {
     var A = globalThis.ResumeAutofillAudit;
-    var groups = {};
-    var result = {};
-    var identity = {eduList:'school', workList:'company', internList:'company', projectList:'name', awardList:'name'};
-    Array.prototype.forEach.call(document.querySelectorAll('input[id], textarea[id], select[id]'), function (el) {
-      var s = detectStructuredField(el);
-      if (!s || !identity[s.listKey] || !isVisibleEl(el) || el.type === 'hidden') return;
-      var group = groups[s.listKey] || (groups[s.listKey] = {});
-      var row = group[s.rowPrefix] || (group[s.rowPrefix] = {index:s.index, anchors:[]});
-      if ([identity[s.listKey], 'start', 'end'].indexOf(s.field) === -1 || !C.fieldLooksFilled(el)) return;
-      row.anchors.push({field:s.field, key:s.key, value:C.readBackValue(el)});
+    var all = C.logicalControls(), entries = [], groups = {}, result = {fields:new WeakMap(),records:{}};
+    var identity = {eduList:'school',workList:'company',internList:'company',projectList:'name',awardList:'name',certList:'name',langList:'certName',campusList:'org',familyList:'name'};
+    all.forEach(function (el) {
+      var target = el;
+      var structured = detectStructuredField(el);
+      if (!structured && el.querySelector) {
+        target = el.querySelector('input[id],textarea[id],select[id]') || el;
+        structured = detectStructuredField(target);
+      }
+      var key = structured ? structured.key : (C.sectionFallbackKey(el) || C.matchKeyForElement(el));
+      if (key === 'langLevel' && /等级|级别|考试|证书/.test(C.getLabelText(el)) && !/掌握|熟练/.test(C.getLabelText(el))) key = 'langCertName';
+      var map = M.LIST_OCCURRENCE_MAP[key];
+      if (!map) return;
+      var range = el.closest('.el-date-editor--daterange, .el-date-editor--datetimerange, .el-date-editor--monthrange, .ant-picker-range, [class*="date-range"]');
+      if (!range && el.matches('.ant-calendar-range-picker-input')) range = el.closest('.ant-calendar-picker');
+      if (!structured && range) {
+        var inputs = Array.from(range.querySelectorAll('input'));
+        var input = el.matches('input') ? el : el.querySelector('input');
+        var position = inputs.indexOf(input);
+        var end = inputs.length >= 4 ? position >= 2 : (inputs.length === 2 && !/[年月]|yyyy|mm/i.test(input && input.placeholder || '') && position === 1);
+        var rangeKey = Object.keys(M.LIST_OCCURRENCE_MAP).find(function (k) { var candidate = M.LIST_OCCURRENCE_MAP[k]; return candidate[0] === map[0] && candidate[1] === (end ? 'end' : 'start'); });
+        if (rangeKey) { key = rangeKey; map = M.LIST_OCCURRENCE_MAP[key]; }
+      }
+      var split = C.splitNumericField(el);
+      var part = split ? split.part : (M.detectDatePartRole(C.collectHints(el),{adjacentPairRole:C.detectAdjacentDatePairRole(el) || undefined}) || '');
+      entries.push({el:el,target:target,key:key,listKey:map[0],field:map[1],slot:map[1] + ':' + part,part:part,structured:structured});
     });
-    Object.keys(groups).forEach(function (listKey) {
-      var list = M.listFor(profile, listKey);
-      if (!list.length) return; // 无列表时继续兼容第 0 段的扁平资料。
-      var rows = groups[listKey], reserved = {}, owners = {};
+    var counters = {}, orders = {};
+    entries.forEach(function (entry) {
+      var row = null, s = entry.structured, root = C.rootId(entry.el);
+      if (!s) {
+        // 取包含多个同类子字段、且每种字段只出现一次的最小容器。
+        var node = C.parentComposed(entry.el);
+        while (node && node !== document.body) {
+          var inside = entries.filter(function (other) { return other.listKey === entry.listKey && C.containsComposed(node,other.el); });
+          var kinds = new Set(inside.map(function (other) { return other.slot; }));
+          if (inside.length > kinds.size) break;
+          if (kinds.size > 1 && inside.some(function (other) { return other.field === identity[entry.listKey]; })) { row = node; break; }
+          node = C.parentComposed(node);
+        }
+        var counter = root + ':' + entry.listKey + ':' + entry.slot + ':' + C.getLabelText(entry.el);
+        var occurrence = counters[counter] || 0; counters[counter] = occurrence + 1;
+        var prefix = row ? C.fieldId(row) : root + ':' + entry.listKey + ':' + occurrence;
+        var orderKey = entry.listKey;
+        var order = orders[orderKey] || (orders[orderKey] = []);
+        if (order.indexOf(prefix) < 0) order.push(prefix);
+        s = {listKey:entry.listKey,field:entry.field,key:entry.key,index:order.indexOf(prefix),rowPrefix:prefix};
+      }
+      entry.ref = s;
+      var groupKey = s.listKey;
+      var group = groups[groupKey] || (groups[groupKey] = {listKey:s.listKey,rows:{}});
+      var record = group.rows[s.rowPrefix] || (group.rows[s.rowPrefix] = {index:s.index,anchors:[]});
+      if (!/^(year|month|day)$/.test(entry.part) && [identity[s.listKey], 'start', 'end', 'date'].indexOf(s.field) >= 0) {
+        var members = result.records[s.rowPrefix] || (result.records[s.rowPrefix] = []);
+        members.push({el:entry.el,field:s.field,key:s.key});
+      }
+      if (!/^(year|month|day)$/.test(entry.part) && [identity[s.listKey], 'start', 'end', 'date'].indexOf(s.field) >= 0 && C.fieldLooksFilled(entry.el)) {
+        record.anchors.push({field:s.field,key:s.key,value:C.readBackValue(entry.el)});
+      }
+    });
+    Object.keys(groups).forEach(function (groupKey) {
+      var group = groups[groupKey], rows = group.rows, list = M.listFor(profile,group.listKey), reserved = {}, owners = {};
+      if (!list.length) {
+        var flat = {};
+        Object.keys(M.LIST_OCCURRENCE_MAP).forEach(function (key) {
+          var map = M.LIST_OCCURRENCE_MAP[key];
+          if (map[0] === group.listKey) { var value = M.profileValue(profile,key); if (value) flat[map[1]] = value; }
+        });
+        if (Object.keys(flat).length) list = [flat];
+        else return;
+      }
       Object.keys(rows).forEach(function (prefix) {
         var row = rows[prefix];
         if (!row.anchors.length) return;
         var matches = [];
-        list.forEach(function (item, index) {
+        list.forEach(function (item,index) {
           if (row.anchors.every(function (a) {
-            var expected = item[a.field];
-            if (expected == null || !A) return false;
-            var comparison = A.compareEntry({key:a.key, expected:String(expected), actual:a.value});
-            return comparison.accepted || (/^(start|end)$/.test(a.field) && comparison.status === 'approx');
+            if (item[a.field] == null || !A) return false;
+            var compared = A.compareEntry({key:a.key,expected:String(item[a.field]),actual:a.value});
+            return compared.accepted || (/^(start|end|date)$/.test(a.field) && compared.status === 'approx');
           })) matches.push(index);
         });
         matches.forEach(function (index) { reserved[index] = true; });
         if (matches.length === 1) {
-          var index = matches[0];
-          result[prefix] = {index:index};
-          if (owners[index]) {
-            result[prefix] = {reason:'duplicate_record'};
-            result[owners[index]] = {reason:'duplicate_record'};
-          } else owners[index] = prefix;
+          var index = matches[0]; result[prefix] = {index:index};
+          if (owners[index]) { result[prefix] = {reason:'duplicate_record'}; result[owners[index]] = {reason:'duplicate_record'}; }
+          else owners[index] = prefix;
         } else result[prefix] = {reason:matches.length ? 'record_ambiguous' : 'record_conflict'};
       });
-      Object.keys(rows).sort(function (a, b) { return rows[a].index - rows[b].index; }).forEach(function (prefix) {
+      Object.keys(rows).sort(function (a,b) { return rows[a].index - rows[b].index; }).forEach(function (prefix) {
         if (result[prefix]) return;
         var index = rows[prefix].index;
-        if (index >= list.length || reserved[index]) {
-          index = list.findIndex(function (_, i) { return !reserved[i]; });
-        }
+        if (index >= list.length || reserved[index]) index = list.findIndex(function (_,i) { return !reserved[i]; });
         if (index < 0) result[prefix] = {reason:'no_record_available'};
         else { result[prefix] = {index:index}; reserved[index] = true; }
       });
+    });
+    entries.forEach(function (entry) {
+      var ref = Object.assign({},entry.ref,result[entry.ref.rowPrefix] || {});
+      result.fields.set(entry.el,ref); result.fields.set(entry.target,ref);
     });
     return result;
   }
 
   function boundStructuredField(el, bindings) {
-    var s = detectStructuredField(el);
-    var bound = s && bindings && bindings[s.rowPrefix];
-    return bound ? Object.assign({}, s, bound) : s;
+    if (bindings && bindings.fields && bindings.fields.has(el)) return bindings.fields.get(el);
+    var s = detectStructuredField(el), bound = s && bindings && bindings[s.rowPrefix];
+    return bound ? Object.assign({},s,bound) : s;
+  }
+
+  function bindingStillValid(el,ref,profile,bindings) {
+    if (!el || !el.isConnected || (ref && ref.reason)) return false;
+    if (!ref || !bindings || !bindings.records) return true;
+    var A = globalThis.ResumeAutofillAudit;
+    return (bindings.records[ref.rowPrefix] || []).every(function (anchor) {
+      if (!anchor.el.isConnected) return false;
+      if (!C.fieldLooksFilled(anchor.el)) return true;
+      var expected = M.recordValue(profile,anchor.key,Object.assign({},ref,{field:anchor.field,key:anchor.key}));
+      if (!expected) return false;
+      var compared = A.compareEntry({key:anchor.key,expected:expected,actual:C.readBackValue(anchor.el)});
+      return compared.accepted || (/^(start|end|date)$/.test(anchor.field) && compared.status === 'approx');
+    });
   }
 
   /** 第 N 段的值；第 0 段且条目为空时回落到扁平字段 */
   function structuredValue(profile, struct) {
-    if (!struct) return '';
-    var list = M.listFor ? M.listFor(profile, struct.listKey) : (profile && Array.isArray(profile[struct.listKey]) ? profile[struct.listKey] : []);
-    var item = list[struct.index] || null;
-    if (item) {
-      var v = item[struct.field];
-      if (v != null && String(v).trim()) return String(v).trim();
-    }
-    if (struct.index === 0) return M.profileValue(profile, struct.key) || '';
-    return '';
+    return struct ? M.recordValue(profile, struct.key, struct) : '';
   }
 
 
@@ -216,7 +280,7 @@
   function addButtonNodes() {
     var root = document.body || document.documentElement;
     if (!root || !document.createTreeWalker) {
-      return Array.prototype.slice.call(document.querySelectorAll(ADD_BUTTON_NODE_SEL));
+      return Array.prototype.slice.call(C.queryAll(ADD_BUTTON_NODE_SEL));
     }
     var walker = document.createTreeWalker(root, 4 /* NodeFilter.SHOW_TEXT */, null);
     var picked = [];
@@ -236,7 +300,7 @@
       }
     }
     // 图标按钮可能没有文本节点（<i class="add">），保留按钮类元素的老路径
-    Array.prototype.forEach.call(document.querySelectorAll('button, [role="button"], .ant-btn, .el-button'), function (b) {
+    Array.prototype.forEach.call(C.queryAll('button, [role="button"], .ant-btn, .el-button'), function (b) {
       if (mark ? mark.has(b) : picked.indexOf(b) !== -1) return;
       if (mark) mark.add(b);
       picked.push(b);
@@ -303,7 +367,7 @@
 
   /** 该分区当前已有多少条记录（按行级 id 或列表容器判断） */
   function countSectionRows(rule) {
-    var cells = document.querySelectorAll('.form-cell');
+    var cells = C.queryAll('.form-cell');
     for (var ci = 0; ci < cells.length; ci++) {
       var heading = cells[ci].querySelector('.tit-wrap .tit p');
       if (heading && rule.re.test(String(heading.textContent || '').trim())) {
@@ -311,7 +375,7 @@
       }
     }
     var idx = {};
-    var ids = document.querySelectorAll('[id*="Info_"]');
+    var ids = C.queryAll('[id*="Info_"]');
     Array.prototype.forEach.call(ids, function (n) {
       var m = String(n.id || '').match(/(education|work|employment|intern|project|paper|campus)info_(\d+)_/i);
       if (!m) return;
@@ -335,7 +399,7 @@
     var listRows = countListFormRows(rule);
     if (listRows) return listRows;
     // 退路：按常见列表容器估算
-    var box = document.querySelector('[class*="' + rule.key + '"][class*="list"], [data-section*="' + rule.key + '"]');
+    var box = C.queryOne('[class*="' + rule.key + '"][class*="list"], [data-section*="' + rule.key + '"]');
     if (box) {
       var rows = box.querySelectorAll('[class*="item"], [class*="row"], li');
       return rows ? rows.length : 0;
@@ -358,7 +422,7 @@
     var re = SECTION_ROW_PREFIX[key];
     if (!re) return 0;
     var seen = {};
-    var nodes = document.querySelectorAll('[id]');
+    var nodes = C.queryAll('[id]');
     for (var i = 0; i < nodes.length; i++) {
       var m = String(nodes[i].id || '').match(/^(.+?)_(\d+)_/);
       if (!m || !re.test(m[1])) continue;
@@ -369,7 +433,7 @@
 
   /** 区块标题匹配 rule，内部每条记录是一个 .list-form-container */
   function countListFormRows(rule) {
-    var sections = document.querySelectorAll('.resume-section');
+    var sections = C.queryAll('.resume-section');
     for (var i = 0; i < sections.length; i++) {
       var head = sections[i].querySelector('.section-title .title') || sections[i].querySelector('.section-title');
       var t = String((head && head.textContent) || '').replace(/\s+/g, ' ').trim();
@@ -382,14 +446,14 @@
   }
 
   function countPhoenixRows(rule) {
-    var forms = document.querySelectorAll('.form[id*="_Recruitment_"]');
+    var forms = C.queryAll('.form[id*="_Recruitment_"]');
     var best = 0;
     for (var i = 0; i < forms.length; i++) {
       var f = forms[i];
       if (!phoenixFormTitle(f) || !rule.re.test(phoenixFormTitle(f))) continue;
       var esc = window.CSS && CSS.escape ? CSS.escape(f.id) : f.id;
       var same = 0;
-      try { same = document.querySelectorAll('[id="' + esc + '"].form').length; } catch (_) { same = 0; }
+      try { same = C.queryAll('[id="' + esc + '"].form').length; } catch (_) { same = 0; }
       if (same > best) best = same;
     }
     return best;
@@ -400,9 +464,7 @@
     if (own.length) return own.length;
     // 没有多段数据时，若扁平字段有值就展开 1 条
     if (rule.key === 'intern' && Array.isArray(profile && profile.workList)) {
-      var internLike = profile.workList.filter(function (w) {
-        return /实习|intern/i.test(String((w && (w.nature || w.type || w.position || w.title)) || ''));
-      });
+      var internLike = profile.workList.filter(M.isInternRecord);
       if (internLike.length) return internLike.length;
     }
     var flatBySection = { edu: 'school', work: 'company', intern: 'internCompany', project: 'projectName', award: 'awardName', campus: 'campusOrg', lang: 'langName' };
@@ -416,6 +478,8 @@
    */
   async function expandAddSections(profile) {
     var report = [];
+    // 南网的「添加」打开单条编辑表单，必须由用户确认后才成为记录；不能按行数循环点击。
+    if (location.hostname === 'zhaopin.csg.cn') return report;
     var stall = 0;
     // 每轮每个分区只点一次（多段档案靠多轮补齐）；连续两轮没有任何分区涨行就收手，
     // 避免按钮确实点不动时把时间全耗在等待上
@@ -464,6 +528,7 @@
   C.structuredValue = structuredValue;
   C.buildStructuredBindings = buildStructuredBindings;
   C.boundStructuredField = boundStructuredField;
+  C.bindingStillValid = bindingStillValid;
   C.ADD_SECTION_RULES = ADD_SECTION_RULES;
   C.expandAddSections = expandAddSections;
 })();

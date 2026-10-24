@@ -1,0 +1,8 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><style>[role=option]{height:30px}iframe{width:500px;height:70px}</style><main></main>
+<script>
+const kind=new URLSearchParams(location.search).get('kind'),main=document.querySelector('main');
+if(kind==='school'){
+  main.innerHTML='<label for="school">学校</label><input id="school" role="combobox" aria-controls="list" aria-expanded="false"><div id="list" role="listbox" hidden></div><iframe src="frame-child.html?kind=phone"></iframe>';
+  const input=document.querySelector('input'),list=document.querySelector('#list');input.onclick=()=>{list.hidden=false;input.setAttribute('aria-expanded','true');};input.oninput=()=>{list.setAttribute('aria-busy','true');setTimeout(()=>{list.innerHTML='<div role="option">测试大学</div>';list.firstElementChild.onclick=()=>{input.value='测试大学';input.setAttribute('aria-expanded','false');list.firstElementChild.setAttribute('aria-selected','true');list.hidden=true;};list.setAttribute('aria-busy','false');},650);};
+}else main.innerHTML='<label>'+(kind==='email'?'电子邮箱':'手机号')+'<input></label>';
+</script></html>

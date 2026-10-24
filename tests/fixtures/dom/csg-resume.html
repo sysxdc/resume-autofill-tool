@@ -1,0 +1,71 @@
+<!doctype html><meta charset="utf-8"><title>南网招聘表单回归</title>
+<style>.form-item {margin:12px}.ant-cascader-picker {display:inline-block;border:1px solid #aaa}.ant-cascader-menus{background:white;border:1px solid #aaa;position:absolute;z-index:2}.hidden{display:none}</style>
+<section class="experience-module">
+  <div class="header"><div class="header-left"><span class="header-title">教育经历</span></div></div>
+  <div style="display:none"><div class="form-item"><div class="form-item_label">学分绩点</div><input id="hidden-gpa" placeholder="个人绩点"> / <input placeholder="满分绩点"></div></div>
+  <div class="form-item"><div class="form-item_label">学校名称(中文)</div><div id="school" class="ant-cascader-picker ant-cascader-picker-show-search"><span class="ant-cascader-picker-label"></span><input placeholder="请输入/选择学校名称"></div></div>
+  <div class="form-item"><div class="form-item_label">学校名称(英文)</div><div id="school-en" class="ant-cascader-picker ant-cascader-picker-show-search"><span class="ant-cascader-picker-label"></span><input placeholder="请输入/选择学校名称"></div></div>
+  <div class="form-item"><div class="form-item_label">学历</div><div id="education" class="ant-cascader-picker ant-cascader-picker-show-search"><span class="ant-cascader-picker-label"></span><input placeholder="请选择学历"></div></div>
+  <div class="form-item"><div class="form-item_label">专业名称</div><div id="major" class="ant-cascader-picker ant-cascader-picker-show-search"><span class="ant-cascader-picker-label"></span><input placeholder="请输入/选择专业名称"></div></div>
+  <div class="form-item"><div class="form-item_label">院校类型</div><select id="school-type"><option value="">请选择</option><option>境内院校</option><option>境外院校</option></select></div>
+  <div class="form-item"><div class="form-item_label">学分绩点</div><input id="gpa" placeholder="个人绩点"> / <input id="gpa-scale" placeholder="满分绩点"></div>
+  <div class="form-item"><div class="form-item_label">专业排名</div><input id="rank" placeholder="名次"> / <input id="rank-total" placeholder="毕业人数"></div>
+  <div class="form-item"><div class="form-item_label">在校开始时间</div><span class="ant-calendar-picker"><input id="start" placeholder="请选择在校开始时间" readonly></span></div>
+  <div class="form-item"><div class="form-item_label">在校结束时间</div><input id="end" placeholder="请选择在校结束时间" type="date"></div>
+  <div class="form-item"><div class="form-item_label">主修课程</div><textarea id="courses" placeholder="请填写5~10门主修课程"></textarea></div>
+</section>
+<section class="single-form"><div class="header"><span class="header-title">外语水平</span></div><div class="form-item"><div class="form-item_label">分数</div><input id="language-score" placeholder="请输入分数"></div></section>
+<label><input id="declaration" type="checkbox">本人声明全部属实并同意提交</label><button id="save">暂存简历</button><button id="submit">简历确认</button>
+<script>
+window.committed = {};
+window.saveCalls = 0;
+window.foreignSelections=0;
+const foreign=document.createElement('ul');foreign.className='ant-select-dropdown';
+foreign.innerHTML='<li class="ant-select-dropdown-menu-item">英语</li><li class="ant-select-dropdown-menu-item">大学英语四级</li>';
+foreign.onclick=()=>window.foreignSelections++;document.body.appendChild(foreign);
+for(const [id,label,choices] of [['language','语言',['英语','日语']],['level','级别',['大学英语四级','大学英语六级']]]){
+  const item=document.createElement('div');item.className='form-item';
+  item.innerHTML='<div class="form-item_label">'+label+'</div><div id="'+id+'" class="ant-select"><div class="ant-select-selection ant-select-selection--single" role="combobox" aria-controls="'+id+'-options"><div class="ant-select-selection__rendered"></div></div></div>';
+  document.querySelector('.single-form').appendChild(item);
+  const host=item.querySelector('.ant-select'),selection=host.querySelector('[role="combobox"]');
+  const menu=document.createElement('ul');menu.id=id+'-options';menu.className='ant-select-dropdown ant-select-dropdown-hidden';menu.style.display='none';
+  selection.onclick=()=>{if(!menu.isConnected)document.body.appendChild(menu);menu.classList.remove('ant-select-dropdown-hidden');menu.style.display='block';host.classList.add('ant-select-open');selection.setAttribute('aria-expanded','true');};
+  choices.forEach(text=>{const option=document.createElement('li');option.className='ant-select-dropdown-menu-item';option.textContent=text;menu.appendChild(option);option.onclick=()=>{host.querySelector('.ant-select-selection__rendered').innerHTML='<div class="ant-select-selection-selected-value">'+text+'</div>';committed[id]=text;if(id==='language')document.getElementById('language-score').value='';menu.style.display='none';host.classList.remove('ant-select-open');};});
+}
+document.querySelector('#start').parentElement.__vue__ = {
+  $options:{name:'ADatePicker'}, valueFormat:'yyyy.MM.DD', format:'yyyy.MM.DD',
+  $emit(event,value){ if(event==='change'){window.committed.start=value;document.querySelector('#start').value=value;} }
+};
+document.getElementById('save').onclick = document.getElementById('submit').onclick = () => window.saveCalls++;
+const options = {
+  school:['广东省 / 测试工业大学','广东省 / 测试工业大学独立学院'],
+  'school-en':['Guangdong / Test University'], education:['大学本科','硕士研究生'],
+  major:['工学 / 自动化类 / 自动化','工学 / 自动化类 / 自动化（实验班）']
+};
+document.querySelectorAll('.ant-cascader-picker').forEach(host=>{
+  // 实站的级联宿主在 form-item_value > cascaderBox 内，标签不在紧邻兄弟节点。
+  const value=document.createElement('div');value.className='form-item_value';
+  const wrapper=document.createElement('div');wrapper.className='cascaderBox';
+  host.replaceWith(value);value.appendChild(wrapper);wrapper.appendChild(host);
+  const input=host.querySelector('input');
+  const menu=document.createElement('div');
+  menu.className='ant-cascader-menus';menu.style.display='none';document.body.appendChild(menu);
+  function show(){
+    document.querySelectorAll('.ant-cascader-menus').forEach(e=>{e.style.display='none'});
+    menu.style.display='block';menu.replaceChildren();
+    const ul=document.createElement('ul');ul.className='ant-cascader-menu';menu.appendChild(ul);
+    for(const text of options[host.id].filter(x=>!input.value||x.includes(input.value))){
+      const li=document.createElement('li');li.className='ant-cascader-menu-item';li.textContent=text;
+      li.onclick=()=>{
+        if(window.rejectCommit) return;
+        window.committed[host.id]=text;
+        host.querySelector('.ant-cascader-picker-label').textContent=text;
+        input.value='';menu.style.display='none';
+      };
+      ul.appendChild(li);
+    }
+  }
+  input.addEventListener('click',show);input.addEventListener('input',show);
+  document.addEventListener('click',e=>{if(!host.contains(e.target)&&!menu.contains(e.target))menu.style.display='none'});
+});
+</script>

@@ -145,6 +145,14 @@
   function vue2DateCommit(el, s, e) {
     var vm = vue2Vm(el);
     for (var i = 0; i < 5 && vm; i++, vm = vm.$parent) {
+      // ant-design-vue 1.x 的 v-model 使用 change 和 valueFormat 字符串。
+      // 按组件声明格式发出 change，让父级更新 props；不向只读 input 伪造显示值。
+      if (/^A(?:Date|Month|Range)Picker$/.test(String(vm.$options && vm.$options.name || '')) && vm.valueFormat) {
+        var convert = function (date) { return formatBy(vm.valueFormat, date); };
+        var formatted = e ? [convert(s), convert(e)] : convert(s);
+        vm.$emit('change', formatted, e ? [formatBy(vm.format, s), formatBy(vm.format, e)] : formatBy(vm.format, s));
+        return true;
+      }
       if (typeof vm.emitInput === 'function' && ('pickerVisible' in vm || 'valueFormat' in vm || vm.type)) {
         var val = e ? [s, e] : s;
         vm.emitInput(val);
@@ -253,6 +261,17 @@
   // ── 分发 ────────────────────────────────────────────────
   function handle(el, op, args) {
     if (op === 'ping') return { ok: true, v: 1 };
+    if (op === 'cascaderSearch' && el.closest && el.closest('.ant-cascader-picker')) {
+      var vm = vue2Vm(el);
+      for (var ci = 0; ci < 9 && vm; ci++, vm = vm.$parent) {
+        if (vm.$options && vm.$options.name === 'ACascader' && typeof vm.handleInputChange === 'function' && typeof vm.handlePopupVisibleChange === 'function') {
+          vm.handleInputChange({target:{value:String(args.text || '')}});
+          vm.handlePopupVisibleChange(true);
+          return {ok:true, via:'vue2-cascader'};
+        }
+      }
+      return {ok:false};
+    }
     if (op === 'dateCommit') {
       var s = dateOf(args.s);
       var e = args.e ? dateOf(args.e) : null;
@@ -287,7 +306,7 @@
   }
 
   window.addEventListener(EVT, function (ev) {
-    var el = ev.target;
+    var el = ev.composedPath ? ev.composedPath()[0] : ev.target;
     if (!el || el.nodeType !== 1) return;
     var req = null;
     try { req = JSON.parse(String(ev.detail || '')); } catch (_) { return; }

@@ -16,6 +16,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { execSync } from 'node:child_process';
 import http from 'node:http';
+import {createReliabilityCases} from './reliability-dom.mjs';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
@@ -370,7 +371,8 @@ async function loadExtension(page, profile) {
     const store = { profile: p };
     window.chrome = window.chrome || {};
     window.chrome.storage = { local: { get: (k, cb) => cb({ profile: store.profile }) } };
-    window.chrome.runtime = { onMessage: { addListener: () => {} } };
+    window.__contentListeners = [];
+    window.chrome.runtime = { onMessage: { addListener: (listener) => window.__contentListeners.push(listener) } };
   }, profile);
   // 其余内容脚本按 manifest 的顺序装（v1.6.0 起 autofill 拆成多个模块，漏一个就会缺函数）
   for (const f of CONTENT_SCRIPTS) {
@@ -664,7 +666,7 @@ const CHAIN_CASES = [
     },
   },
   {
-    name: 'chain:r17 换语种后等级选项跟着换（不能沿用旧值）',
+    name: 'chain:r17 用户清空后换语种，等级选项跟着刷新',
     file: 'r17-lang-linked.html',
     async run(page) {
       const r = await page.evaluate(async () => {
@@ -674,6 +676,8 @@ const CHAIN_CASES = [
           { host: document.querySelector('#level'), value: 'CET-4' }
         ]);
         const first = C.readShown(document.querySelector('#level'));
+        document.querySelector('#lang-val').textContent = '';
+        document.querySelector('#level-val').textContent = '';
         const second = await C.fillChain([
           { host: document.querySelector('#lang'), value: '日语' },
           { host: document.querySelector('#level'), value: 'N1' }
@@ -689,6 +693,43 @@ const CHAIN_CASES = [
 ];
 
 const E2E_CASES = [
+  {
+    name: 'csg：级联选中回读、中英文学校隔离、绩点排名拆栏与人工提交',
+    file: 'csg-resume.html',
+    async run(page) {
+      await loadExtension(page, {school:'测试工业大学',eduDegree:'本科',major:'自动化',schoolType:'境内院校',gpa:'3.0/4.5',majorRank:'15/120',eduStart:'2023-09-01',eduEnd:'2027-06-30',majorCourses:'控制理论、程序设计',langName:'英语',langLevel:'良好',langCertName:'CET-4',englishScore:'520'});
+      const result=await page.evaluate(()=>__resumeAutofill.fill({allowAddSections:false}));
+      for(const [id,expected] of [['gpa','3'],['gpa-scale','4.5'],['rank','15'],['rank-total','120'],['end','2027-06-30'],['school-type','境内院校'],['language-score','520']]) eq(await value(page,'#'+id),expected,id);
+      const state=await page.evaluate(()=>committed);
+      eq(state.start,'2023.09.01','Vue 2 日期按声明格式提交并回读');
+      eq(state.language,'英语','旧版 Select 不被泛 ARIA 路径截获');
+      eq(state.level,'大学英语四级','考试级别不使用熟练程度');
+      eq(await page.evaluate(()=>foreignSelections),0,'菜单尚未挂载时不误点其他字段的同名选项');
+      eq(state.school,'广东省 / 测试工业大学','不选同名独立学院');
+      eq(state.education,'大学本科','学历别名必须真实选中');
+      eq(state.major,'工学 / 自动化类 / 自动化','专业叶子选中 '+JSON.stringify({state,skipped:result.skipped}));
+      ok(!state['school-en'],'中文学校不会填进英文学校');
+      eq(await value(page,'#hidden-gpa'),'','隐藏模板不写入、不占第几段记录');
+      ok(result.filledKeys.includes('school')&&result.filledKeys.includes('major'),'级联计入核验');
+      ok(!result.audit.wrongFill,'最终核验没有错填');
+      eq(await page.evaluate(()=>document.getElementById('declaration').checked),false,'不勾选声明');
+      eq(await page.evaluate(()=>saveCalls),0,'不确认、不暂存、不提交');
+    }
+  },
+  {
+    name: 'csg：拒绝仅搜索未提交、缺少绩点分母不猜测、保留已有选中值',
+    file: 'csg-resume.html',
+    async run(page) {
+      await loadExtension(page,{school:'测试工业大学',gpa:'3.0'});
+      await page.evaluate(()=>{window.rejectCommit=true;document.querySelector('#education .ant-cascader-picker-label').textContent='硕士研究生';});
+      const result=await page.evaluate(()=>__resumeAutofill.fill({allowAddSections:false}));
+      ok(!result.filledKeys.includes('school'),'未提交的搜索词不计成功');
+      eq(await value(page,'#school input'),'','失败搜索清理');
+      eq(await value(page,'#gpa-scale'),'','不猜满分绩点');
+      eq(await text(page,'#education .ant-cascader-picker-label'),'硕士研究生','保留原有选中值');
+      eq(await page.evaluate(()=>saveCalls),0,'没有触发保存');
+    }
+  },
   {
     name:'rich：富文本按纯文本提交、保留已有内容并识别组件拒绝',
     file:'rich-text.html',
@@ -731,7 +772,7 @@ const E2E_CASES = [
     file:'field-safety.html',
     async run(page) {
       await page.addInitScript(()=>{
-        const store={profile:{degree:'本科',eduDegree:'本科',gpa:'3.0/4.5',school:'测试大学',eduList:[{school:'测试大学',degree:'本科',academicDegree:'工学学士',gpa:'3.0'}]}};
+        const store={profile:{degree:'本科',eduDegree:'本科',gpa:'3.0/4.5',school:'测试大学',eduStart:'2020-09',eduEnd:'2024-06',eduList:[{school:'测试大学',start:'2020-09',end:'2024-06',degree:'本科',academicDegree:'工学学士',gpa:'3.0'}]}};
         window.fixtureStore=store;
         window.chrome={runtime:{},storage:{local:{get:(keys,cb)=>{const data=structuredClone(store);if(cb)cb(data);else return Promise.resolve(data);},set:(data,cb)=>{Object.assign(store,structuredClone(data));if(cb)cb();else return Promise.resolve();}}}};
       });
@@ -894,11 +935,10 @@ const E2E_CASES = [
       const frame = await framePromise;
       await loadExtension(frame, {name:'PRIVATE_FRAME_SENTINEL'});
       await frame.evaluate(() => window.__resumeAutofill.fill({allowAddSections:false, allowCustomSelect:false}));
-      await page.waitForFunction(() => window.frameReports.length > 0);
+      await page.waitForTimeout(100);
       const reports = await page.evaluate(() => window.frameReports);
       ok(!JSON.stringify(reports).includes('PRIVATE_FRAME_SENTINEL'), '页面监听不到审计原值');
-      ok(!reports[0].__raFill.audit, '只传汇总，不传原始审计');
-      eq(reports[0].__raFill.filled, 1, '仍可汇总填写数量');
+      eq(reports.length,0,'不再向页面发送 iframe 汇总');
     }
   },
   {
@@ -1045,9 +1085,13 @@ const E2E_CASES = [
   },
 ];
 
+const RELIABILITY_CASES = createReliabilityCases({loadExtension,ok,eq,root:path.resolve(__dirname,'..')});
+
 // ── 运行 ──────────────────────────────────────────────────
 (async function main() {
   const filter = process.argv[2] || '';
+  const selected = CASES.concat(CAP_CASES,FILL_CASES,AUDIT_CASES,CHAIN_CASES,E2E_CASES,RELIABILITY_CASES).filter(c => !filter || c.name.includes(filter) || c.file.includes(filter));
+  if (!selected.length) throw new Error('DOM 测试过滤后零用例：' + filter);
   const { chromium } = loadPlaywright();
   // fixture 内的 fetch 在 file:// 下会被 CORS 拦截；通过仅监听本机的静态服务执行。
   const repoRoot = path.resolve(__dirname, '..');
@@ -1068,7 +1112,7 @@ const E2E_CASES = [
   let passed = 0;
   const failed = [];
 
-  for (const c of CASES.concat(CAP_CASES).concat(FILL_CASES).concat(AUDIT_CASES).concat(CHAIN_CASES).concat(E2E_CASES)) {
+  for (const c of selected) {
     if (filter && !c.name.includes(filter) && !c.file.includes(filter)) continue;
     const page = await browser.newPage();
     const pageErrors = [];

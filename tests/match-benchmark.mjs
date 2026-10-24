@@ -23,6 +23,12 @@ const o = (p, label, expect, extra = {}) => ({ p, label, expect, src: "obs", ...
 
 /** ─────────────── 语料 ─────────────── */
 const CORPUS = [
+  o("南方电网", "学校名称(英文)", "schoolEnglish", {ctx:"edu"}),
+  o("南方电网", "院校类型", "schoolType", {ctx:"edu"}),
+  e("通用1.9", "班级排名", "classRank", {ctx:"edu"}),
+  e("通用1.9", "专业人数", "majorClassSize", {ctx:"edu"}),
+  e("通用1.9", "技术技能", "techSkills"),
+  e("通用1.9", "软件技能", "softwareSkills"),
   // 小红书校招投递页（obs：2026-10 实际页面）
   o("小红书", "投递志愿", "jobTarget"),
   o("小红书", "推荐码", "-"),
@@ -362,8 +368,8 @@ const pct = (a, b) => (b ? ((a / b) * 100).toFixed(1) + "%" : "-");
 // --check：给 CI / pre-commit 用的门槛（低于阈值直接非零退出）
 if (process.argv.includes("--check")) {
   const rate = hits / total;
-  const floor = 0.98;
-  if (rate < floor) {
+  const floor = 1;
+  if (!total || wrong || rate < floor) {
     console.error("匹配率 " + (rate * 100).toFixed(1) + "% 低于门槛 " + floor * 100 + "%（" + hits + "/" + total + "）");
     process.exit(1);
   }

@@ -537,12 +537,12 @@ test('SAMPLE_PROFILE has Chinese demo data', () => {
   assert.ok(!/戴远升/.test(JSON.stringify(Profile.SAMPLE_PROFILE)));
 });
 
-test('normalizeProfile drops unknown keys and trims', () => {
+test('normalizeProfile preserves unknown data and trims known fields', () => {
   const n = Profile.normalizeProfile({ name: '  A  ', hacker: 'nope', email: 'a@b.c', wechat: ' wx ' });
   assert.equal(n.name, 'A');
   assert.equal(n.email, 'a@b.c');
   assert.equal(n.wechat, 'wx');
-  assert.equal(n.hacker, undefined);
+  assert.equal(n.hacker, 'nope');
   assert.equal(n.phone, '');
 });
 
@@ -1176,7 +1176,7 @@ test('v1.3.0 normalizeProfile roundtrip keeps new keys', () => {
   assert.equal(n.name, '张三');
   assert.equal(n.namePinyin, 'Zhang San');
   assert.equal(n.internCompany, '示例');
-  assert.equal(n.unknown, undefined);
+  assert.equal(n.unknown, 'x');
   assert.equal(n.familyIdNumber, '');
 });
 
@@ -1411,7 +1411,7 @@ test('v1.4.1: emptyProfile 含空列表；normalizeProfile 保留 eduList', () =
   };
   const n = Profile.normalizeProfile(raw);
   assert.equal(n.name, '张三');
-  assert.equal(n.unknownKey, undefined);
+  assert.equal(n.unknownKey, 'drop-me');
   assert.equal(n.eduList.length, 1);
   assert.equal(n.eduList[0].school, '浙江大学');
   assert.equal(n.workList[0].company, '示例公司');
@@ -1577,7 +1577,7 @@ test('v1.5.5: 需要点「添加」才有输入框时自动展开', () => {
   assert.ok(/isUnsafeAddButton/.test(src), '附件/上传类按钮必须排除');
   assert.ok(/附件\|文件\|上传/.test(src), '危险按钮过滤规则');
   assert.ok(/round < \d+/.test(src), '展开循环要有上限');
-  assert.ok(/expanded: own\.expanded/.test(src), '多 frame 应答需要透传 expanded');
+  assert.ok(/expanded: result\.expanded/.test(src), '局部填写透传 expanded，后台负责跨 frame 汇总');
 });
 
 test('v1.5.5: 「请选择 / Select」这类占位 option 不算已填', () => {
@@ -1927,7 +1927,7 @@ test('v1.5.9: 未填字段清单（标签 + 必填 + 分区）', () => {
   assert.ok(/function unfilledFields/.test(src), '应有 unfilledFields');
   assert.ok(/function fieldRequired/.test(src), '要能判断必填');
   assert.ok(/function sectionTitleFor/.test(src), '要能带分区名');
-  assert.ok(/unfilled: blanks/.test(src) || /unfilled: unfilledFields\(\)/.test(src), '填充结果里要带 unfilled');
+  assert.ok(/unfilled:\s*blanks/.test(src) || /unfilled: unfilledFields\(\)/.test(src), '填充结果里要带 unfilled');
 });
 
 test('v1.5.9: 外语成绩 / 取得时间 独立成键并可回退证书', () => {
@@ -1969,7 +1969,7 @@ test('v1.5.10: 未填字段带 id / 行号 / 可定位', () => {
   const src = contentSrc();
   assert.ok(/function revealField/.test(src), '要能跳到字段');
   assert.ok(/UNFILLED_ELS/.test(src), '要记住字段引用');
-  assert.ok(/row: row > 1 \? row : 0/.test(src), '同名列要带序号');
+  assert.ok(/row:\s*row > 1 \? row : 0/.test(src), '同名列要带序号');
   assert.ok(/revealField: function/.test(src), 'API 要暴露 revealField');
   assert.ok(/SECTION_WORD_RE/.test(src), '分区标题要有词表');
 });
@@ -1996,12 +1996,12 @@ test('v1.5.12: [role=combobox] 落在 input 上时要缩放到外层组件', () 
   assert.ok(/\.el-select, \.ant-select, \.dictionary-selector/.test(src), '缩放目标要是外层组件');
 });
 
-test('v1.5.12: 弹层按 aria-controls 定位，多弹层只取最后打开的一组', () => {
+test('v1.5.12: 弹层按 aria-controls 定位，要求唯一有效归属', () => {
   const src = contentSrc();
   assert.ok(/function dropdownForHost/.test(src), '要有按 aria 定位弹层的函数');
   assert.ok(/aria-controls/.test(src) && /aria-owns/.test(src), '两个属性都要认');
-  assert.ok(/closest\('\.ant-select-dropdown'\)/.test(src), 'listbox 空壳要能上溯到弹层');
-  assert.ok(/groups\[groups\.length - 1\]/.test(src), '多弹层并存取最后一组');
+  assert.ok(/closest\('\.ant-select-dropdown, \.el-select-dropdown'\)/.test(src), 'listbox 空壳要能上溯到弹层');
+  assert.ok(/boxes.length === 1/.test(src), '多弹层必须确认唯一有效目标');
 });
 
 test('v1.5.12: 组合学历标签不被 highestDegree 抢走', () => {
@@ -2051,7 +2051,7 @@ test('v1.5.13: 分区行数按 id 前缀统计（interShips_0_ / educations_0_�
 test('v1.5.13: 实习分区可从 workList 里挑实习条目展开', () => {
   const src = contentSrc();
   assert.ok(/rule\.key === 'intern'/.test(src), '实习分区特判');
-  assert.ok(/实习\|intern/.test(src), '按实习关键词筛 workList');
+  assert.ok(/M\.isInternRecord/.test(src), '展开段数共用明确实习分类');
 });
 
 test('v1.5.13: antd 日期框走面板（React props 触发 + title 点日）', () => {
@@ -2280,9 +2280,9 @@ test('v1.5.18 日期策略层：顺序 / 注册 / 判别', () => {
 
 test('v1.5.19 AI 白名单：简历值不出本机', () => {
   const prof = {
-    name: '戴运升', email: 'secret@example.com', phone: '18998683413',
-    idNumber: '441701200409210032', birthday: '2004-09-21', currentCity: '',
-    eduList: [{ school: '广东工业大学' }]
+    name: '测试人甲', email: 'secret@example.com', phone: '13800000000',
+    idNumber: '110101200001010000', birthday: '2000-01-01', currentCity: '',
+    eduList: [{ school: '测试工业大学' }]
   };
   const fields = [
     { index: 0, label: '电子邮箱', controlType: 'text' },
@@ -2291,7 +2291,7 @@ test('v1.5.19 AI 白名单：简历值不出本机', () => {
   const body = AI.buildAiRequestBody({ enabled: true }, prof, fields);
   const raw = JSON.stringify(body);
   // 红线：整份请求里不许出现任何简历值
-  ['戴运升', 'secret@example.com', '18998683413', '441701200409210032', '2004-09-21', '广东工业大学'].forEach((v) => {
+  ['测试人甲', 'secret@example.com', '13800000000', '110101200001010000', '2000-01-01', '测试工业大学'].forEach((v) => {
     assert.equal(raw.indexOf(v), -1, '请求里不该出现值：' + v);
   });
   // 但要有键目录（只有键名）+ 字段标签 + 选项文本（payload 是嵌在 message 里的 JSON 字符串）
@@ -2299,7 +2299,7 @@ test('v1.5.19 AI 白名单：简历值不出本机', () => {
   assert.ok(Array.isArray(payload.keys) && payload.keys.length > 0, '带键目录');
   const keyNames = payload.keys.map((k) => k.key);
   assert.ok(keyNames.includes('name') && keyNames.includes('email'), '键名可见');
-  assert.ok(keyNames.includes('eduList'), '多段经历以列表键出现');
+  assert.ok(keyNames.includes('school'), '多段经历展开为可取值的子字段语义键');
   assert.equal(keyNames.includes('currentCity'), false, '空值键不进目录');
   assert.equal(payload.fields[0].label, '电子邮箱', '字段标签可见');
   assert.deepEqual(payload.fields[1].options, ['本科', '硕士'], '选项文本可见');
@@ -2538,7 +2538,7 @@ test('v1.6.0: 新增多段列表逐段取值（第 2 段不回落到主条目）
   assert.equal(Match.profileValueForOccurrence(p, 'familyName', 0), '张父', '主条目空 → 用列表第一段');
   for (const k of Profile.LIST_FIELDS) assert.ok(Array.isArray(p[k]), k + ' 归一化后是数组');
   const edu = [{ school: '甲' }, { school: '乙' }];
-  assert.equal(Match.profileValueForOccurrence({ studyMode: '全日制', eduList: edu }, 'studyMode', 1), '全日制', '各段都没写学习形式 → 沿用扁平值');
+  assert.equal(Match.profileValueForOccurrence({ studyMode: '全日制', eduList: edu }, 'studyMode', 1), '', '各段缺值时不能借用主条目');
   assert.equal(Match.profileValueForOccurrence({ studyMode: '全日制', eduList: [{ school: '甲', studyMode: '非全日制' }, { school: '乙' }] }, 'studyMode', 1), '', '有段单独写了 → 不猜');
   assert.equal(Match.profileValueForOccurrence({ studyMode: '全日制', eduList: edu }, 'studyMode', 2), '', '不存在的段不填');
 });
@@ -2623,7 +2623,7 @@ console.log(`Result: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);
 
 {
-  const child = spawnSync(process.execPath, ['--test', path.join(__dirname, 'field-safety.test.mjs'),path.join(__dirname,'profile-quality.test.mjs')], {encoding:'utf8', cwd:root});
+  const child = spawnSync(process.execPath, ['--test', path.join(__dirname, 'field-safety.test.mjs'),path.join(__dirname,'profile-quality.test.mjs'),path.join(__dirname,'reliability.test.mjs')], {encoding:'utf8', cwd:root});
   if (child.stdout) process.stdout.write(child.stdout);
   if (child.stderr) process.stderr.write(child.stderr);
   if (child.status !== 0) process.exit(child.status || 1);
@@ -2639,10 +2639,7 @@ if (failed > 0) process.exit(1);
   });
   if (child.stdout) process.stdout.write(child.stdout);
   if (child.stderr) process.stderr.write(child.stderr);
-  if (child.status && !/找不到 playwright/.test(String(child.stderr || '') + String(child.stdout || ''))) {
-    process.exit(child.status);
-  }
-  if (child.status) console.log('（跳过：本机没装 playwright）');
+  if (child.status !== 0) process.exit(child.status || 1);
 }
 
 // 串联简历解析套件（独立计数，失败则整体非零退出）
@@ -2655,5 +2652,5 @@ if (failed > 0) process.exit(1);
   });
   if (child.stdout) process.stdout.write(child.stdout);
   if (child.stderr) process.stderr.write(child.stderr);
-  if (child.status) process.exit(child.status);
+  if (child.status !== 0) process.exit(child.status || 1);
 }

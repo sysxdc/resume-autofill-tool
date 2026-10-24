@@ -241,6 +241,8 @@
           <label>目前行业<input type="text" name="currentIndustry" placeholder="" /></label>
           <label>预计入职时间<input type="text" name="expectedStartDate" placeholder="" /></label>
           <label>期望城市<input type="text" name="expectedCity" placeholder="" /></label>
+          <label class="full">多个意向城市（每行一项）<textarea data-multi-key="expectedCity" rows="2"></textarea></label>
+          <label class="full">多个意向行业（每行一项）<textarea data-multi-key="expectedIndustry" rows="2"></textarea></label>
           <label>第二期望城市<input type="text" name="expectedCity2" placeholder="" /></label>
           <label>面试城市<input type="text" name="interviewCity" placeholder="" /></label>
           <label>期望月薪<input type="text" name="expectedSalary" placeholder="" /></label>
@@ -268,7 +270,7 @@
             <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
           </header>
           <div class="pane-body">
-        
+
         <div id="list-eduList" class="list-editor" data-list="eduList"></div>
         <button type="button" class="btn ghost list-add" data-list="eduList">＋ 添加教育经历</button>
           </div>
@@ -285,7 +287,7 @@
             <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
           </header>
           <div class="pane-body">
-        
+
         <div id="list-workList" class="list-editor" data-list="workList"></div>
         <button type="button" class="btn ghost list-add" data-list="workList">＋ 添加工作经历</button>
           </div>
@@ -302,7 +304,7 @@
             <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
           </header>
           <div class="pane-body">
-        
+
         <div id="list-projectList" class="list-editor" data-list="projectList"></div>
         <button type="button" class="btn ghost list-add" data-list="projectList">＋ 添加项目经历</button>
           </div>
@@ -320,6 +322,7 @@
           <div class="pane-body">
         <div class="grid">
           <label>毕业院校 / 学校<input type="text" name="school" placeholder="" /></label>
+          <label>学校英文名称<input type="text" name="schoolEnglish" /></label>
           <label>学历<input type="text" name="eduDegree" placeholder="本科 / 硕士…" /></label>
           <label>学位<input type="text" name="degree" placeholder="学士 / 硕士…" /></label>
           <label>是否专升本<input type="text" name="isUpgradeFromCollege" placeholder="" /></label>
@@ -411,7 +414,7 @@
             <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
           </header>
           <div class="pane-body">
-        
+
         <div class="grid">
           <label>公司<input type="text" name="company" placeholder="" /></label>
           <label>公司规模<input type="text" name="companySize" placeholder="" /></label>
@@ -533,6 +536,8 @@
           <div class="pane-body">
         <div class="grid">
           <label class="full">技术技能<textarea name="techSkills" rows="2" placeholder=""></textarea></label>
+          <label class="full">多选技术技能（每行一项）<textarea data-multi-key="techSkills" rows="2"></textarea></label>
+          <label class="full">多选软件技能（每行一项）<textarea data-multi-key="softwareSkills" rows="2"></textarea></label>
           <label class="full">技能（兼容）<textarea name="skills" rows="2" placeholder="与技术技能可互为别名"></textarea></label>
           <label class="full">语言能力<input type="text" name="languages" placeholder="" /></label>
           <label class="full">软件技能<input type="text" name="softwareSkills" placeholder="" /></label>
@@ -606,7 +611,7 @@
             <p class="pane-stat"><b data-pane-filled>0</b><span>已填字段</span></p>
           </header>
           <div class="pane-body">
-        
+
         <div class="grid">
           <label>姓名（选填）<input type="text" name="familyName" placeholder="" /></label>
           <label>关系（选填）<input type="text" name="familyRelation" placeholder="" /></label>
